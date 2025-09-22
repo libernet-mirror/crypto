@@ -1,0 +1,11 @@
+[package]
+name = "engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.100"
+dusk-bls12_381 = "0.14.2"
+dusk-poseidon = "0.41.0"
+getrandom = "0.3.3"
+primitive-types = "0.14.0"
