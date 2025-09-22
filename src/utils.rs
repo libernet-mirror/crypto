@@ -5,7 +5,7 @@ use primitive_types::U256;
 
 pub fn get_random_scalar() -> Scalar {
     let mut bytes = [0u8; 64];
-    getrandom::fill(&mut bytes).unwrap();
+    getrandom::getrandom(&mut bytes).unwrap();
     Scalar::from_bytes_wide(&bytes)
 }
 
