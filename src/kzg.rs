@@ -58,17 +58,9 @@ impl Polynomial {
     }
 
     /// Commits this polynomial to G1.
-    pub fn g1_commitment(&self) -> G1Projective {
+    pub fn commitment(&self) -> G1Projective {
         let g: Vec<G1Affine> = (0..self.coefficients.len())
             .map(|i| params::g1(i))
-            .collect();
-        dot(self.coefficients.as_slice(), g.as_slice())
-    }
-
-    /// Commits this polynomial to G2.
-    pub fn g2_commitment(&self) -> G2Projective {
-        let g: Vec<G2Affine> = (0..self.coefficients.len())
-            .map(|i| params::g2(i))
             .collect();
         dot(self.coefficients.as_slice(), g.as_slice())
     }
@@ -99,34 +91,65 @@ impl Polynomial {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Proof {
-    c: G1Affine,
-    y: G1Affine,
+impl Add<Polynomial> for Polynomial {
+    type Output = Polynomial;
+
+    fn add(mut self, rhs: Self) -> Self::Output {
+        if rhs.len() > self.len() {
+            return rhs + self;
+        }
+        for i in 0..rhs.len() {
+            self.coefficients[i] += rhs.coefficients[i];
+        }
+        self
+    }
 }
 
+impl Mul<Scalar> for Polynomial {
+    type Output = Polynomial;
+
+    fn mul(mut self, rhs: Scalar) -> Self::Output {
+        for i in 0..self.len() {
+            self.coefficients[i] *= rhs;
+        }
+        self
+    }
+}
+
+/// A KZG evaluation proof.
+///
+/// This proof can convince the user that a polynomial with a certain commitment `c` intersects a
+/// certain point `(z, v)`, and it can do so without any knowledge of the original polynomial.
+///
+/// The values of `c`, `z`, and `v` are mathematically tied to this proof and they need to be
+/// specified explicitly when invoking `verify`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Proof(G1Affine);
+
 impl Proof {
+    /// Proves the evaluation of `p` in `z`.
     pub fn new(p: &Polynomial, z: Scalar) -> Self {
         let (q, _) = p.horner(z);
-        Self {
-            c: p.g1_commitment().into(),
-            y: q.g1_commitment().into(),
-        }
+        Self(q.commitment().into())
     }
 
-    pub fn c(&self) -> &G1Affine {
-        &self.c
+    /// Constructs a proof from a previously serialized `y`.
+    pub fn load(y: G1Affine) -> Self {
+        Self(y)
     }
 
-    pub fn y(&self) -> &G1Affine {
-        &self.y
+    /// Returns the proof point. This allows serializing the proof as a point a reload it later
+    /// using `load`.
+    pub fn y(&self) -> G1Affine {
+        self.0
     }
 
-    pub fn verify(&self, z: Scalar, v: Scalar) -> Result<()> {
-        let p1 = self.c + params::g1(0) * -v;
-        let q1 = params::g2(0);
-        let p2 = self.y;
-        let q2 = params::g2(1) + params::g2(0) * -z;
+    /// Verifies that the polynomial with commitment `c` evaluates to `v` in `z`.
+    pub fn verify(&self, c: G1Affine, z: Scalar, v: Scalar) -> Result<()> {
+        let p1 = c + params::g1(0) * -v;
+        let q1 = G2Affine::generator();
+        let p2 = self.0;
+        let q2 = params::g2() + G2Projective::generator() * -z;
         if pairing(&p1.into(), &q1) == pairing(&p2, &q2.into()) {
             Ok(())
         } else {
@@ -134,8 +157,22 @@ impl Proof {
         }
     }
 
-    pub fn verify_root(&self, z: Scalar) -> Result<()> {
-        self.verify(z, 0.into())
+    /// Verifies that the polynomial with commitment `c` evaluates to 0 in `z` (in other words, `z`
+    /// is a root).
+    pub fn verify_root(&self, c: G1Affine, z: Scalar) -> Result<()> {
+        self.verify(c, z, 0.into())
+    }
+}
+
+impl From<G1Affine> for Proof {
+    fn from(y: G1Affine) -> Self {
+        Self(y)
+    }
+}
+
+impl From<G1Projective> for Proof {
+    fn from(y: G1Projective) -> Self {
+        Self(y.into())
     }
 }
 
@@ -310,34 +347,60 @@ mod tests {
     }
 
     #[test]
+    fn test_add_commitments() {
+        let p1 = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
+        let p2 = Polynomial::from_roots(&[78.into(), 90.into()]).unwrap();
+        assert_eq!(p1.commitment() + p2.commitment(), (p1 + p2).commitment());
+    }
+
+    #[test]
+    fn test_multiply_commitment() {
+        let p = Polynomial::from_roots(&[12.into(), 34.into()]).unwrap();
+        let a = Scalar::from(56);
+        assert_eq!(p.commitment() * a, (p * a).commitment());
+    }
+
+    #[test]
     fn test_proof1() {
         let polynomial = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
+        let c = polynomial.commitment().into();
         let proof = Proof::new(&polynomial, 12.into());
-        assert!(proof.verify(12.into(), 0.into()).is_ok());
-        assert!(proof.verify(0.into(), 12.into()).is_err());
-        assert!(proof.verify(12.into(), 34.into()).is_err());
-        assert!(proof.verify(34.into(), 12.into()).is_err());
-        assert!(proof.verify_root(12.into()).is_ok());
-        assert!(proof.verify_root(34.into()).is_err());
+        assert!(proof.verify(c, 12.into(), 0.into()).is_ok());
+        assert!(proof.verify(c, 34.into(), 0.into()).is_err());
+        assert!(proof.verify(c, 0.into(), 12.into()).is_err());
+        assert!(proof.verify(c, 12.into(), 34.into()).is_err());
+        assert!(proof.verify(c, 34.into(), 12.into()).is_err());
+        assert!(proof.verify_root(c, 12.into()).is_ok());
+        assert!(proof.verify_root(c, 34.into()).is_err());
+        assert!(proof.verify_root(c, 78.into()).is_err());
     }
 
     #[test]
     fn test_proof2() {
         let polynomial = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
+        let c = polynomial.commitment().into();
         let proof = Proof::new(&polynomial, 34.into());
-        assert!(proof.verify(34.into(), 0.into()).is_ok());
-        assert!(proof.verify(0.into(), 34.into()).is_err());
-        assert!(proof.verify(34.into(), 12.into()).is_err());
-        assert!(proof.verify(12.into(), 34.into()).is_err());
-        assert!(proof.verify_root(34.into()).is_ok());
-        assert!(proof.verify_root(12.into()).is_err());
+        assert!(proof.verify(c, 12.into(), 0.into()).is_err());
+        assert!(proof.verify(c, 34.into(), 0.into()).is_ok());
+        assert!(proof.verify(c, 0.into(), 34.into()).is_err());
+        assert!(proof.verify(c, 34.into(), 12.into()).is_err());
+        assert!(proof.verify(c, 12.into(), 34.into()).is_err());
+        assert!(proof.verify_root(c, 12.into()).is_err());
+        assert!(proof.verify_root(c, 34.into()).is_ok());
+        assert!(proof.verify_root(c, 78.into()).is_err());
     }
 
     #[test]
     fn test_proof3() {
         let polynomial = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
+        let c = polynomial.commitment().into();
         let proof = Proof::new(&polynomial, 78.into());
-        assert!(proof.verify(78.into(), 0.into()).is_err());
-        assert!(proof.verify(78.into(), 12.into()).is_err());
+        assert!(proof.verify(c, 12.into(), 0.into()).is_err());
+        assert!(proof.verify(c, 34.into(), 0.into()).is_err());
+        assert!(proof.verify(c, 78.into(), 0.into()).is_err());
+        assert!(proof.verify(c, 78.into(), 12.into()).is_err());
+        assert!(proof.verify_root(c, 12.into()).is_err());
+        assert!(proof.verify_root(c, 34.into()).is_err());
+        assert!(proof.verify_root(c, 78.into()).is_err());
     }
 }

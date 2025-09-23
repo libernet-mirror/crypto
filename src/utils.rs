@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use dusk_bls12_381::{BlsScalar as Scalar, G1Affine, G2Affine};
 use dusk_poseidon as poseidon;
+use group::GroupEncoding;
 use primitive_types::{H384, H768, U256};
 
 pub fn get_random_scalar() -> Scalar {
@@ -19,8 +20,16 @@ pub fn u256_to_scalar(value: U256) -> Result<Scalar> {
         .context("invalid BLS scalar")
 }
 
+pub fn format_scalar(value: Scalar) -> String {
+    format!("{:#x}", scalar_to_u256(value))
+}
+
 pub fn parse_scalar(s: &str) -> Result<Scalar> {
     u256_to_scalar(s.parse()?)
+}
+
+pub fn format_g1(point: G1Affine) -> String {
+    format!("{:#x}", H384::from_slice(point.to_bytes().as_ref()))
 }
 
 pub fn parse_g1(s: &str) -> Result<G1Affine> {
@@ -28,6 +37,10 @@ pub fn parse_g1(s: &str) -> Result<G1Affine> {
     G1Affine::from_compressed(hex.as_fixed_bytes())
         .into_option()
         .context("invalid compressed G1 point")
+}
+
+pub fn format_g2(point: G2Affine) -> String {
+    format!("{:#x}", H768::from_slice(point.to_bytes().as_ref()))
 }
 
 pub fn parse_g2(s: &str) -> Result<G2Affine> {
@@ -76,6 +89,17 @@ mod tests {
             .unwrap(),
             parse_scalar("0x18d82aec545e64ec800bfd5d81baed36fa8c3ea2fdf5514256eb5bf312613a8e")
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_format_scalar() {
+        assert_eq!(
+            format_scalar(
+                parse_scalar("0x6852853d54d552eddd0eb793944dd4512bdff54d27bfd688f4e45bc48e31c687")
+                    .unwrap()
+            ),
+            "0x6852853d54d552eddd0eb793944dd4512bdff54d27bfd688f4e45bc48e31c687"
         );
     }
 
