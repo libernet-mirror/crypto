@@ -4,6 +4,7 @@ use dusk_bls12_381::BlsScalar as DuskScalar;
 use dusk_poseidon as poseidon;
 use group::GroupEncoding;
 use primitive_types::{H384, H512, H768, U256};
+use sha3::{self, Digest};
 
 pub fn h512_to_scalar(h512: H512) -> Scalar {
     let scalar = DuskScalar::from_bytes_wide(&h512.to_fixed_bytes());
@@ -58,18 +59,38 @@ pub fn parse_g2(s: &str) -> Result<G2Affine> {
         .context("invalid compressed G2 point")
 }
 
-pub fn poseidon_hash<const N: usize>(values: [Scalar; N]) -> Scalar {
+pub fn poseidon_hash(values: &[Scalar]) -> Scalar {
     let dusk_scalar = poseidon::Hash::digest(
         poseidon::Domain::Other,
-        &values.map(|value| {
-            DuskScalar::from_bytes(&value.to_bytes_le())
-                .into_option()
-                .unwrap()
-        }),
+        values
+            .iter()
+            .map(|value| {
+                DuskScalar::from_bytes(&value.to_bytes_le())
+                    .into_option()
+                    .unwrap()
+            })
+            .collect::<Vec<DuskScalar>>()
+            .as_slice(),
     )[0];
     Scalar::from_bytes_be(&dusk_scalar.to_be_bytes())
         .into_option()
         .unwrap()
+}
+
+/// Hashes a G1 point to the scalar field.
+///
+/// TODO: find a way to make this algorithm algebraic and zk-SNARK-friendly. We use it in several
+/// contexts where we may want to prove the algorithm in SNARK circuits, for example in Schnorr
+/// signatures or when calculating an account's address from its public key. Note that in most
+/// places where we use this we don't actually need a cryptographic hash, we just need to map a G1
+/// point to (a power of) the scalar field. We could probably do that by splitting the X coordinate
+/// in two and returning two scalars.
+pub fn hash_g1_to_scalar(point: G1Affine) -> Scalar {
+    let mut hasher = sha3::Sha3_512::new();
+    hasher.update(point.to_compressed());
+    let hash = hasher.finalize();
+    let bytes: [u8; 64] = std::array::from_fn(|i| hash[i]);
+    h512_to_scalar(H512::from_slice(&bytes))
 }
 
 #[cfg(test)]
@@ -124,7 +145,7 @@ mod tests {
     #[test]
     fn test_poseidon_hash() {
         assert_eq!(
-            poseidon_hash([parse_scalar(
+            poseidon_hash(&[parse_scalar(
                 "0x197cb2084240e63117ae20eafb7de2433eb9bd6b4fdc78d0d949f042724306fd"
             )
             .unwrap()]),

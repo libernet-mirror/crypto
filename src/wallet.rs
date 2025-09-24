@@ -6,7 +6,7 @@ use blstrs::{G1Affine, Scalar};
 use pbkdf2::pbkdf2_hmac_array;
 use primitive_types::{H512, U512};
 
-const MAX_PASSWORDS: usize = 15;
+pub const MAX_PASSWORDS: usize = 15;
 
 pub fn derive_key(password: &str, salt: H512, num_rounds: usize) -> Scalar {
     assert!(num_rounds <= u32::MAX as usize);
@@ -136,7 +136,8 @@ impl Wallet {
         let mut result = Err(anyhow!("invalid password"));
         for proof in &self.proofs {
             if proof.verify(self.commitment, key, 0.into()).is_ok() {
-                let secret_key = utils::poseidon_hash([self.seed, key, Scalar::from(index as u64)]);
+                let secret_key =
+                    utils::poseidon_hash(&[self.seed, key, Scalar::from(index as u64)]);
                 result = Ok(Account::new(secret_key));
             }
         }
@@ -182,7 +183,9 @@ mod tests {
         assert!(wallet.verify("password").is_ok());
         let address1 = wallet.derive_account("password", 0).unwrap().address();
         let address2 = wallet.derive_account("password", 1).unwrap().address();
+        let address3 = wallet.derive_account("password", 0).unwrap().address();
         assert_ne!(address1, address2);
+        assert_eq!(address1, address3);
     }
 
     #[test]

@@ -1,8 +1,7 @@
 use crate::utils;
-use blstrs::{G1Affine, G1Projective, Scalar};
-use group::Group;
-use primitive_types::H512;
-use sha3::{self, Digest};
+use anyhow::{Result, anyhow};
+use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
+use group::{Group, prime::PrimeCurveAffine};
 
 #[derive(Debug)]
 pub struct Account {
@@ -11,6 +10,8 @@ pub struct Account {
 }
 
 impl Account {
+    const SIGNATURE_DST: &'static [u8] = b"libernet/bls_signature";
+
     pub fn new(private_key: Scalar) -> Self {
         Self {
             private_key,
@@ -23,17 +24,68 @@ impl Account {
     }
 
     pub fn address(&self) -> Scalar {
-        // TODO: find a way to get this hash algebraically with Poseidon and remove SHA3. Some
-        // signatures will have to be verified in smartcontracts and possibly in zk-SNARKs, so the
-        // whole process of recovering the address from the public key must be zk-SNARK-friendly.
-        let mut hasher = sha3::Sha3_512::new();
-        hasher.update(self.public_key.to_compressed());
-        let hash = hasher.finalize();
-        let bytes: [u8; 64] = std::array::from_fn(|i| hash[i]);
-        utils::h512_to_scalar(H512::from_slice(&bytes))
+        utils::hash_g1_to_scalar(self.public_key)
     }
 
-    // TODO
+    pub fn bls_sign(&self, message: &[u8]) -> G2Affine {
+        let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
+        let gamma = hash * self.private_key;
+        gamma.into()
+    }
+
+    pub fn bls_verify(public_key: G1Affine, message: &[u8], signature: G2Affine) -> Result<()> {
+        let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
+        if pairing(&public_key, &hash.into()) != pairing(&G1Affine::generator(), &signature) {
+            return Err(anyhow!("invalid signature"));
+        }
+        Ok(())
+    }
+
+    pub fn bls_verify_own(&self, message: &[u8], signature: G2Affine) -> Result<()> {
+        Self::bls_verify(self.public_key, message, signature)
+    }
+
+    fn make_schnorr_challenge(nonce: G1Affine, public_key: G1Affine, message: &[Scalar]) -> Scalar {
+        let inputs: Vec<Scalar> = std::iter::once(utils::hash_g1_to_scalar(nonce))
+            .chain(std::iter::once(utils::hash_g1_to_scalar(public_key)))
+            .chain(message.iter().map(|scalar| *scalar))
+            .collect();
+        utils::poseidon_hash(inputs.as_slice())
+    }
+
+    fn make_own_schnorr_challenge(&self, nonce: G1Affine, message: &[Scalar]) -> Scalar {
+        Self::make_schnorr_challenge(nonce, self.public_key, message)
+    }
+
+    pub fn schnorr_sign(&self, message: &[Scalar]) -> (G1Affine, Scalar) {
+        let nonce = utils::get_random_scalar();
+        let nonce_point = G1Projective::generator() * nonce;
+        let challenge = self.make_own_schnorr_challenge(nonce_point.into(), message);
+        let signature = nonce + challenge * self.private_key;
+        (nonce_point.into(), signature)
+    }
+
+    pub fn schnorr_verify(
+        public_key: G1Affine,
+        message: &[Scalar],
+        nonce: G1Affine,
+        signature: Scalar,
+    ) -> Result<()> {
+        let challenge = Self::make_schnorr_challenge(nonce, public_key, message);
+        if G1Projective::generator() * signature != nonce + public_key * challenge {
+            return Err(anyhow!(""));
+        }
+        Ok(())
+    }
+
+    pub fn schnorr_verify_own(
+        &self,
+        message: &[Scalar],
+        nonce: G1Affine,
+        signature: Scalar,
+    ) -> Result<()> {
+        Self::schnorr_verify(self.public_key, message, nonce, signature)
+    }
 }
 
 #[cfg(test)]
@@ -56,5 +108,34 @@ mod tests {
         );
     }
 
-    // TODO
+    #[test]
+    fn test_bls_signature() {
+        let account = Account::new(utils::get_random_scalar());
+        let message = b"Hello, world!";
+        let signature = account.bls_sign(message);
+        assert!(Account::bls_verify(account.public_key(), message, signature).is_ok());
+        assert!(account.bls_verify_own(message, signature).is_ok());
+    }
+
+    #[test]
+    fn test_wrong_bls_signature() {
+        let account = Account::new(utils::get_random_scalar());
+        let signature = account.bls_sign(b"World, hello!");
+        let wrong_message = b"Hello, world!";
+        assert!(Account::bls_verify(account.public_key(), wrong_message, signature).is_err());
+        assert!(account.bls_verify_own(wrong_message, signature).is_err());
+    }
+
+    #[test]
+    fn test_schnorr_signature() {
+        let account = Account::new(utils::get_random_scalar());
+        let message = [12.into(), 34.into(), 56.into()];
+        let (nonce, signature) = account.schnorr_sign(&message);
+        assert!(Account::schnorr_verify(account.public_key(), &message, nonce, signature).is_ok());
+        assert!(
+            account
+                .schnorr_verify_own(&message, nonce, signature)
+                .is_ok()
+        );
+    }
 }
