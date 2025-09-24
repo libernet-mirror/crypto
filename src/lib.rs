@@ -8,6 +8,7 @@ pub mod account;
 pub mod kzg;
 pub mod utils;
 pub mod wallet;
+pub mod xits;
 
 pub const MAX_PASSWORDS: usize = wallet::MAX_PASSWORDS;
 
