@@ -1,4 +1,5 @@
-use dusk_bls12_381::{G1Affine, G2Affine};
+use blstrs::{G1Affine, G2Affine};
+use group::prime::PrimeCurveAffine;
 use primitive_types::{H384, H768};
 use std::sync::LazyLock;
 

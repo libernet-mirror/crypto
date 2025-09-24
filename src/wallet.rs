@@ -2,17 +2,20 @@ use crate::account::Account;
 use crate::kzg::{Polynomial, Proof};
 use crate::utils;
 use anyhow::{Result, anyhow};
-use dusk_bls12_381::{BlsScalar as Scalar, G1Affine};
+use blstrs::{G1Affine, Scalar};
 use pbkdf2::pbkdf2_hmac_array;
 use primitive_types::{H512, U512};
 
 const MAX_PASSWORDS: usize = 15;
 
-pub fn derive_key(password: &str, salt: &[u8; 64], num_rounds: usize) -> Scalar {
+pub fn derive_key(password: &str, salt: H512, num_rounds: usize) -> Scalar {
     assert!(num_rounds <= u32::MAX as usize);
-    let bytes =
-        pbkdf2_hmac_array::<sha3::Sha3_256, 64>(password.as_bytes(), salt, num_rounds as u32);
-    Scalar::from_bytes_wide(&bytes)
+    let bytes = pbkdf2_hmac_array::<sha3::Sha3_256, 64>(
+        password.as_bytes(),
+        &salt.to_fixed_bytes(),
+        num_rounds as u32,
+    );
+    utils::h512_to_scalar(H512::from_slice(&bytes))
 }
 
 #[derive(Debug)]
@@ -55,7 +58,7 @@ impl Wallet {
         let salt = Self::get_random_salt();
         let mut keys: Vec<Scalar> = passwords
             .iter()
-            .map(|password| derive_key(password.as_str(), salt.as_fixed_bytes(), num_kdf_rounds))
+            .map(|password| derive_key(password.as_str(), salt, num_kdf_rounds))
             .collect();
         keys.sort();
         for i in 1..keys.len() {
@@ -118,7 +121,7 @@ impl Wallet {
     }
 
     pub fn verify(&self, password: &str) -> Result<()> {
-        let key = derive_key(password, self.salt.as_fixed_bytes(), self.num_kdf_rounds);
+        let key = derive_key(password, self.salt, self.num_kdf_rounds);
         let mut result = Err(anyhow!("invalid password"));
         for proof in &self.proofs {
             if proof.verify(self.commitment, key, 0.into()).is_ok() {
@@ -129,7 +132,7 @@ impl Wallet {
     }
 
     pub fn derive_account(&self, password: &str, index: usize) -> Result<Account> {
-        let key = derive_key(password, self.salt.as_fixed_bytes(), self.num_kdf_rounds);
+        let key = derive_key(password, self.salt, self.num_kdf_rounds);
         let mut result = Err(anyhow!("invalid password"));
         for proof in &self.proofs {
             if proof.verify(self.commitment, key, 0.into()).is_ok() {
@@ -147,25 +150,25 @@ mod tests {
 
     const NUM_ROUNDS: usize = 3;
 
-    fn salt() -> [u8; 64] {
-        [
+    fn salt() -> H512 {
+        H512::from_slice(&[
             1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
             24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
             46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64,
-        ]
+        ])
     }
 
     #[test]
     fn test_derive_key() {
         assert_eq!(
-            derive_key("lorem ipsum dolor sit amet", &salt(), 100),
+            derive_key("lorem ipsum dolor sit amet", salt(), 100),
             utils::parse_scalar(
                 "0x6f99a269ec90a5dcfa00e22f581d8ce5d9b4765d834a79d0731673e7c8c4fe21"
             )
             .unwrap(),
         );
         assert_eq!(
-            derive_key("sator arepo tenet opera rotas", &salt(), NUM_ROUNDS),
+            derive_key("sator arepo tenet opera rotas", salt(), NUM_ROUNDS),
             utils::parse_scalar(
                 "0x5abe02821a47da6c855aad53c38cd61987064d075775b897d77f150b233a30ca"
             )

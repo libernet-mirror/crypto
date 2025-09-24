@@ -1,4 +1,7 @@
-use dusk_bls12_381::{BlsScalar as Scalar, G1Affine, G1Projective};
+use crate::utils;
+use blstrs::{G1Affine, G1Projective, Scalar};
+use group::Group;
+use primitive_types::H512;
 use sha3::{self, Digest};
 
 #[derive(Debug)]
@@ -27,7 +30,7 @@ impl Account {
         hasher.update(self.public_key.to_compressed());
         let hash = hasher.finalize();
         let bytes: [u8; 64] = std::array::from_fn(|i| hash[i]);
-        Scalar::from_bytes_wide(&bytes)
+        utils::h512_to_scalar(H512::from_slice(&bytes))
     }
 
     // TODO

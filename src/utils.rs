@@ -1,21 +1,29 @@
 use anyhow::{Context, Result};
-use dusk_bls12_381::{BlsScalar as Scalar, G1Affine, G2Affine};
+use blstrs::{G1Affine, G2Affine, Scalar};
+use dusk_bls12_381::BlsScalar as DuskScalar;
 use dusk_poseidon as poseidon;
 use group::GroupEncoding;
-use primitive_types::{H384, H768, U256};
+use primitive_types::{H384, H512, H768, U256};
+
+pub fn h512_to_scalar(h512: H512) -> Scalar {
+    let scalar = DuskScalar::from_bytes_wide(&h512.to_fixed_bytes());
+    Scalar::from_bytes_le(&scalar.to_bytes())
+        .into_option()
+        .unwrap()
+}
 
 pub fn get_random_scalar() -> Scalar {
     let mut bytes = [0u8; 64];
     getrandom::getrandom(&mut bytes).unwrap();
-    Scalar::from_bytes_wide(&bytes)
+    h512_to_scalar(H512::from_slice(&bytes))
 }
 
 pub fn scalar_to_u256(value: Scalar) -> U256 {
-    U256::from_little_endian(&value.to_bytes())
+    U256::from_little_endian(&value.to_bytes_le())
 }
 
 pub fn u256_to_scalar(value: U256) -> Result<Scalar> {
-    Scalar::from_bytes(&value.to_little_endian())
+    Scalar::from_bytes_le(&value.to_little_endian())
         .into_option()
         .context("invalid BLS scalar")
 }
@@ -51,7 +59,17 @@ pub fn parse_g2(s: &str) -> Result<G2Affine> {
 }
 
 pub fn poseidon_hash<const N: usize>(values: [Scalar; N]) -> Scalar {
-    poseidon::Hash::digest(poseidon::Domain::Other, &values)[0]
+    let dusk_scalar = poseidon::Hash::digest(
+        poseidon::Domain::Other,
+        &values.map(|value| {
+            DuskScalar::from_bytes(&value.to_bytes_le())
+                .into_option()
+                .unwrap()
+        }),
+    )[0];
+    Scalar::from_bytes_be(&dusk_scalar.to_be_bytes())
+        .into_option()
+        .unwrap()
 }
 
 #[cfg(test)]

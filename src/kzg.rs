@@ -1,10 +1,10 @@
 use crate::params;
 use crate::utils;
 use anyhow::{Result, anyhow};
-use dusk_bls12_381::{
-    BlsScalar as Scalar, G1Affine, G1Projective, G2Affine, G2Projective, pairing,
-};
-use std::ops::{Add, Mul};
+use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
+use ff::Field;
+use group::{Group, prime::PrimeCurveAffine};
+use std::ops::{Add, AddAssign, Mul, MulAssign};
 
 fn dot<L, R, O>(u: &[L], v: &[R]) -> O
 where
@@ -40,7 +40,7 @@ impl Polynomial {
             }
         }
         let n = roots.len() + 1;
-        let mut coefficients = vec![Scalar::zero(); n];
+        let mut coefficients = vec![Scalar::ZERO; n];
         coefficients[0] = utils::get_random_scalar();
         for i in 1..n {
             for j in (0..i).rev() {
@@ -70,7 +70,7 @@ impl Polynomial {
     pub fn horner(&self, z: Scalar) -> (Polynomial, Scalar) {
         assert!(self.len() > 1);
         let n = self.len() - 1;
-        let mut coefficients = vec![Scalar::zero(); n];
+        let mut coefficients = vec![Scalar::ZERO; n];
         coefficients[n - 1] = self.coefficients[n];
         for i in (1..n).rev() {
             coefficients[i - 1] = self.coefficients[i] + z * coefficients[i];
@@ -82,7 +82,7 @@ impl Polynomial {
     #[cfg(test)]
     fn evaluate(&self, x: Scalar) -> Scalar {
         let mut v = Scalar::from(1);
-        let mut y = Scalar::zero();
+        let mut y = Scalar::ZERO;
         for coefficient in &self.coefficients {
             y += coefficient * v;
             v *= x;
@@ -105,6 +105,21 @@ impl Add<Polynomial> for Polynomial {
     }
 }
 
+impl AddAssign<Polynomial> for Polynomial {
+    fn add_assign(&mut self, mut rhs: Polynomial) {
+        if rhs.len() > self.len() {
+            for i in 0..self.len() {
+                rhs.coefficients[i] += self.coefficients[i];
+            }
+            self.coefficients = rhs.coefficients;
+        } else {
+            for i in 0..rhs.len() {
+                self.coefficients[i] += rhs.coefficients[i];
+            }
+        }
+    }
+}
+
 impl Mul<Scalar> for Polynomial {
     type Output = Polynomial;
 
@@ -113,6 +128,14 @@ impl Mul<Scalar> for Polynomial {
             self.coefficients[i] *= rhs;
         }
         self
+    }
+}
+
+impl MulAssign<Scalar> for Polynomial {
+    fn mul_assign(&mut self, rhs: Scalar) {
+        for i in 0..self.len() {
+            self.coefficients[i] *= rhs;
+        }
     }
 }
 
@@ -347,17 +370,37 @@ mod tests {
     }
 
     #[test]
-    fn test_add_commitments() {
+    fn test_add_commitments1() {
         let p1 = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
         let p2 = Polynomial::from_roots(&[78.into(), 90.into()]).unwrap();
         assert_eq!(p1.commitment() + p2.commitment(), (p1 + p2).commitment());
     }
 
     #[test]
-    fn test_multiply_commitment() {
+    fn test_add_commitments2() {
+        let p1 = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
+        let c1 = p1.commitment();
+        let p2 = Polynomial::from_roots(&[78.into(), 90.into()]).unwrap();
+        let c2 = p2.commitment();
+        let mut p3 = p1;
+        p3 += p2;
+        assert_eq!(c1 + c2, p3.commitment());
+    }
+
+    #[test]
+    fn test_multiply_commitment1() {
         let p = Polynomial::from_roots(&[12.into(), 34.into()]).unwrap();
         let a = Scalar::from(56);
         assert_eq!(p.commitment() * a, (p * a).commitment());
+    }
+
+    #[test]
+    fn test_multiply_commitment2() {
+        let mut p = Polynomial::from_roots(&[12.into(), 34.into()]).unwrap();
+        let c = p.commitment();
+        let a = Scalar::from(56);
+        p *= a;
+        assert_eq!(c * a, p.commitment());
     }
 
     #[test]

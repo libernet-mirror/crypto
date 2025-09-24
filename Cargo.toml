@@ -9,8 +9,10 @@ crate-type = ["rlib", "cdylib"]
 [dependencies]
 anyhow = "1.0.100"
 bincode = { version = "2.0.1", features = ["serde"] }
+blstrs = "0.7.1"
 dusk-bls12_381 = "0.14.2"
 dusk-poseidon = "0.41.0"
+ff = "0.13.1"
 getrandom = { version = "0.2.16", features = ["js"] }
 group = "0.13.0"
 pbkdf2 = "0.12.2"
