@@ -8,6 +8,7 @@ crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 anyhow = "1.0.100"
+base64 = "0.22.1"
 bincode = { version = "2.0.1", features = ["serde"] }
 blstrs = "0.7.1"
 dusk-bls12_381 = "0.14.2"

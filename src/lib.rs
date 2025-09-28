@@ -64,8 +64,8 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn schnorr_sign(&self, message: Vec<String>) -> Result<Vec<String>, JsValue> {
-        let (nonce, signature) = self.inner.schnorr_sign(
+    pub fn poseidon_schnorr_sign(&self, message: Vec<String>) -> Result<Vec<String>, JsValue> {
+        let (nonce, signature) = self.inner.poseidon_schnorr_sign(
             message
                 .iter()
                 .map(|s| utils::parse_scalar(s.as_str()).map_err(map_err))
@@ -79,13 +79,13 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn schnorr_verify(
+    pub fn poseidon_schnorr_verify(
         public_key: &str,
         message: Vec<String>,
         nonce: &str,
         signature: &str,
     ) -> Result<(), JsValue> {
-        account::Account::schnorr_verify(
+        account::Account::poseidon_schnorr_verify(
             utils::parse_g1(public_key).map_err(map_err)?,
             message
                 .iter()
@@ -99,19 +99,60 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn schnorr_verify_own(
+    pub fn poseidon_schnorr_verify_own(
         &self,
         message: Vec<String>,
         nonce: &str,
         signature: &str,
     ) -> Result<(), JsValue> {
         self.inner
-            .schnorr_verify_own(
+            .poseidon_schnorr_verify_own(
                 message
                     .iter()
                     .map(|s| utils::parse_scalar(s).map_err(map_err))
                     .collect::<Result<Vec<Scalar>, JsValue>>()?
                     .as_slice(),
+                utils::parse_g1(nonce).map_err(map_err)?,
+                utils::parse_scalar(signature).map_err(map_err)?,
+            )
+            .map_err(map_err)
+    }
+
+    #[wasm_bindgen]
+    pub fn sha3_schnorr_sign(&self, message: &[u8]) -> Result<Vec<String>, JsValue> {
+        let (nonce, signature) = self.inner.sha3_schnorr_sign(message);
+        Ok(vec![
+            utils::format_g1(nonce),
+            utils::format_scalar(signature),
+        ])
+    }
+
+    #[wasm_bindgen]
+    pub fn sha3_schnorr_verify(
+        public_key: &str,
+        message: &[u8],
+        nonce: &str,
+        signature: &str,
+    ) -> Result<(), JsValue> {
+        account::Account::sha3_schnorr_verify(
+            utils::parse_g1(public_key).map_err(map_err)?,
+            message,
+            utils::parse_g1(nonce).map_err(map_err)?,
+            utils::parse_scalar(signature).map_err(map_err)?,
+        )
+        .map_err(map_err)
+    }
+
+    #[wasm_bindgen]
+    pub fn sha3_schnorr_verify_own(
+        &self,
+        message: &[u8],
+        nonce: &str,
+        signature: &str,
+    ) -> Result<(), JsValue> {
+        self.inner
+            .sha3_schnorr_verify_own(
+                message,
                 utils::parse_g1(nonce).map_err(map_err)?,
                 utils::parse_scalar(signature).map_err(map_err)?,
             )
@@ -236,15 +277,15 @@ mod tests {
     }
 
     #[test]
-    fn test_schnorr_signature() {
+    fn test_poseidon_schnorr_signature() {
         let account = test_account();
         let inputs = [12.into(), 34.into(), 56.into()]
             .map(|x: Scalar| utils::format_scalar(x))
             .to_vec();
-        let signature = account.schnorr_sign(inputs.clone()).unwrap();
+        let signature = account.poseidon_schnorr_sign(inputs.clone()).unwrap();
         assert_eq!(signature.len(), 2);
         assert!(
-            Account::schnorr_verify(
+            Account::poseidon_schnorr_verify(
                 account.public_key().as_str(),
                 inputs.clone(),
                 signature[0].as_str(),
@@ -254,7 +295,33 @@ mod tests {
         );
         assert!(
             account
-                .schnorr_verify_own(inputs, signature[0].as_str(), signature[1].as_str())
+                .poseidon_schnorr_verify_own(inputs, signature[0].as_str(), signature[1].as_str())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_sha3_schnorr_signature() {
+        let account = test_account();
+        let message = b"sator arepo tenet opera rotas".to_vec();
+        let signature = account.sha3_schnorr_sign(message.as_slice()).unwrap();
+        assert_eq!(signature.len(), 2);
+        assert!(
+            Account::sha3_schnorr_verify(
+                account.public_key().as_str(),
+                message.as_slice(),
+                signature[0].as_str(),
+                signature[1].as_str()
+            )
+            .is_ok()
+        );
+        assert!(
+            account
+                .sha3_schnorr_verify_own(
+                    message.as_slice(),
+                    signature[0].as_str(),
+                    signature[1].as_str()
+                )
                 .is_ok()
         );
     }

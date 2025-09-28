@@ -37,26 +37,40 @@ pub fn parse_scalar(s: &str) -> Result<Scalar> {
     u256_to_scalar(s.parse()?)
 }
 
-pub fn format_g1(point: G1Affine) -> String {
-    format!("{:#x}", H384::from_slice(point.to_bytes().as_ref()))
+pub fn compress_g1(point: G1Affine) -> H384 {
+    H384::from_slice(point.to_bytes().as_ref())
 }
 
-pub fn parse_g1(s: &str) -> Result<G1Affine> {
-    let hex: H384 = s.parse()?;
+pub fn decompress_g1(hex: H384) -> Result<G1Affine> {
     G1Affine::from_compressed(hex.as_fixed_bytes())
         .into_option()
         .context("invalid compressed G1 point")
 }
 
-pub fn format_g2(point: G2Affine) -> String {
-    format!("{:#x}", H768::from_slice(point.to_bytes().as_ref()))
+pub fn format_g1(point: G1Affine) -> String {
+    format!("{:#x}", compress_g1(point))
 }
 
-pub fn parse_g2(s: &str) -> Result<G2Affine> {
-    let hex: H768 = s.parse()?;
+pub fn parse_g1(s: &str) -> Result<G1Affine> {
+    decompress_g1(s.parse()?)
+}
+
+pub fn compress_g2(point: G2Affine) -> H768 {
+    H768::from_slice(point.to_bytes().as_ref())
+}
+
+pub fn decompress_g2(hex: H768) -> Result<G2Affine> {
     G2Affine::from_compressed(hex.as_fixed_bytes())
         .into_option()
         .context("invalid compressed G2 point")
+}
+
+pub fn format_g2(point: G2Affine) -> String {
+    format!("{:#x}", compress_g2(point))
+}
+
+pub fn parse_g2(s: &str) -> Result<G2Affine> {
+    decompress_g2(s.parse()?)
 }
 
 pub fn poseidon_hash(values: &[Scalar]) -> Scalar {

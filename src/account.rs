@@ -1,7 +1,10 @@
 use crate::utils;
 use anyhow::{Result, anyhow};
+use base64::prelude::*;
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
 use group::{Group, prime::PrimeCurveAffine};
+use primitive_types::H512;
+use sha3::{self, Digest};
 
 #[derive(Debug)]
 pub struct Account {
@@ -45,7 +48,11 @@ impl Account {
         Self::bls_verify(self.public_key, message, signature)
     }
 
-    fn make_schnorr_challenge(nonce: G1Affine, public_key: G1Affine, message: &[Scalar]) -> Scalar {
+    fn make_poseidon_schnorr_challenge(
+        nonce: G1Affine,
+        public_key: G1Affine,
+        message: &[Scalar],
+    ) -> Scalar {
         let inputs: Vec<Scalar> = std::iter::once(utils::hash_g1_to_scalar(nonce))
             .chain(std::iter::once(utils::hash_g1_to_scalar(public_key)))
             .chain(message.iter().map(|scalar| *scalar))
@@ -53,38 +60,92 @@ impl Account {
         utils::poseidon_hash(inputs.as_slice())
     }
 
-    fn make_own_schnorr_challenge(&self, nonce: G1Affine, message: &[Scalar]) -> Scalar {
-        Self::make_schnorr_challenge(nonce, self.public_key, message)
+    fn make_own_poseidon_schnorr_challenge(&self, nonce: G1Affine, message: &[Scalar]) -> Scalar {
+        Self::make_poseidon_schnorr_challenge(nonce, self.public_key, message)
     }
 
-    pub fn schnorr_sign(&self, message: &[Scalar]) -> (G1Affine, Scalar) {
+    pub fn poseidon_schnorr_sign(&self, message: &[Scalar]) -> (G1Affine, Scalar) {
         let nonce = utils::get_random_scalar();
         let nonce_point = G1Projective::generator() * nonce;
-        let challenge = self.make_own_schnorr_challenge(nonce_point.into(), message);
+        let challenge = self.make_own_poseidon_schnorr_challenge(nonce_point.into(), message);
         let signature = nonce + challenge * self.private_key;
         (nonce_point.into(), signature)
     }
 
-    pub fn schnorr_verify(
+    pub fn poseidon_schnorr_verify(
         public_key: G1Affine,
         message: &[Scalar],
         nonce: G1Affine,
         signature: Scalar,
     ) -> Result<()> {
-        let challenge = Self::make_schnorr_challenge(nonce, public_key, message);
+        let challenge = Self::make_poseidon_schnorr_challenge(nonce, public_key, message);
         if G1Projective::generator() * signature != nonce + public_key * challenge {
-            return Err(anyhow!(""));
+            return Err(anyhow!("invalid signature"));
         }
         Ok(())
     }
 
-    pub fn schnorr_verify_own(
+    pub fn poseidon_schnorr_verify_own(
         &self,
         message: &[Scalar],
         nonce: G1Affine,
         signature: Scalar,
     ) -> Result<()> {
-        Self::schnorr_verify(self.public_key, message, nonce, signature)
+        Self::poseidon_schnorr_verify(self.public_key, message, nonce, signature)
+    }
+
+    fn make_sha3_schnorr_challenge(
+        nonce: G1Affine,
+        public_key: G1Affine,
+        message: &[u8],
+    ) -> Scalar {
+        static DST: &'static str = "libernet/sha3_schnorr_signature/v1";
+        let mut hasher = sha3::Sha3_512::new();
+        hasher.update(
+            format!(
+                "{{dst=\"{}\",nonce={:#x},public_key={:#x},message=\"{}\"}}",
+                DST,
+                utils::compress_g1(nonce),
+                utils::compress_g1(public_key),
+                BASE64_STANDARD.encode(message)
+            )
+            .as_str(),
+        );
+        utils::h512_to_scalar(H512::from_slice(&hasher.finalize()))
+    }
+
+    fn make_own_sha3_schnorr_challenge(&self, nonce: G1Affine, message: &[u8]) -> Scalar {
+        Self::make_sha3_schnorr_challenge(nonce, self.public_key, message)
+    }
+
+    pub fn sha3_schnorr_sign(&self, message: &[u8]) -> (G1Affine, Scalar) {
+        let nonce = utils::get_random_scalar();
+        let nonce_point = G1Projective::generator() * nonce;
+        let challenge = self.make_own_sha3_schnorr_challenge(nonce_point.into(), message);
+        let signature = nonce + challenge * self.private_key;
+        (nonce_point.into(), signature)
+    }
+
+    pub fn sha3_schnorr_verify(
+        public_key: G1Affine,
+        message: &[u8],
+        nonce: G1Affine,
+        signature: Scalar,
+    ) -> Result<()> {
+        let challenge = Self::make_sha3_schnorr_challenge(nonce, public_key, message);
+        if G1Projective::generator() * signature != nonce + public_key * challenge {
+            return Err(anyhow!("invalid signature"));
+        }
+        Ok(())
+    }
+
+    pub fn sha3_schnorr_verify_own(
+        &self,
+        message: &[u8],
+        nonce: G1Affine,
+        signature: Scalar,
+    ) -> Result<()> {
+        Self::sha3_schnorr_verify(self.public_key, message, nonce, signature)
     }
 }
 
@@ -127,15 +188,64 @@ mod tests {
     }
 
     #[test]
-    fn test_schnorr_signature() {
+    fn test_poseidon_schnorr_signature() {
         let account = Account::new(utils::get_random_scalar());
         let message = [12.into(), 34.into(), 56.into()];
-        let (nonce, signature) = account.schnorr_sign(&message);
-        assert!(Account::schnorr_verify(account.public_key(), &message, nonce, signature).is_ok());
+        let (nonce, signature) = account.poseidon_schnorr_sign(&message);
+        assert!(
+            Account::poseidon_schnorr_verify(account.public_key(), &message, nonce, signature)
+                .is_ok()
+        );
         assert!(
             account
-                .schnorr_verify_own(&message, nonce, signature)
+                .poseidon_schnorr_verify_own(&message, nonce, signature)
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_wrong_poseidon_schnorr_signature() {
+        let account = Account::new(utils::get_random_scalar());
+        let (nonce, signature) = account.poseidon_schnorr_sign(&[12.into(), 34.into(), 56.into()]);
+        let message = [56.into(), 78.into()];
+        assert!(
+            Account::poseidon_schnorr_verify(account.public_key(), &message, nonce, signature)
+                .is_err()
+        );
+        assert!(
+            account
+                .poseidon_schnorr_verify_own(&message, nonce, signature)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_sha3_schnorr_signature() {
+        let account = Account::new(utils::get_random_scalar());
+        let message = b"Hello, world!";
+        let (nonce, signature) = account.sha3_schnorr_sign(message);
+        assert!(
+            Account::sha3_schnorr_verify(account.public_key(), message, nonce, signature).is_ok()
+        );
+        assert!(
+            account
+                .sha3_schnorr_verify_own(message, nonce, signature)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_wrong_sha3_schnorr_signature() {
+        let account = Account::new(utils::get_random_scalar());
+        let (nonce, signature) = account.sha3_schnorr_sign(b"Hello, world!");
+        let message = b"World, hello!";
+        assert!(
+            Account::sha3_schnorr_verify(account.public_key(), message, nonce, signature).is_err()
+        );
+        assert!(
+            account
+                .sha3_schnorr_verify_own(message, nonce, signature)
+                .is_err()
         );
     }
 }
