@@ -77,6 +77,13 @@ pub fn poseidon_hash(values: &[Scalar]) -> Scalar {
         .unwrap()
 }
 
+/// Makes a type hashable with Poseidon (using `P128Pow5T3`).
+///
+/// Implementors can use the `poseidon_hash` function above.
+pub trait PoseidonHash {
+    fn poseidon_hash(&self) -> Scalar;
+}
+
 /// Hashes a G1 point to the scalar field.
 ///
 /// TODO: find a way to make this algorithm algebraic and zk-SNARK-friendly. We use it in several
