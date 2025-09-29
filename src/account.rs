@@ -99,12 +99,10 @@ impl Account {
         public_key: G1Affine,
         message: &[u8],
     ) -> Scalar {
-        static DST: &'static str = "libernet/sha3_schnorr_signature/v1";
         let mut hasher = sha3::Sha3_512::new();
         hasher.update(
             format!(
-                "{{dst=\"{}\",nonce={:#x},public_key={:#x},message=\"{}\"}}",
-                DST,
+                "{{nonce={:#x},public_key={:#x},message=\"{}\"}}",
                 utils::compress_g1(nonce),
                 utils::compress_g1(public_key),
                 BASE64_STANDARD.encode(message)
@@ -118,6 +116,17 @@ impl Account {
         Self::make_sha3_schnorr_challenge(nonce, self.public_key, message)
     }
 
+    /// Signs an arbitrary message with the Schnorr scheme using the SHA3-512 hash.
+    ///
+    /// NOTE: it's up to the caller to embed an appropriate domain separator tag in the message in
+    /// order to prevent replaying the signature across contexts.
+    ///
+    /// NOTE: even though the Schnorr scheme includes a random nonce and our implementation does
+    /// generate a different one securely at every call, the caller should always embed its own
+    /// nonce or timestamp in the message to prevent replay attacks. Our implementation of the
+    /// verification algorithm does NOT check that the provided nonce hasn't been used before. The
+    /// only purpose of our nonce is to prevent full private key recovery, as per the Schnorr
+    /// scheme.
     pub fn sha3_schnorr_sign(&self, message: &[u8]) -> (G1Affine, Scalar) {
         let nonce = utils::get_random_scalar();
         let nonce_point = G1Projective::generator() * nonce;
