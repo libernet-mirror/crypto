@@ -13,6 +13,12 @@ pub fn h512_to_scalar(h512: H512) -> Scalar {
         .unwrap()
 }
 
+pub fn hash_to_scalar(message: &[u8]) -> Scalar {
+    let mut hasher = sha3::Sha3_512::new();
+    hasher.update(message);
+    h512_to_scalar(H512::from_slice(hasher.finalize().as_slice()))
+}
+
 pub fn get_random_scalar() -> Scalar {
     let mut bytes = [0u8; 64];
     getrandom::getrandom(&mut bytes).unwrap();
