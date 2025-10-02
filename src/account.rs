@@ -131,6 +131,16 @@ mod tests {
     }
 
     #[test]
+    fn test_verify_bls_signature_with_wrong_key() {
+        let account1 = Account::new(utils::get_random_scalar());
+        let account2 = Account::new(utils::get_random_scalar());
+        assert_ne!(account1.public_key(), account2.public_key());
+        let message = b"Hello, world!";
+        let signature = account1.bls_sign(message);
+        assert!(Account::bls_verify(account2.public_key(), message, signature).is_err());
+    }
+
+    #[test]
     fn test_poseidon_schnorr_signature() {
         let account = Account::new(utils::get_random_scalar());
         let message = [12.into(), 34.into(), 56.into()];
@@ -157,6 +167,24 @@ mod tests {
         );
         assert!(
             account
+                .poseidon_schnorr_verify_own(&message, nonce, signature)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_verify_poseidon_schnorr_signature_with_wrong_key() {
+        let account1 = Account::new(utils::get_random_scalar());
+        let account2 = Account::new(utils::get_random_scalar());
+        assert_ne!(account1.public_key(), account2.public_key());
+        let message = [12.into(), 34.into(), 56.into()];
+        let (nonce, signature) = account1.poseidon_schnorr_sign(&message);
+        assert!(
+            Account::poseidon_schnorr_verify(account2.public_key(), &message, nonce, signature)
+                .is_err()
+        );
+        assert!(
+            account2
                 .poseidon_schnorr_verify_own(&message, nonce, signature)
                 .is_err()
         );
