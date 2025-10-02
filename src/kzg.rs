@@ -150,10 +150,10 @@ impl MulAssign<Scalar> for Polynomial {
 pub struct Proof(G1Affine);
 
 impl Proof {
-    /// Proves the evaluation of `p` in `z`.
-    pub fn new(p: &Polynomial, z: Scalar) -> Self {
-        let (q, _) = p.horner(z);
-        Self(q.commitment().into())
+    /// Proves the evaluation of `p` in `z`, returning the value `v = p(z)` and the KZG proof.
+    pub fn new(p: &Polynomial, z: Scalar) -> (Self, Scalar) {
+        let (q, v) = p.horner(z);
+        (Self(q.commitment().into()), v)
     }
 
     /// Constructs a proof from a previously serialized `y`.
@@ -407,7 +407,8 @@ mod tests {
     fn test_proof1() {
         let polynomial = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
         let c = polynomial.commitment().into();
-        let proof = Proof::new(&polynomial, 12.into());
+        let (proof, v) = Proof::new(&polynomial, 12.into());
+        assert_eq!(v, 0.into());
         assert!(proof.verify(c, 12.into(), 0.into()).is_ok());
         assert!(proof.verify(c, 34.into(), 0.into()).is_err());
         assert!(proof.verify(c, 0.into(), 12.into()).is_err());
@@ -422,7 +423,8 @@ mod tests {
     fn test_proof2() {
         let polynomial = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
         let c = polynomial.commitment().into();
-        let proof = Proof::new(&polynomial, 34.into());
+        let (proof, v) = Proof::new(&polynomial, 34.into());
+        assert_eq!(v, 0.into());
         assert!(proof.verify(c, 12.into(), 0.into()).is_err());
         assert!(proof.verify(c, 34.into(), 0.into()).is_ok());
         assert!(proof.verify(c, 0.into(), 34.into()).is_err());
@@ -437,7 +439,8 @@ mod tests {
     fn test_proof3() {
         let polynomial = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
         let c = polynomial.commitment().into();
-        let proof = Proof::new(&polynomial, 78.into());
+        let (proof, v) = Proof::new(&polynomial, 78.into());
+        assert_ne!(v, 0.into());
         assert!(proof.verify(c, 12.into(), 0.into()).is_err());
         assert!(proof.verify(c, 34.into(), 0.into()).is_err());
         assert!(proof.verify(c, 78.into(), 0.into()).is_err());

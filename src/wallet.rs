@@ -72,7 +72,10 @@ impl Wallet {
         let polynomial = Polynomial::from_roots(keys.as_slice())?;
         let mut proofs = keys
             .iter()
-            .map(|key| Proof::new(&polynomial, *key))
+            .map(|key| {
+                let (proof, _) = Proof::new(&polynomial, *key);
+                proof
+            })
             .collect();
         Self::shuffle_proofs(&mut proofs);
         Ok(Self {
