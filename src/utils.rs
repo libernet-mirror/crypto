@@ -92,7 +92,7 @@ pub fn poseidon_hash(values: &[Scalar]) -> Scalar {
             .collect::<Vec<DuskScalar>>()
             .as_slice(),
     )[0];
-    Scalar::from_bytes_be(&dusk_scalar.to_be_bytes())
+    Scalar::from_bytes_le(&dusk_scalar.to_bytes())
         .into_option()
         .unwrap()
 }
