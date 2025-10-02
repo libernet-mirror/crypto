@@ -5,6 +5,7 @@ use anyhow::{Result, anyhow};
 use blstrs::{G1Affine, Scalar};
 use pbkdf2::pbkdf2_hmac_array;
 use primitive_types::{H512, U512};
+use sha3::{self, Digest};
 
 pub const MAX_PASSWORDS: usize = 15;
 
@@ -139,8 +140,11 @@ impl Wallet {
         let mut result = Err(anyhow!("invalid password"));
         for proof in &self.proofs {
             if proof.verify(self.commitment, key, 0.into()).is_ok() {
-                let secret_key =
-                    utils::poseidon_hash(&[self.seed, key, Scalar::from(index as u64)]);
+                let mut hasher = sha3::Sha3_512::new();
+                hasher.update(self.seed.to_bytes_le());
+                hasher.update(key.to_bytes_le());
+                hasher.update((index as u64).to_le_bytes());
+                let secret_key = H512::from_slice(&hasher.finalize());
                 result = Ok(Account::new(secret_key));
             }
         }

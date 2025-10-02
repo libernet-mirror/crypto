@@ -1,10 +1,19 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use blstrs::{G1Affine, G2Affine, Scalar};
+use curve25519_dalek::{
+    Scalar as Scalar25519, edwards::CompressedEdwardsY, edwards::EdwardsPoint as Point25519,
+};
 use dusk_bls12_381::BlsScalar as DuskScalar;
 use dusk_poseidon as poseidon;
 use group::GroupEncoding;
-use primitive_types::{H384, H512, H768, U256};
+use primitive_types::{H256, H384, H512, H768, U256};
 use sha3::{self, Digest};
+
+pub fn get_random_bytes() -> H512 {
+    let mut bytes = [0u8; 64];
+    getrandom::getrandom(&mut bytes).unwrap();
+    H512::from_slice(&bytes)
+}
 
 pub fn h512_to_scalar(h512: H512) -> Scalar {
     let scalar = DuskScalar::from_bytes_wide(&h512.to_fixed_bytes());
@@ -20,9 +29,7 @@ pub fn hash_to_scalar(message: &[u8]) -> Scalar {
 }
 
 pub fn get_random_scalar() -> Scalar {
-    let mut bytes = [0u8; 64];
-    getrandom::getrandom(&mut bytes).unwrap();
-    h512_to_scalar(H512::from_slice(&bytes))
+    h512_to_scalar(get_random_bytes())
 }
 
 pub fn scalar_to_u256(value: Scalar) -> U256 {
@@ -35,12 +42,30 @@ pub fn u256_to_scalar(value: U256) -> Result<Scalar> {
         .context("invalid BLS scalar")
 }
 
+pub fn c25519_to_u256(value: Scalar25519) -> U256 {
+    U256::from_little_endian(&value.to_bytes())
+}
+
+pub fn u256_to_c25519(value: U256) -> Result<Scalar25519> {
+    Scalar25519::from_canonical_bytes(value.to_little_endian())
+        .into_option()
+        .context("invalid Curve25519 scalar")
+}
+
 pub fn format_scalar(value: Scalar) -> String {
     format!("{:#x}", scalar_to_u256(value))
 }
 
 pub fn parse_scalar(s: &str) -> Result<Scalar> {
     u256_to_scalar(s.parse()?)
+}
+
+pub fn format_scalar_25519(value: Scalar25519) -> String {
+    format!("{:#x}", c25519_to_u256(value))
+}
+
+pub fn parse_scalar_25519(s: &str) -> Result<Scalar25519> {
+    u256_to_c25519(s.parse()?)
 }
 
 pub fn compress_g1(point: G1Affine) -> H384 {
@@ -77,6 +102,28 @@ pub fn format_g2(point: G2Affine) -> String {
 
 pub fn parse_g2(s: &str) -> Result<G2Affine> {
     decompress_g2(s.parse()?)
+}
+
+pub fn compress_point_25519(point: Point25519) -> H256 {
+    H256::from_slice(point.compress().as_bytes())
+}
+
+pub fn decompress_point_25519(hex: H256) -> Result<Point25519> {
+    let point = CompressedEdwardsY::from_slice(&hex.to_fixed_bytes())?
+        .decompress()
+        .context("invalid Curve25519 point")?;
+    if point.is_small_order() {
+        return Err(anyhow!("invalid Ristretto point"));
+    }
+    Ok(point)
+}
+
+pub fn format_point_25519(point: Point25519) -> String {
+    format!("{:#x}", compress_point_25519(point))
+}
+
+pub fn parse_point_25519(s: &str) -> Result<Point25519> {
+    decompress_point_25519(s.parse()?)
 }
 
 pub fn poseidon_hash(values: &[Scalar]) -> Scalar {
@@ -123,6 +170,13 @@ pub fn hash_g1_to_scalar(point: G1Affine) -> Scalar {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_random_bytes() {
+        assert_ne!(get_random_bytes(), get_random_bytes());
+        assert_ne!(get_random_bytes(), get_random_bytes());
+        assert_ne!(get_random_bytes(), get_random_bytes());
+    }
 
     #[test]
     fn test_random_scalar() {

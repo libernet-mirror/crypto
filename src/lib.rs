@@ -25,15 +25,24 @@ pub struct Account {
 #[wasm_bindgen]
 impl Account {
     #[wasm_bindgen]
-    pub fn import(private_key: &str) -> Result<Self, JsValue> {
+    pub fn import(secret_key: &str) -> Result<Self, JsValue> {
         Ok(Self {
-            inner: account::Account::new(utils::parse_scalar(private_key).map_err(map_err)?),
+            inner: account::Account::new(
+                secret_key
+                    .parse()
+                    .map_err(|_| JsValue::from_str("invalid secret key"))?,
+            ),
         })
     }
 
     #[wasm_bindgen]
     pub fn public_key(&self) -> String {
         utils::format_g1(self.inner.public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn ed25519_public_key(&self) -> String {
+        utils::format_point_25519(self.inner.ed25519_public_key())
     }
 
     #[wasm_bindgen]
@@ -207,7 +216,7 @@ mod tests {
     use super::*;
 
     fn test_account() -> Account {
-        Account::import("0x36e537f63ac1d0227863fed61d1dcc9519e3f29111d6cf3c5586b4e96135a436")
+        Account::import("0x7c3a55192992a3ec1936d436f0b69efb8b4506c7e0ab55679d04534b5fc30ae86edd53d2626d396586e8abd0f932c9bfd95d83c682f178faa41a2baf7e19492b")
             .unwrap()
     }
 
@@ -216,11 +225,15 @@ mod tests {
         let account = test_account();
         assert_eq!(
             account.public_key(),
-            "0x92b5f3d281e6db063bf242b69f4cb70c4bcce37a8e328330fd51c60a8de23f9558cc78192021f0224771f426826b7a04",
+            "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
+        );
+        assert_eq!(
+            account.ed25519_public_key(),
+            "0xfe5bbf1520e0c5185425dbff7aabe4c3bb1c86efd76c16678e3694c51894578f",
         );
         assert_eq!(
             account.address(),
-            "0x219b3cdb20de19fd4c4f5934bde94e58ff79518e61871be22027510999d3514f",
+            "0x6563a40ba6be6653ec41760b41f9acaba89989fa1fa1e90dc57d41fb811b7a45",
         );
     }
 
