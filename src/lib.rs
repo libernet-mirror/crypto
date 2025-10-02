@@ -117,47 +117,6 @@ impl Account {
             )
             .map_err(map_err)
     }
-
-    #[wasm_bindgen]
-    pub fn sha3_schnorr_sign(&self, message: &[u8]) -> Result<Vec<String>, JsValue> {
-        let (nonce, signature) = self.inner.sha3_schnorr_sign(message);
-        Ok(vec![
-            utils::format_g1(nonce),
-            utils::format_scalar(signature),
-        ])
-    }
-
-    #[wasm_bindgen]
-    pub fn sha3_schnorr_verify(
-        public_key: &str,
-        message: &[u8],
-        nonce: &str,
-        signature: &str,
-    ) -> Result<(), JsValue> {
-        account::Account::sha3_schnorr_verify(
-            utils::parse_g1(public_key).map_err(map_err)?,
-            message,
-            utils::parse_g1(nonce).map_err(map_err)?,
-            utils::parse_scalar(signature).map_err(map_err)?,
-        )
-        .map_err(map_err)
-    }
-
-    #[wasm_bindgen]
-    pub fn sha3_schnorr_verify_own(
-        &self,
-        message: &[u8],
-        nonce: &str,
-        signature: &str,
-    ) -> Result<(), JsValue> {
-        self.inner
-            .sha3_schnorr_verify_own(
-                message,
-                utils::parse_g1(nonce).map_err(map_err)?,
-                utils::parse_scalar(signature).map_err(map_err)?,
-            )
-            .map_err(map_err)
-    }
 }
 
 /// JavaScript bindings for the `Wallet` class.
@@ -296,32 +255,6 @@ mod tests {
         assert!(
             account
                 .poseidon_schnorr_verify_own(inputs, signature[0].as_str(), signature[1].as_str())
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn test_sha3_schnorr_signature() {
-        let account = test_account();
-        let message = b"sator arepo tenet opera rotas".to_vec();
-        let signature = account.sha3_schnorr_sign(message.as_slice()).unwrap();
-        assert_eq!(signature.len(), 2);
-        assert!(
-            Account::sha3_schnorr_verify(
-                account.public_key().as_str(),
-                message.as_slice(),
-                signature[0].as_str(),
-                signature[1].as_str()
-            )
-            .is_ok()
-        );
-        assert!(
-            account
-                .sha3_schnorr_verify_own(
-                    message.as_slice(),
-                    signature[0].as_str(),
-                    signature[1].as_str()
-                )
                 .is_ok()
         );
     }
