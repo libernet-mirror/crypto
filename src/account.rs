@@ -2,6 +2,7 @@ use crate::utils;
 use anyhow::{Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
 use curve25519_dalek::{EdwardsPoint as Point25519, Scalar as Scalar25519};
+use ed25519_dalek::ed25519::signature::SignerMut;
 use group::{Group, prime::PrimeCurveAffine};
 use primitive_types::H512;
 use std::sync::Mutex;
@@ -116,6 +117,30 @@ impl Account {
     ) -> Result<()> {
         Self::poseidon_schnorr_verify(self.public_key_bls, message, nonce, signature)
     }
+
+    pub fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
+        let mut signing_key = self.ed25519_signing_key.lock().unwrap();
+        signing_key.sign(message)
+    }
+
+    pub fn ed25519_verify(
+        public_key: Point25519,
+        message: &[u8],
+        signature: &ed25519_dalek::Signature,
+    ) -> Result<()> {
+        let public_key = utils::compress_point_25519(public_key);
+        let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(public_key.as_fixed_bytes())?;
+        Ok(verifying_key.verify_strict(message, signature)?)
+    }
+
+    pub fn ed25519_verify_own(
+        &self,
+        message: &[u8],
+        signature: &ed25519_dalek::Signature,
+    ) -> Result<()> {
+        let verifying_key = self.ed25519_signing_key.lock().unwrap();
+        Ok(verifying_key.verify_strict(message, signature)?)
+    }
 }
 
 #[cfg(test)]
@@ -223,6 +248,43 @@ mod tests {
             account2
                 .poseidon_schnorr_verify_own(&message, nonce, signature)
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn test_ed25519_signature() {
+        let account = get_random_account();
+        let message = b"Hello, world!";
+        let signature = account.ed25519_sign(message);
+        assert!(Account::ed25519_verify(account.ed25519_public_key(), message, &signature).is_ok());
+        assert!(account.ed25519_verify_own(message, &signature).is_ok());
+    }
+
+    #[test]
+    fn test_wrong_ed25519_signature() {
+        let account = get_random_account();
+        let signature = account.ed25519_sign(b"World, hello!");
+        let wrong_message = b"Hello, world!";
+        assert!(
+            Account::ed25519_verify(account.ed25519_public_key(), wrong_message, &signature)
+                .is_err()
+        );
+        assert!(
+            account
+                .ed25519_verify_own(wrong_message, &signature)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_verify_ed25519_signature_with_wrong_key() {
+        let account1 = get_random_account();
+        let account2 = get_random_account();
+        assert_ne!(account1.ed25519_public_key(), account2.ed25519_public_key());
+        let message = b"Hello, world!";
+        let signature = account1.ed25519_sign(message);
+        assert!(
+            Account::ed25519_verify(account2.ed25519_public_key(), message, &signature).is_err()
         );
     }
 }

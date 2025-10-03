@@ -1,5 +1,6 @@
 use anyhow::Context;
 use blstrs::{G1Affine, Scalar};
+use primitive_types::H512;
 use wasm_bindgen::prelude::*;
 
 mod params;
@@ -124,6 +125,37 @@ impl Account {
                 utils::parse_g1(nonce).map_err(map_err)?,
                 utils::parse_scalar(signature).map_err(map_err)?,
             )
+            .map_err(map_err)
+    }
+
+    #[wasm_bindgen]
+    pub fn ed25519_sign(&self, message: &[u8]) -> String {
+        let signature = self.inner.ed25519_sign(message);
+        format!("{:#x}", H512::from_slice(&signature.to_bytes()))
+    }
+
+    #[wasm_bindgen]
+    pub fn ed25519_verify(
+        public_key: &str,
+        message: &[u8],
+        signature: &str,
+    ) -> Result<(), JsValue> {
+        let public_key = utils::parse_point_25519(public_key).map_err(map_err)?;
+        let signature = signature
+            .parse::<H512>()
+            .map_err(|_| JsValue::from_str("invalid Ed25519 signature format"))?;
+        let signature = ed25519_dalek::Signature::from_bytes(signature.as_fixed_bytes());
+        account::Account::ed25519_verify(public_key, message, &signature).map_err(map_err)
+    }
+
+    #[wasm_bindgen]
+    pub fn ed25519_verify_own(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
+        let signature = signature
+            .parse::<H512>()
+            .map_err(|_| JsValue::from_str("invalid Ed25519 signature format"))?;
+        let signature = ed25519_dalek::Signature::from_bytes(signature.as_fixed_bytes());
+        self.inner
+            .ed25519_verify_own(message, &signature)
             .map_err(map_err)
     }
 }
@@ -268,6 +300,26 @@ mod tests {
         assert!(
             account
                 .poseidon_schnorr_verify_own(inputs, signature[0].as_str(), signature[1].as_str())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_ed25519_signature() {
+        let account = test_account();
+        let message = b"lorem ipsum";
+        let signature = account.ed25519_sign(message);
+        assert!(
+            Account::ed25519_verify(
+                account.ed25519_public_key().as_str(),
+                message,
+                signature.as_str()
+            )
+            .is_ok()
+        );
+        assert!(
+            account
+                .ed25519_verify_own(message, signature.as_str())
                 .is_ok()
         );
     }
