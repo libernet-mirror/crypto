@@ -1,18 +1,18 @@
 use crate::utils;
 use anyhow::{Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
-use curve25519_dalek::{EdwardsPoint as Point25519, Scalar as Scalar25519};
-use ed25519_dalek::ed25519::signature::SignerMut;
+use curve25519_dalek::EdwardsPoint as Point25519;
+use ed25519_dalek::{ed25519::signature::SignerMut, pkcs8::EncodePrivateKey};
 use group::{Group, prime::PrimeCurveAffine};
 use primitive_types::H512;
 use std::sync::Mutex;
+use zeroize::{Zeroizing, zeroize_flat_type};
 
 #[derive(Debug)]
 pub struct Account {
     private_key_bls: Scalar,
     public_key_bls: G1Affine,
     ed25519_signing_key: Mutex<ed25519_dalek::SigningKey>,
-    private_key_c25519: Scalar25519,
     public_key_c25519: Point25519,
 }
 
@@ -30,14 +30,12 @@ impl Account {
         let public_key_bls = (G1Projective::generator() * private_key_bls).into();
 
         let ed25519_signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_key_prefix);
-        let private_key_c25519 = ed25519_signing_key.to_scalar();
-        let public_key_c25519 = Point25519::mul_base(&private_key_c25519);
+        let public_key_c25519 = ed25519_signing_key.verifying_key().to_edwards();
 
         Self {
             private_key_bls,
             public_key_bls,
             ed25519_signing_key: Mutex::new(ed25519_signing_key),
-            private_key_c25519,
             public_key_c25519,
         }
     }
@@ -52,6 +50,12 @@ impl Account {
 
     pub fn address(&self) -> Scalar {
         utils::hash_g1_to_scalar(self.public_key_bls)
+    }
+
+    /// Returns the Ed25519 private key in DER format.
+    pub fn export_ed25519_private_key(&self) -> Result<Zeroizing<Vec<u8>>> {
+        let signing_key = self.ed25519_signing_key.lock().unwrap();
+        Ok(signing_key.to_pkcs8_der()?.to_bytes())
     }
 
     pub fn bls_sign(&self, message: &[u8]) -> G2Affine {
@@ -140,6 +144,14 @@ impl Account {
     ) -> Result<()> {
         let verifying_key = self.ed25519_signing_key.lock().unwrap();
         Ok(verifying_key.verify_strict(message, signature)?)
+    }
+}
+
+impl Drop for Account {
+    fn drop(&mut self) {
+        unsafe {
+            zeroize_flat_type(&mut self.private_key_bls);
+        }
     }
 }
 
