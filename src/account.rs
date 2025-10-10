@@ -189,9 +189,13 @@ mod tests {
         );
     }
 
+    fn get_random_account() -> Account {
+        Account::new(utils::get_random_bytes())
+    }
+
     #[test]
     fn test_ed25519_private_key_der() {
-        let account = Account::new(utils::get_random_bytes());
+        let account = get_random_account();
         let private_key = account.export_ed25519_private_key_der().unwrap();
         let signing_key =
             ed25519_dalek::SigningKey::from_pkcs8_der(private_key.as_slice()).unwrap();
@@ -210,10 +214,6 @@ mod tests {
             signing_key.verifying_key().to_edwards(),
             account.ed25519_public_key()
         );
-    }
-
-    fn get_random_account() -> Account {
-        Account::new(utils::get_random_bytes())
     }
 
     #[test]
