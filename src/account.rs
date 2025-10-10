@@ -2,7 +2,10 @@ use crate::utils;
 use anyhow::{Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
 use curve25519_dalek::EdwardsPoint as Point25519;
-use ed25519_dalek::{ed25519::signature::SignerMut, pkcs8::EncodePrivateKey};
+use ed25519_dalek::{
+    ed25519::signature::SignerMut,
+    pkcs8::{EncodePrivateKey, spki::der::pem::LineEnding},
+};
 use group::{Group, prime::PrimeCurveAffine};
 use primitive_types::H512;
 use std::sync::Mutex;
@@ -52,10 +55,14 @@ impl Account {
         utils::hash_g1_to_scalar(self.public_key_bls)
     }
 
-    /// Returns the Ed25519 private key in DER format.
-    pub fn export_ed25519_private_key(&self) -> Result<Zeroizing<Vec<u8>>> {
+    pub fn export_ed25519_private_key_der(&self) -> Result<Zeroizing<Vec<u8>>> {
         let signing_key = self.ed25519_signing_key.lock().unwrap();
         Ok(signing_key.to_pkcs8_der()?.to_bytes())
+    }
+
+    pub fn export_ed25519_private_key_pem(&self) -> Result<Zeroizing<String>> {
+        let signing_key = self.ed25519_signing_key.lock().unwrap();
+        Ok(signing_key.to_pkcs8_pem(LineEnding::LF)?)
     }
 
     pub fn bls_sign(&self, message: &[u8]) -> G2Affine {
@@ -159,6 +166,7 @@ impl Drop for Account {
 mod tests {
     use super::*;
     use crate::utils;
+    use ed25519_dalek::pkcs8::DecodePrivateKey;
 
     #[test]
     fn test_new() {
@@ -178,6 +186,29 @@ mod tests {
                 "0x9cd641f9ca69a10dfe48cf7f57ee802d1e549053be6e9347a8e38f4a6a9b2161"
             )
             .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_ed25519_private_key_der() {
+        let account = Account::new(utils::get_random_bytes());
+        let private_key = account.export_ed25519_private_key_der().unwrap();
+        let signing_key =
+            ed25519_dalek::SigningKey::from_pkcs8_der(private_key.as_slice()).unwrap();
+        assert_eq!(
+            signing_key.verifying_key().to_edwards(),
+            account.ed25519_public_key()
+        );
+    }
+
+    #[test]
+    fn test_ed25519_private_key_pem() {
+        let account = Account::new(utils::get_random_bytes());
+        let private_key = account.export_ed25519_private_key_pem().unwrap();
+        let signing_key = ed25519_dalek::SigningKey::from_pkcs8_pem(private_key.as_str()).unwrap();
+        assert_eq!(
+            signing_key.verifying_key().to_edwards(),
+            account.ed25519_public_key()
         );
     }
 

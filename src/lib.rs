@@ -52,6 +52,15 @@ impl Account {
     }
 
     #[wasm_bindgen]
+    pub fn export_ed25519_private_key_pem(&self) -> Result<String, JsValue> {
+        let zeroizing_pem = self
+            .inner
+            .export_ed25519_private_key_pem()
+            .map_err(map_err)?;
+        Ok((*zeroizing_pem).clone())
+    }
+
+    #[wasm_bindgen]
     pub fn bls_sign(&self, message: &[u8]) -> String {
         utils::format_g2(self.inner.bls_sign(message))
     }
