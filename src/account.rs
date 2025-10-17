@@ -1,3 +1,4 @@
+use crate::ssl;
 use crate::utils;
 use anyhow::{Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
@@ -8,7 +9,7 @@ use ed25519_dalek::{
 };
 use group::{Group, prime::PrimeCurveAffine};
 use primitive_types::H512;
-use std::sync::Mutex;
+use std::{sync::Mutex, time::SystemTime};
 use zeroize::{Zeroizing, zeroize_flat_type};
 
 #[derive(Debug)]
@@ -47,14 +48,6 @@ impl Account {
         self.public_key_bls
     }
 
-    pub fn ed25519_public_key(&self) -> Point25519 {
-        self.public_key_c25519
-    }
-
-    pub fn address(&self) -> Scalar {
-        utils::hash_g1_to_scalar(self.public_key_bls)
-    }
-
     pub fn export_ed25519_private_key_der(&self) -> Result<Zeroizing<Vec<u8>>> {
         let signing_key = self.ed25519_signing_key.lock().unwrap();
         Ok(signing_key.to_pkcs8_der()?.to_bytes())
@@ -64,13 +57,34 @@ impl Account {
         let signing_key = self.ed25519_signing_key.lock().unwrap();
         Ok(signing_key.to_pkcs8_pem(LineEnding::LF)?)
     }
+}
 
-    pub fn bls_sign(&self, message: &[u8]) -> G2Affine {
+impl ssl::Signer for Account {
+    fn address(&self) -> Scalar {
+        utils::hash_g1_to_scalar(self.public_key_bls)
+    }
+
+    fn bls_public_key(&self) -> G1Affine {
+        self.public_key_bls
+    }
+
+    fn ed25519_public_key(&self) -> Point25519 {
+        self.public_key_c25519
+    }
+
+    fn bls_sign(&self, message: &[u8]) -> G2Affine {
         let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
         let gamma = hash * self.private_key_bls;
         gamma.into()
     }
 
+    fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
+        let mut signing_key = self.ed25519_signing_key.lock().unwrap();
+        signing_key.sign(message)
+    }
+}
+
+impl Account {
     pub fn bls_verify(public_key: G1Affine, message: &[u8], signature: G2Affine) -> Result<()> {
         let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
         if pairing(&public_key, &hash.into()) != pairing(&G1Affine::generator(), &signature) {
@@ -129,11 +143,6 @@ impl Account {
         Self::poseidon_schnorr_verify(self.public_key_bls, message, nonce, signature)
     }
 
-    pub fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
-        let mut signing_key = self.ed25519_signing_key.lock().unwrap();
-        signing_key.sign(message)
-    }
-
     pub fn ed25519_verify(
         public_key: Point25519,
         message: &[u8],
@@ -152,6 +161,20 @@ impl Account {
         let verifying_key = self.ed25519_signing_key.lock().unwrap();
         Ok(verifying_key.verify_strict(message, signature)?)
     }
+
+    /// Generates a new self-signed Ed25519 certificate in DER format.
+    ///
+    /// The generated certificate includes the extensions defined by Libernet for authentication of
+    /// the BLS12-381 keypair and is therefore suitable for use in all Libernet connections.
+    ///
+    /// The implementation is RFC-528 compliant.
+    pub fn generate_ssl_certificate(
+        &self,
+        not_before: SystemTime,
+        not_after: SystemTime,
+    ) -> Result<Vec<u8>> {
+        ssl::generate_certificate(self, not_before, not_after)
+    }
 }
 
 impl Drop for Account {
@@ -165,8 +188,11 @@ impl Drop for Account {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ssl::Signer;
     use crate::utils;
     use ed25519_dalek::pkcs8::DecodePrivateKey;
+    use std::time::Duration;
+    use x509_parser::{asn1_rs::BitString, parse_x509_certificate, public_key::PublicKey};
 
     #[test]
     fn test_new() {
@@ -177,6 +203,11 @@ mod tests {
         );
         assert_eq!(
             account.public_key(),
+            utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
+                .unwrap()
+        );
+        assert_eq!(
+            account.bls_public_key(),
             utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
                 .unwrap()
         );
@@ -328,6 +359,58 @@ mod tests {
         let signature = account1.ed25519_sign(message);
         assert!(
             Account::ed25519_verify(account2.ed25519_public_key(), message, &signature).is_err()
+        );
+    }
+
+    #[test]
+    fn test_ssl_certificate() {
+        let account = get_random_account();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der = account
+            .generate_ssl_certificate(not_before, not_after)
+            .unwrap();
+        let (_, certificate) = parse_x509_certificate(der.as_slice()).unwrap();
+        assert_eq!(
+            certificate
+                .issuer()
+                .iter_common_name()
+                .next()
+                .and_then(|common_name| common_name.as_str().ok())
+                .unwrap(),
+            utils::format_scalar(account.address())
+        );
+        assert_eq!(
+            certificate
+                .subject()
+                .iter_common_name()
+                .next()
+                .and_then(|common_name| common_name.as_str().ok())
+                .unwrap(),
+            utils::format_scalar(account.address())
+        );
+        assert_eq!(
+            certificate.public_key().parsed().unwrap(),
+            PublicKey::Unknown(account.ed25519_public_key().compress().as_bytes())
+        );
+        let address_bytes = account.address().to_bytes_le();
+        assert_eq!(
+            certificate.issuer_uid.as_ref().unwrap().0,
+            BitString::new(0, &address_bytes)
+        );
+        assert_eq!(
+            certificate.subject_uid.as_ref().unwrap().0,
+            BitString::new(0, &address_bytes)
+        );
+        let extensions = certificate.extensions_map().unwrap();
+        let bls_public_key = extensions
+            .get(&utils::testing::OID_LIBERNET_BLS_PUBLIC_KEY)
+            .unwrap();
+        assert!(bls_public_key.critical);
+        assert_eq!(
+            bls_public_key.value,
+            account.bls_public_key().to_compressed()
         );
     }
 }

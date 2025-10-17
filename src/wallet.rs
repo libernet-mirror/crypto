@@ -155,6 +155,7 @@ impl Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ssl::Signer;
 
     const NUM_ROUNDS: usize = 3;
 

@@ -1,12 +1,16 @@
+use crate::ssl::Signer;
 use anyhow::Context;
+use base64::prelude::*;
 use blstrs::{G1Affine, Scalar};
 use primitive_types::H512;
+use std::time::{Duration, UNIX_EPOCH};
 use wasm_bindgen::prelude::*;
 
 mod params;
 
 pub mod account;
 pub mod kzg;
+pub mod ssl;
 pub mod utils;
 pub mod wallet;
 pub mod xits;
@@ -167,6 +171,25 @@ impl Account {
             .ed25519_verify_own(message, &signature)
             .map_err(map_err)
     }
+
+    #[wasm_bindgen]
+    pub fn generate_ssl_certificate_pem(
+        &self,
+        not_before: u64,
+        not_after: u64,
+    ) -> Result<String, JsValue> {
+        let not_before = UNIX_EPOCH + Duration::from_millis(not_before);
+        let not_after = UNIX_EPOCH + Duration::from_millis(not_after);
+        let der = self
+            .inner
+            .generate_ssl_certificate(not_before, not_after)
+            .map_err(map_err)?;
+        let base64 = BASE64_STANDARD.encode(der);
+        Ok(format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            base64
+        ))
+    }
 }
 
 /// JavaScript bindings for the `Wallet` class.
@@ -255,6 +278,11 @@ impl Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::SystemTime;
+    use x509_parser::{
+        asn1_rs::BitString, oid_registry::OID_SIG_ED25519, pem::parse_x509_pem,
+        public_key::PublicKey, x509::X509Version,
+    };
 
     fn test_account() -> Account {
         Account::import("0x7c3a55192992a3ec1936d436f0b69efb8b4506c7e0ab55679d04534b5fc30ae86edd53d2626d396586e8abd0f932c9bfd95d83c682f178faa41a2baf7e19492b")
@@ -330,6 +358,83 @@ mod tests {
             account
                 .ed25519_verify_own(message, signature.as_str())
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_ssl_certificate() {
+        let account = test_account();
+        let now = SystemTime::now();
+        let not_before = now + Duration::from_secs(34);
+        let not_after = now + Duration::from_secs(56);
+        let pem = account
+            .generate_ssl_certificate_pem(
+                not_before.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+            )
+            .unwrap();
+        let (_, pem) = parse_x509_pem(pem.as_bytes()).unwrap();
+        let certificate = pem.parse_x509().unwrap();
+        assert_eq!(certificate.version(), X509Version::V3);
+        assert_ne!(certificate.serial, 0u64.into());
+        assert_eq!(*certificate.signature.oid(), OID_SIG_ED25519);
+        assert_eq!(
+            certificate
+                .issuer()
+                .iter_common_name()
+                .next()
+                .and_then(|common_name| common_name.as_str().ok())
+                .unwrap(),
+            account.address()
+        );
+        assert_eq!(
+            certificate.validity().not_before.timestamp(),
+            not_before.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
+        );
+        assert_eq!(
+            certificate.validity().not_after.timestamp(),
+            not_after.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
+        );
+        assert_eq!(
+            certificate
+                .subject()
+                .iter_common_name()
+                .next()
+                .and_then(|common_name| common_name.as_str().ok())
+                .unwrap(),
+            account.address()
+        );
+        assert_eq!(*certificate.public_key().algorithm.oid(), OID_SIG_ED25519);
+        assert_eq!(
+            certificate.public_key().parsed().unwrap(),
+            PublicKey::Unknown(
+                utils::parse_point_25519(account.ed25519_public_key().as_str())
+                    .unwrap()
+                    .compress()
+                    .as_bytes()
+            )
+        );
+        let address_bytes = utils::parse_scalar(account.address().as_str())
+            .unwrap()
+            .to_bytes_le();
+        assert_eq!(
+            certificate.issuer_uid.as_ref().unwrap().0,
+            BitString::new(0, &address_bytes)
+        );
+        assert_eq!(
+            certificate.subject_uid.as_ref().unwrap().0,
+            BitString::new(0, &address_bytes)
+        );
+        let extensions = certificate.extensions_map().unwrap();
+        let bls_public_key = extensions
+            .get(&utils::testing::OID_LIBERNET_BLS_PUBLIC_KEY)
+            .unwrap();
+        assert!(bls_public_key.critical);
+        assert_eq!(
+            bls_public_key.value,
+            utils::parse_g1(account.public_key().as_str())
+                .unwrap()
+                .to_compressed()
         );
     }
 

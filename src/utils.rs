@@ -168,6 +168,14 @@ pub fn hash_g1_to_scalar(point: G1Affine) -> Scalar {
 }
 
 #[cfg(test)]
+pub mod testing {
+    use x509_parser::asn1_rs::{Oid, oid};
+
+    pub const OID_LIBERNET_BLS_PUBLIC_KEY: Oid<'static> = oid!(1.3.6.1.4.1.71104.1);
+    pub const OID_LIBERNET_IDENTITY_SIGNATURE_V1: Oid<'static> = oid!(1.3.6.1.4.1.71104.2);
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
