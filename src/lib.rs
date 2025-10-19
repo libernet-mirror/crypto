@@ -1,7 +1,7 @@
-use crate::ssl::Signer;
+use crate::signer::{Signer, Verifier};
 use anyhow::Context;
 use base64::prelude::*;
-use blstrs::{G1Affine, Scalar};
+use blstrs::G1Affine;
 use primitive_types::H512;
 use std::time::{Duration, UNIX_EPOCH};
 use wasm_bindgen::prelude::*;
@@ -10,6 +10,8 @@ mod params;
 
 pub mod account;
 pub mod kzg;
+pub mod remote;
+pub mod signer;
 pub mod ssl;
 pub mod utils;
 pub mod wallet;
@@ -70,74 +72,9 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn bls_verify(public_key: &str, message: &[u8], signature: &str) -> Result<(), JsValue> {
-        account::Account::bls_verify(
-            utils::parse_g1(public_key).map_err(map_err)?,
-            message,
-            utils::parse_g2(signature).map_err(map_err)?,
-        )
-        .map_err(map_err)
-    }
-
-    #[wasm_bindgen]
-    pub fn bls_verify_own(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
+    pub fn bls_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
         self.inner
-            .bls_verify_own(message, utils::parse_g2(signature).map_err(map_err)?)
-            .map_err(map_err)
-    }
-
-    #[wasm_bindgen]
-    pub fn poseidon_schnorr_sign(&self, message: Vec<String>) -> Result<Vec<String>, JsValue> {
-        let (nonce, signature) = self.inner.poseidon_schnorr_sign(
-            message
-                .iter()
-                .map(|s| utils::parse_scalar(s.as_str()).map_err(map_err))
-                .collect::<Result<Vec<Scalar>, JsValue>>()?
-                .as_slice(),
-        );
-        Ok(vec![
-            utils::format_g1(nonce),
-            utils::format_scalar(signature),
-        ])
-    }
-
-    #[wasm_bindgen]
-    pub fn poseidon_schnorr_verify(
-        public_key: &str,
-        message: Vec<String>,
-        nonce: &str,
-        signature: &str,
-    ) -> Result<(), JsValue> {
-        account::Account::poseidon_schnorr_verify(
-            utils::parse_g1(public_key).map_err(map_err)?,
-            message
-                .iter()
-                .map(|s| utils::parse_scalar(s).map_err(map_err))
-                .collect::<Result<Vec<Scalar>, JsValue>>()?
-                .as_slice(),
-            utils::parse_g1(nonce).map_err(map_err)?,
-            utils::parse_scalar(signature).map_err(map_err)?,
-        )
-        .map_err(map_err)
-    }
-
-    #[wasm_bindgen]
-    pub fn poseidon_schnorr_verify_own(
-        &self,
-        message: Vec<String>,
-        nonce: &str,
-        signature: &str,
-    ) -> Result<(), JsValue> {
-        self.inner
-            .poseidon_schnorr_verify_own(
-                message
-                    .iter()
-                    .map(|s| utils::parse_scalar(s).map_err(map_err))
-                    .collect::<Result<Vec<Scalar>, JsValue>>()?
-                    .as_slice(),
-                utils::parse_g1(nonce).map_err(map_err)?,
-                utils::parse_scalar(signature).map_err(map_err)?,
-            )
+            .bls_verify(message, utils::parse_g2(signature).map_err(map_err)?)
             .map_err(map_err)
     }
 
@@ -148,27 +85,13 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn ed25519_verify(
-        public_key: &str,
-        message: &[u8],
-        signature: &str,
-    ) -> Result<(), JsValue> {
-        let public_key = utils::parse_point_25519(public_key).map_err(map_err)?;
-        let signature = signature
-            .parse::<H512>()
-            .map_err(|_| JsValue::from_str("invalid Ed25519 signature format"))?;
-        let signature = ed25519_dalek::Signature::from_bytes(signature.as_fixed_bytes());
-        account::Account::ed25519_verify(public_key, message, &signature).map_err(map_err)
-    }
-
-    #[wasm_bindgen]
-    pub fn ed25519_verify_own(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
+    pub fn ed25519_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
         let signature = signature
             .parse::<H512>()
             .map_err(|_| JsValue::from_str("invalid Ed25519 signature format"))?;
         let signature = ed25519_dalek::Signature::from_bytes(signature.as_fixed_bytes());
         self.inner
-            .ed25519_verify_own(message, &signature)
+            .ed25519_verify(message, &signature)
             .map_err(map_err)
     }
 
@@ -311,34 +234,7 @@ mod tests {
         let account = test_account();
         let message = b"lorem ipsum";
         let signature = account.bls_sign(message);
-        assert!(
-            Account::bls_verify(account.public_key().as_str(), message, signature.as_str()).is_ok()
-        );
-        assert!(account.bls_verify_own(message, signature.as_str()).is_ok());
-    }
-
-    #[test]
-    fn test_poseidon_schnorr_signature() {
-        let account = test_account();
-        let inputs = [12.into(), 34.into(), 56.into()]
-            .map(|x: Scalar| utils::format_scalar(x))
-            .to_vec();
-        let signature = account.poseidon_schnorr_sign(inputs.clone()).unwrap();
-        assert_eq!(signature.len(), 2);
-        assert!(
-            Account::poseidon_schnorr_verify(
-                account.public_key().as_str(),
-                inputs.clone(),
-                signature[0].as_str(),
-                signature[1].as_str()
-            )
-            .is_ok()
-        );
-        assert!(
-            account
-                .poseidon_schnorr_verify_own(inputs, signature[0].as_str(), signature[1].as_str())
-                .is_ok()
-        );
+        assert!(account.bls_verify(message, signature.as_str()).is_ok());
     }
 
     #[test]
@@ -346,19 +242,7 @@ mod tests {
         let account = test_account();
         let message = b"lorem ipsum";
         let signature = account.ed25519_sign(message);
-        assert!(
-            Account::ed25519_verify(
-                account.ed25519_public_key().as_str(),
-                message,
-                signature.as_str()
-            )
-            .is_ok()
-        );
-        assert!(
-            account
-                .ed25519_verify_own(message, signature.as_str())
-                .is_ok()
-        );
+        assert!(account.ed25519_verify(message, signature.as_str()).is_ok());
     }
 
     #[test]
@@ -417,14 +301,12 @@ mod tests {
         let address_bytes = utils::parse_scalar(account.address().as_str())
             .unwrap()
             .to_bytes_le();
-        assert_eq!(
-            certificate.issuer_uid.as_ref().unwrap().0,
-            BitString::new(0, &address_bytes)
-        );
-        assert_eq!(
-            certificate.subject_uid.as_ref().unwrap().0,
-            BitString::new(0, &address_bytes)
-        );
+        if let Some(issuer_uid) = certificate.issuer_uid.as_ref() {
+            assert_eq!(issuer_uid.0, BitString::new(0, &address_bytes));
+        }
+        if let Some(subject_uid) = certificate.subject_uid.as_ref() {
+            assert_eq!(subject_uid.0, BitString::new(0, &address_bytes));
+        }
         let extensions = certificate.extensions_map().unwrap();
         let bls_public_key = extensions
             .get(&utils::testing::OID_LIBERNET_BLS_PUBLIC_KEY)

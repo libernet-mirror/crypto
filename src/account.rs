@@ -1,3 +1,5 @@
+use crate::remote::RemoteAccount;
+use crate::signer::{Signer, Verifier, VerifierConstructor};
 use crate::ssl;
 use crate::utils;
 use anyhow::{Result, anyhow};
@@ -44,6 +46,10 @@ impl Account {
         }
     }
 
+    pub fn to_remote(&self) -> RemoteAccount {
+        RemoteAccount::new(self.public_key_bls, self.public_key_c25519)
+    }
+
     pub fn public_key(&self) -> G1Affine {
         self.public_key_bls
     }
@@ -56,110 +62,6 @@ impl Account {
     pub fn export_ed25519_private_key_pem(&self) -> Result<Zeroizing<String>> {
         let signing_key = self.ed25519_signing_key.lock().unwrap();
         Ok(signing_key.to_pkcs8_pem(LineEnding::LF)?)
-    }
-}
-
-impl ssl::Signer for Account {
-    fn address(&self) -> Scalar {
-        utils::hash_g1_to_scalar(self.public_key_bls)
-    }
-
-    fn bls_public_key(&self) -> G1Affine {
-        self.public_key_bls
-    }
-
-    fn ed25519_public_key(&self) -> Point25519 {
-        self.public_key_c25519
-    }
-
-    fn bls_sign(&self, message: &[u8]) -> G2Affine {
-        let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
-        let gamma = hash * self.private_key_bls;
-        gamma.into()
-    }
-
-    fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
-        let mut signing_key = self.ed25519_signing_key.lock().unwrap();
-        signing_key.sign(message)
-    }
-}
-
-impl Account {
-    pub fn bls_verify(public_key: G1Affine, message: &[u8], signature: G2Affine) -> Result<()> {
-        let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
-        if pairing(&public_key, &hash.into()) != pairing(&G1Affine::generator(), &signature) {
-            return Err(anyhow!("invalid signature"));
-        }
-        Ok(())
-    }
-
-    pub fn bls_verify_own(&self, message: &[u8], signature: G2Affine) -> Result<()> {
-        Self::bls_verify(self.public_key_bls, message, signature)
-    }
-
-    fn make_poseidon_schnorr_challenge(
-        nonce: G1Affine,
-        public_key: G1Affine,
-        message: &[Scalar],
-    ) -> Scalar {
-        let inputs: Vec<Scalar> = std::iter::once(utils::hash_g1_to_scalar(nonce))
-            .chain(std::iter::once(utils::hash_g1_to_scalar(public_key)))
-            .chain(message.iter().map(|scalar| *scalar))
-            .collect();
-        utils::poseidon_hash(inputs.as_slice())
-    }
-
-    fn make_own_poseidon_schnorr_challenge(&self, nonce: G1Affine, message: &[Scalar]) -> Scalar {
-        Self::make_poseidon_schnorr_challenge(nonce, self.public_key_bls, message)
-    }
-
-    pub fn poseidon_schnorr_sign(&self, message: &[Scalar]) -> (G1Affine, Scalar) {
-        let nonce = utils::get_random_scalar();
-        let nonce_point = G1Projective::generator() * nonce;
-        let challenge = self.make_own_poseidon_schnorr_challenge(nonce_point.into(), message);
-        let signature = nonce + challenge * self.private_key_bls;
-        (nonce_point.into(), signature)
-    }
-
-    pub fn poseidon_schnorr_verify(
-        public_key: G1Affine,
-        message: &[Scalar],
-        nonce: G1Affine,
-        signature: Scalar,
-    ) -> Result<()> {
-        let challenge = Self::make_poseidon_schnorr_challenge(nonce, public_key, message);
-        if G1Projective::generator() * signature != nonce + public_key * challenge {
-            return Err(anyhow!("invalid signature"));
-        }
-        Ok(())
-    }
-
-    pub fn poseidon_schnorr_verify_own(
-        &self,
-        message: &[Scalar],
-        nonce: G1Affine,
-        signature: Scalar,
-    ) -> Result<()> {
-        Self::poseidon_schnorr_verify(self.public_key_bls, message, nonce, signature)
-    }
-
-    pub fn ed25519_verify(
-        public_key: Point25519,
-        message: &[u8],
-        signature: &ed25519_dalek::Signature,
-    ) -> Result<()> {
-        let public_key = utils::compress_point_25519(public_key);
-        let verifying_key = ed25519_dalek::VerifyingKey::from_bytes(public_key.as_fixed_bytes())?;
-        Ok(verifying_key.verify_strict(message, signature)?)
-    }
-
-    pub fn ed25519_verify_own(
-        &self,
-        message: &[u8],
-        signature: &ed25519_dalek::Signature,
-    ) -> Result<()> {
-        let verifying_key = self.ed25519_signing_key.lock().unwrap();
-        Ok(verifying_key.verify_strict(message, signature)?)
     }
 
     /// Generates a new self-signed Ed25519 certificate in DER format.
@@ -177,6 +79,48 @@ impl Account {
     }
 }
 
+impl Verifier for Account {
+    fn address(&self) -> Scalar {
+        utils::hash_g1_to_scalar(self.public_key_bls)
+    }
+
+    fn bls_public_key(&self) -> G1Affine {
+        self.public_key_bls
+    }
+
+    fn ed25519_public_key(&self) -> Point25519 {
+        self.public_key_c25519
+    }
+
+    fn bls_verify(&self, message: &[u8], signature: G2Affine) -> Result<()> {
+        let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
+        if pairing(&self.public_key_bls, &hash.into())
+            != pairing(&G1Affine::generator(), &signature)
+        {
+            return Err(anyhow!("invalid signature"));
+        }
+        Ok(())
+    }
+
+    fn ed25519_verify(&self, message: &[u8], signature: &ed25519_dalek::Signature) -> Result<()> {
+        let verifying_key = self.ed25519_signing_key.lock().unwrap();
+        Ok(verifying_key.verify_strict(message, signature)?)
+    }
+}
+
+impl Signer for Account {
+    fn bls_sign(&self, message: &[u8]) -> G2Affine {
+        let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
+        let gamma = hash * self.private_key_bls;
+        gamma.into()
+    }
+
+    fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
+        let mut signing_key = self.ed25519_signing_key.lock().unwrap();
+        signing_key.sign(message)
+    }
+}
+
 impl Drop for Account {
     fn drop(&mut self) {
         unsafe {
@@ -188,7 +132,7 @@ impl Drop for Account {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ssl::Signer;
+    use crate::signer::{Signer, Verifier};
     use crate::utils;
     use ed25519_dalek::pkcs8::DecodePrivateKey;
     use std::time::Duration;
@@ -202,9 +146,44 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(
+            account.address(),
+            utils::parse_scalar(
+                "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
+            )
+            .unwrap()
+        );
+        assert_eq!(
             account.public_key(),
             utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
                 .unwrap()
+        );
+        assert_eq!(
+            account.bls_public_key(),
+            utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
+                .unwrap()
+        );
+        assert_eq!(
+            account.ed25519_public_key(),
+            utils::parse_point_25519(
+                "0x9cd641f9ca69a10dfe48cf7f57ee802d1e549053be6e9347a8e38f4a6a9b2161"
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_remote_account() {
+        let account = Account::new(
+            "0xcbf6220bf9c4c4d0a6e1b414671564a882f913d031f69202534d3b7f6d2780082cd83c76dfc1656a03ead24d79278b68a0b0ea4aa93dd100f88040e717a886f9"
+                .parse()
+                .unwrap(),
+        ).to_remote();
+        assert_eq!(
+            account.address(),
+            utils::parse_scalar(
+                "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
+            )
+            .unwrap()
         );
         assert_eq!(
             account.bls_public_key(),
@@ -252,8 +231,7 @@ mod tests {
         let account = get_random_account();
         let message = b"Hello, world!";
         let signature = account.bls_sign(message);
-        assert!(Account::bls_verify(account.public_key(), message, signature).is_ok());
-        assert!(account.bls_verify_own(message, signature).is_ok());
+        assert!(account.bls_verify(message, signature).is_ok());
     }
 
     #[test]
@@ -261,8 +239,7 @@ mod tests {
         let account = get_random_account();
         let signature = account.bls_sign(b"World, hello!");
         let wrong_message = b"Hello, world!";
-        assert!(Account::bls_verify(account.public_key(), wrong_message, signature).is_err());
-        assert!(account.bls_verify_own(wrong_message, signature).is_err());
+        assert!(account.bls_verify(wrong_message, signature).is_err());
     }
 
     #[test]
@@ -272,57 +249,38 @@ mod tests {
         assert_ne!(account1.public_key(), account2.public_key());
         let message = b"Hello, world!";
         let signature = account1.bls_sign(message);
-        assert!(Account::bls_verify(account2.public_key(), message, signature).is_err());
+        assert!(account2.bls_verify(message, signature).is_err());
     }
 
     #[test]
-    fn test_poseidon_schnorr_signature() {
+    fn test_remote_bls_verification() {
         let account = get_random_account();
-        let message = [12.into(), 34.into(), 56.into()];
-        let (nonce, signature) = account.poseidon_schnorr_sign(&message);
-        assert!(
-            Account::poseidon_schnorr_verify(account.public_key(), &message, nonce, signature)
-                .is_ok()
-        );
-        assert!(
-            account
-                .poseidon_schnorr_verify_own(&message, nonce, signature)
-                .is_ok()
-        );
+        let message = b"Hello, world!";
+        let signature = account.bls_sign(message);
+        assert!(account.to_remote().bls_verify(message, signature).is_ok());
     }
 
     #[test]
-    fn test_wrong_poseidon_schnorr_signature() {
+    fn test_wrong_remote_bls_verification() {
         let account = get_random_account();
-        let (nonce, signature) = account.poseidon_schnorr_sign(&[12.into(), 34.into(), 56.into()]);
-        let message = [56.into(), 78.into()];
-        assert!(
-            Account::poseidon_schnorr_verify(account.public_key(), &message, nonce, signature)
-                .is_err()
-        );
+        let signature = account.bls_sign(b"World, hello!");
+        let wrong_message = b"Hello, world!";
         assert!(
             account
-                .poseidon_schnorr_verify_own(&message, nonce, signature)
+                .to_remote()
+                .bls_verify(wrong_message, signature)
                 .is_err()
         );
     }
 
     #[test]
-    fn test_verify_poseidon_schnorr_signature_with_wrong_key() {
+    fn test_verify_bls_signature_with_wrong_remote_key() {
         let account1 = get_random_account();
-        let account2 = get_random_account();
-        assert_ne!(account1.public_key(), account2.public_key());
-        let message = [12.into(), 34.into(), 56.into()];
-        let (nonce, signature) = account1.poseidon_schnorr_sign(&message);
-        assert!(
-            Account::poseidon_schnorr_verify(account2.public_key(), &message, nonce, signature)
-                .is_err()
-        );
-        assert!(
-            account2
-                .poseidon_schnorr_verify_own(&message, nonce, signature)
-                .is_err()
-        );
+        let account2 = get_random_account().to_remote();
+        assert_ne!(account1.public_key(), account2.bls_public_key());
+        let message = b"Hello, world!";
+        let signature = account1.bls_sign(message);
+        assert!(account2.bls_verify(message, signature).is_err());
     }
 
     #[test]
@@ -330,8 +288,7 @@ mod tests {
         let account = get_random_account();
         let message = b"Hello, world!";
         let signature = account.ed25519_sign(message);
-        assert!(Account::ed25519_verify(account.ed25519_public_key(), message, &signature).is_ok());
-        assert!(account.ed25519_verify_own(message, &signature).is_ok());
+        assert!(account.ed25519_verify(message, &signature).is_ok());
     }
 
     #[test]
@@ -339,15 +296,7 @@ mod tests {
         let account = get_random_account();
         let signature = account.ed25519_sign(b"World, hello!");
         let wrong_message = b"Hello, world!";
-        assert!(
-            Account::ed25519_verify(account.ed25519_public_key(), wrong_message, &signature)
-                .is_err()
-        );
-        assert!(
-            account
-                .ed25519_verify_own(wrong_message, &signature)
-                .is_err()
-        );
+        assert!(account.ed25519_verify(wrong_message, &signature).is_err());
     }
 
     #[test]
@@ -357,9 +306,7 @@ mod tests {
         assert_ne!(account1.ed25519_public_key(), account2.ed25519_public_key());
         let message = b"Hello, world!";
         let signature = account1.ed25519_sign(message);
-        assert!(
-            Account::ed25519_verify(account2.ed25519_public_key(), message, &signature).is_err()
-        );
+        assert!(account2.ed25519_verify(message, &signature).is_err());
     }
 
     #[test]
@@ -395,14 +342,12 @@ mod tests {
             PublicKey::Unknown(account.ed25519_public_key().compress().as_bytes())
         );
         let address_bytes = account.address().to_bytes_le();
-        assert_eq!(
-            certificate.issuer_uid.as_ref().unwrap().0,
-            BitString::new(0, &address_bytes)
-        );
-        assert_eq!(
-            certificate.subject_uid.as_ref().unwrap().0,
-            BitString::new(0, &address_bytes)
-        );
+        if let Some(issuer_uid) = certificate.issuer_uid.as_ref() {
+            assert_eq!(issuer_uid.0, BitString::new(0, &address_bytes));
+        }
+        if let Some(subject_uid) = certificate.subject_uid.as_ref() {
+            assert_eq!(subject_uid.0, BitString::new(0, &address_bytes));
+        }
         let extensions = certificate.extensions_map().unwrap();
         let bls_public_key = extensions
             .get(&utils::testing::OID_LIBERNET_BLS_PUBLIC_KEY)

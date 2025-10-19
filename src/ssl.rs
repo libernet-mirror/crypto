@@ -1,12 +1,13 @@
+use crate::signer::{Signer, Verifier, VerifierConstructor};
 use crate::utils;
 use anyhow::{Result, anyhow};
-use blstrs::{G1Affine, G2Affine, Scalar};
-use curve25519_dalek::EdwardsPoint as Point25519;
 use der::{
-    Any, Choice, Encode, Sequence, TagMode, TagNumber, ValueOrd,
+    Any, Choice, Decode, Encode, Sequence, TagMode, TagNumber, ValueOrd,
     asn1::{BitString, ContextSpecific, GeneralizedTime, OctetString, SetOfVec, UtcTime},
     oid::ObjectIdentifier,
 };
+use ed25519_dalek::SIGNATURE_LENGTH;
+use primitive_types::{H256, H384, H768};
 use std::time::SystemTime;
 
 const OID_SIG_ED25519: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
@@ -17,16 +18,6 @@ const OID_LIBERNET_BLS_PUBLIC_KEY: ObjectIdentifier =
 
 const OID_LIBERNET_IDENTITY_SIGNATURE_V1: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.3.6.1.4.1.71104.2");
-
-pub trait Signer {
-    fn address(&self) -> Scalar;
-
-    fn bls_public_key(&self) -> G1Affine;
-    fn bls_sign(&self, message: &[u8]) -> G2Affine;
-
-    fn ed25519_public_key(&self) -> Point25519;
-    fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature;
-}
 
 #[derive(Debug, Sequence, ValueOrd, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct AlgorithmIdentifier {
@@ -104,11 +95,32 @@ impl LibernetIdentityExtension {
             identity_message.encode_to_vec(&mut der)?;
             der
         };
-        let signature = signer.ed25519_sign(der.as_slice());
+        let signature = signer.bls_sign(der.as_slice());
         Ok(LibernetIdentityExtension {
             message: identity_message,
-            signature: OctetString::new(signature.to_bytes())?,
+            signature: OctetString::new(utils::compress_g2(signature).as_bytes())?,
         })
+    }
+
+    pub fn verify(&self, verifier: &impl Verifier, serial_number: i128) -> Result<()> {
+        if serial_number != self.message.serial_number {
+            return Err(anyhow!(
+                "incorrect serial number in the BLS identity signature"
+            ));
+        }
+        let ed25519_public_key = utils::decompress_point_25519(H256::from_slice(
+            self.message.ed25519_public_key.as_bytes(),
+        ))?;
+        if ed25519_public_key != verifier.ed25519_public_key() {
+            return Err(anyhow!("invalid Ed25519 key in the BLS identity signature"));
+        }
+        let der = {
+            let mut buffer = Vec::<u8>::default();
+            self.message.encode_to_vec(&mut buffer)?;
+            buffer
+        };
+        let signature = utils::decompress_g2(H768::from_slice(self.signature.as_bytes()))?;
+        verifier.bls_verify(der.as_slice(), signature)
     }
 }
 
@@ -121,8 +133,6 @@ struct TbsCertificate {
     validity: Validity,
     subject: Name,
     subject_public_key_info: SubjectPublicKeyInfo,
-    issuer_unique_id: ContextSpecific<BitString>,
-    subject_unique_id: ContextSpecific<BitString>,
     extensions: ContextSpecific<Vec<Extension>>,
 }
 
@@ -189,7 +199,6 @@ pub fn generate_certificate(
     }
     let common_name = utils::format_scalar(signer.address());
     let public_key_bytes = signer.ed25519_public_key().compress().to_bytes();
-    let address_bytes = signer.address().to_bytes_le();
     let serial_number = generate_serial_number();
     let tbs_certificate = TbsCertificate {
         version: ContextSpecific {
@@ -208,16 +217,6 @@ pub fn generate_certificate(
         subject_public_key_info: SubjectPublicKeyInfo {
             algorithm: AlgorithmIdentifier::ed25519(),
             subject_public_key: BitString::from_bytes(&public_key_bytes)?,
-        },
-        issuer_unique_id: ContextSpecific {
-            tag_number: TagNumber::N1,
-            tag_mode: TagMode::Implicit,
-            value: BitString::from_bytes(&address_bytes)?,
-        },
-        subject_unique_id: ContextSpecific {
-            tag_number: TagNumber::N2,
-            tag_mode: TagMode::Implicit,
-            value: BitString::from_bytes(&address_bytes)?,
         },
         extensions: ContextSpecific {
             tag_number: TagNumber::N3,
@@ -238,10 +237,150 @@ pub fn generate_certificate(
     Ok(buffer)
 }
 
+fn validate_algorithm(algorithm: &AlgorithmIdentifier) -> Result<()> {
+    if algorithm.algorithm != OID_SIG_ED25519 {
+        return Err(anyhow!(
+            "invalid signature algorithm -- Ed25519 is required"
+        ));
+    }
+    if algorithm.parameters.is_some() {
+        return Err(anyhow!("invalid signature parameters"));
+    }
+    Ok(())
+}
+
+fn get_common_name(name: &Name) -> Result<String> {
+    match name {
+        Name::RdnSequence(sequence) => {
+            for rdn in sequence {
+                for atv in rdn.iter() {
+                    if atv.r#type == OID_X509_COMMON_NAME {
+                        return Ok(atv.value.decode_as()?);
+                    }
+                }
+            }
+            Err(anyhow!("common name not found"))
+        }
+    }
+}
+
+fn get_system_time(time: &Time) -> SystemTime {
+    match time {
+        Time::UtcTime(time) => time.to_system_time(),
+        Time::GeneralTime(time) => time.to_system_time(),
+    }
+}
+
+fn get_extension<'a>(
+    extensions: &'a [Extension],
+    oid: &ObjectIdentifier,
+) -> Result<&'a OctetString> {
+    let extensions = extensions
+        .iter()
+        .filter(|extension| extension.extension_id == *oid)
+        .collect::<Vec<&Extension>>();
+    if extensions.len() > 1 {
+        Err(anyhow!("too many extensions"))
+    } else if extensions.len() < 1 {
+        Err(anyhow!("required extension not found"))
+    } else {
+        Ok(&extensions[0].extension_value)
+    }
+}
+
+pub fn verify_certificate<V: VerifierConstructor>(der: &[u8], now: SystemTime) -> Result<V> {
+    let certificate = Certificate::from_der(der)?;
+
+    validate_algorithm(&certificate.signature_algorithm)?;
+    let tbs = &certificate.tbs_certificate;
+
+    if tbs.version.value != 2 {
+        return Err(anyhow!(
+            "invalid version {} -- Libernet certificates must use version 3",
+            tbs.version.value + 1
+        ));
+    }
+
+    validate_algorithm(&tbs.signature)?;
+
+    let not_before = get_system_time(&tbs.validity.not_before);
+    let not_after = get_system_time(&tbs.validity.not_after);
+    if not_after < not_before {
+        return Err(anyhow!(
+            "invalid validity range: {:?} - {:?}",
+            not_before,
+            not_after
+        ));
+    }
+    if now < not_before {
+        return Err(anyhow!(
+            "certificate not yet valid (starts at {:?})",
+            not_before
+        ));
+    }
+    if now > not_after {
+        return Err(anyhow!("certificate expired (ended at {:?})", not_after));
+    }
+
+    let subject_common_name = get_common_name(&tbs.subject)?;
+
+    validate_algorithm(&tbs.subject_public_key_info.algorithm)?;
+
+    let ed25519_public_key = utils::decompress_point_25519(H256::from_slice(
+        tbs.subject_public_key_info.subject_public_key.raw_bytes(),
+    ))?;
+
+    let bls_public_key_extension = get_extension(
+        tbs.extensions.value.as_slice(),
+        &OID_LIBERNET_BLS_PUBLIC_KEY,
+    )?;
+    let bls_public_key =
+        utils::decompress_g1(H384::from_slice(bls_public_key_extension.as_bytes()))?;
+    let verifier: V = VerifierConstructor::new(bls_public_key, ed25519_public_key);
+    {
+        let formatted_address = utils::format_scalar(verifier.address());
+        if subject_common_name != formatted_address {
+            return Err(anyhow!(
+                "incorrect subject common name: `{}` (expected: `{}`)",
+                subject_common_name,
+                formatted_address
+            ));
+        }
+    }
+
+    let identity_signature_extension = get_extension(
+        tbs.extensions.value.as_slice(),
+        &OID_LIBERNET_IDENTITY_SIGNATURE_V1,
+    )?;
+    let identity_signature =
+        LibernetIdentityExtension::from_der(identity_signature_extension.as_bytes())?;
+    identity_signature.verify(&verifier, tbs.serial_number)?;
+
+    let der = {
+        let mut buffer = Vec::<u8>::default();
+        tbs.encode_to_vec(&mut buffer)?;
+        buffer
+    };
+    let signature = {
+        let raw_bytes = certificate.signature_value.raw_bytes();
+        if raw_bytes.len() != SIGNATURE_LENGTH {
+            return Err(anyhow!("invalid Ed25519 signature format"));
+        }
+        let mut bytes = [0u8; SIGNATURE_LENGTH];
+        bytes.copy_from_slice(raw_bytes);
+        ed25519_dalek::Signature::from_bytes(&bytes)
+    };
+    verifier.ed25519_verify(der.as_slice(), &signature)?;
+
+    Ok(verifier)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use blstrs::{G1Projective, G2Projective};
+    use crate::remote::RemoteAccount;
+    use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
+    use curve25519_dalek::EdwardsPoint as Point25519;
     use der::Decode;
     use ed25519_dalek::ed25519::signature::SignerMut;
     use group::Group;
@@ -297,7 +436,7 @@ mod tests {
         }
     }
 
-    impl Signer for TestSigner {
+    impl Verifier for TestSigner {
         fn address(&self) -> Scalar {
             utils::hash_g1_to_scalar(self.public_key_bls)
         }
@@ -306,14 +445,28 @@ mod tests {
             self.public_key_bls
         }
 
+        fn ed25519_public_key(&self) -> Point25519 {
+            self.public_key_c25519
+        }
+
+        fn bls_verify(&self, _message: &[u8], _signature: G2Affine) -> Result<()> {
+            unimplemented!()
+        }
+
+        fn ed25519_verify(
+            &self,
+            _message: &[u8],
+            _signature: &ed25519_dalek::Signature,
+        ) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    impl Signer for TestSigner {
         fn bls_sign(&self, message: &[u8]) -> G2Affine {
             let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
             let gamma = hash * self.private_key_bls;
             gamma.into()
-        }
-
-        fn ed25519_public_key(&self) -> Point25519 {
-            self.public_key_c25519
         }
 
         fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
@@ -365,14 +518,12 @@ mod tests {
             PublicKey::Unknown(signer.ed25519_public_key().compress().as_bytes())
         );
         let address_bytes = signer.address().to_bytes_le();
-        assert_eq!(
-            certificate.issuer_uid.as_ref().unwrap().0,
-            BitString::new(0, &address_bytes)
-        );
-        assert_eq!(
-            certificate.subject_uid.as_ref().unwrap().0,
-            BitString::new(0, &address_bytes)
-        );
+        if let Some(issuer_uid) = certificate.issuer_uid.as_ref() {
+            assert_eq!(issuer_uid.0, BitString::new(0, &address_bytes));
+        }
+        if let Some(subject_uid) = certificate.subject_uid.as_ref() {
+            assert_eq!(subject_uid.0, BitString::new(0, &address_bytes));
+        }
         let extensions = certificate.extensions_map().unwrap();
         let bls_public_key = extensions
             .get(&utils::testing::OID_LIBERNET_BLS_PUBLIC_KEY)
@@ -397,5 +548,76 @@ mod tests {
             identity_signature,
             LibernetIdentityExtension::new(&signer, serial_number).unwrap()
         );
+    }
+
+    #[test]
+    fn test_certificate_verification() {
+        let signer = TestSigner::default();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der = generate_certificate(&signer, not_before, not_after).unwrap();
+        let verifier = verify_certificate::<RemoteAccount>(der.as_slice(), now).unwrap();
+        assert_eq!(signer.address(), verifier.address());
+        assert_eq!(signer.bls_public_key(), verifier.bls_public_key());
+        assert_eq!(signer.ed25519_public_key(), verifier.ed25519_public_key());
+    }
+
+    #[test]
+    fn test_wrong_bls_signature1() {
+        let signer1 = TestSigner::default();
+        let signer2 = TestSigner::default();
+        assert_ne!(signer1.bls_public_key(), signer2.bls_public_key());
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der = generate_certificate(&signer1, not_before, not_after).unwrap();
+        let mut certificate = Certificate::from_der(der.as_slice()).unwrap();
+        certificate.tbs_certificate.extensions.value[1] = Extension {
+            extension_id: OID_LIBERNET_IDENTITY_SIGNATURE_V1,
+            critical: true,
+            extension_value: {
+                let mut buffer = Vec::<u8>::default();
+                LibernetIdentityExtension::new(&signer2, certificate.tbs_certificate.serial_number)
+                    .unwrap()
+                    .encode_to_vec(&mut buffer)
+                    .unwrap();
+                OctetString::new(buffer).unwrap()
+            },
+        };
+        let der = {
+            let mut buffer = Vec::<u8>::default();
+            certificate.encode_to_vec(&mut buffer).unwrap();
+            buffer
+        };
+        assert!(verify_certificate::<RemoteAccount>(der.as_slice(), now).is_err());
+    }
+
+    #[test]
+    fn test_wrong_bls_signature2() {
+        let signer = TestSigner::default();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der = generate_certificate(&signer, not_before, not_after).unwrap();
+        let mut certificate = Certificate::from_der(der.as_slice()).unwrap();
+        certificate.tbs_certificate.extensions.value[1] = Extension {
+            extension_id: OID_LIBERNET_IDENTITY_SIGNATURE_V1,
+            critical: true,
+            extension_value: {
+                let mut buffer = Vec::<u8>::default();
+                LibernetIdentityExtension::new(&signer, generate_serial_number())
+                    .unwrap()
+                    .encode_to_vec(&mut buffer)
+                    .unwrap();
+                OctetString::new(buffer).unwrap()
+            },
+        };
+        let der = {
+            let mut buffer = Vec::<u8>::default();
+            certificate.encode_to_vec(&mut buffer).unwrap();
+            buffer
+        };
+        assert!(verify_certificate::<RemoteAccount>(der.as_slice(), now).is_err());
     }
 }
