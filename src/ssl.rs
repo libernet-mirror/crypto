@@ -378,8 +378,10 @@ pub fn verify_certificate<V: VerifierConstructor>(der: &[u8], now: SystemTime) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bls;
     use crate::remote::RemoteAccount;
-    use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
+    use crate::signer::PartialVerifier;
+    use blstrs::{G1Affine, G1Projective, G2Affine, Scalar};
     use curve25519_dalek::EdwardsPoint as Point25519;
     use der::Decode;
     use ed25519_dalek::ed25519::signature::SignerMut;
@@ -403,8 +405,6 @@ mod tests {
     }
 
     impl TestSigner {
-        const SIGNATURE_DST: &'static [u8] = b"libernet/bls_signature";
-
         fn generate_secret_key() -> H512 {
             let mut bytes = [0u8; 64];
             getrandom::getrandom(&mut bytes).unwrap();
@@ -436,7 +436,7 @@ mod tests {
         }
     }
 
-    impl Verifier for TestSigner {
+    impl PartialVerifier for TestSigner {
         fn address(&self) -> Scalar {
             utils::hash_g1_to_scalar(self.public_key_bls)
         }
@@ -445,12 +445,14 @@ mod tests {
             self.public_key_bls
         }
 
-        fn ed25519_public_key(&self) -> Point25519 {
-            self.public_key_c25519
-        }
-
         fn bls_verify(&self, _message: &[u8], _signature: G2Affine) -> Result<()> {
             unimplemented!()
+        }
+    }
+
+    impl Verifier for TestSigner {
+        fn ed25519_public_key(&self) -> Point25519 {
+            self.public_key_c25519
         }
 
         fn ed25519_verify(
@@ -464,9 +466,7 @@ mod tests {
 
     impl Signer for TestSigner {
         fn bls_sign(&self, message: &[u8]) -> G2Affine {
-            let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
-            let gamma = hash * self.private_key_bls;
-            gamma.into()
+            bls::sign(self.private_key_bls, message)
         }
 
         fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature {

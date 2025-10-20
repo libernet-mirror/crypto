@@ -1,22 +1,17 @@
-use crate::signer::{Verifier, VerifierConstructor};
+use crate::bls;
+use crate::signer::{PartialVerifier, Verifier, VerifierConstructor};
 use crate::utils;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use blstrs::Scalar;
-use blstrs::{G1Affine, G2Affine, G2Projective, pairing};
+use blstrs::{G1Affine, G2Affine};
 use curve25519_dalek::EdwardsPoint as Point25519;
-use group::prime::PrimeCurveAffine;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct RemoteAccount {
+pub struct PartialRemoteAccount {
     public_key_bls: G1Affine,
-    ed25519_verifying_key: ed25519_dalek::VerifyingKey,
 }
 
-impl RemoteAccount {
-    const SIGNATURE_DST: &'static [u8] = b"libernet/bls_signature";
-}
-
-impl Verifier for RemoteAccount {
+impl PartialVerifier for PartialRemoteAccount {
     fn address(&self) -> Scalar {
         utils::hash_g1_to_scalar(self.public_key_bls)
     }
@@ -25,18 +20,34 @@ impl Verifier for RemoteAccount {
         self.public_key_bls
     }
 
-    fn ed25519_public_key(&self) -> Point25519 {
-        self.ed25519_verifying_key.to_edwards()
+    fn bls_verify(&self, message: &[u8], signature: G2Affine) -> Result<()> {
+        bls::verify(self.public_key_bls, message, signature)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct RemoteAccount {
+    public_key_bls: G1Affine,
+    ed25519_verifying_key: ed25519_dalek::VerifyingKey,
+}
+
+impl PartialVerifier for RemoteAccount {
+    fn address(&self) -> Scalar {
+        utils::hash_g1_to_scalar(self.public_key_bls)
+    }
+
+    fn bls_public_key(&self) -> G1Affine {
+        self.public_key_bls
     }
 
     fn bls_verify(&self, message: &[u8], signature: G2Affine) -> Result<()> {
-        let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
-        if pairing(&self.public_key_bls, &hash.into())
-            != pairing(&G1Affine::generator(), &signature)
-        {
-            return Err(anyhow!("invalid signature"));
-        }
-        Ok(())
+        bls::verify(self.public_key_bls, message, signature)
+    }
+}
+
+impl Verifier for RemoteAccount {
+    fn ed25519_public_key(&self) -> Point25519 {
+        self.ed25519_verifying_key.to_edwards()
     }
 
     fn ed25519_verify(&self, message: &[u8], signature: &ed25519_dalek::Signature) -> Result<()> {

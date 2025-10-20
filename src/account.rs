@@ -1,15 +1,16 @@
+use crate::bls;
 use crate::remote::RemoteAccount;
-use crate::signer::{Signer, Verifier, VerifierConstructor};
+use crate::signer::{PartialVerifier, Signer, Verifier, VerifierConstructor};
 use crate::ssl;
 use crate::utils;
-use anyhow::{Result, anyhow};
-use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
+use anyhow::Result;
+use blstrs::{G1Affine, G1Projective, G2Affine, Scalar};
 use curve25519_dalek::EdwardsPoint as Point25519;
 use ed25519_dalek::{
     ed25519::signature::SignerMut,
     pkcs8::{EncodePrivateKey, spki::der::pem::LineEnding},
 };
-use group::{Group, prime::PrimeCurveAffine};
+use group::Group;
 use primitive_types::H512;
 use std::{sync::Mutex, time::SystemTime};
 use zeroize::{Zeroizing, zeroize_flat_type};
@@ -23,8 +24,6 @@ pub struct Account {
 }
 
 impl Account {
-    const SIGNATURE_DST: &'static [u8] = b"libernet/bls_signature";
-
     pub fn new(secret_key: H512) -> Self {
         let secret_key_prefix = {
             let mut prefix = [0u8; 32];
@@ -83,7 +82,7 @@ impl Account {
     }
 }
 
-impl Verifier for Account {
+impl PartialVerifier for Account {
     fn address(&self) -> Scalar {
         utils::hash_g1_to_scalar(self.public_key_bls)
     }
@@ -92,18 +91,14 @@ impl Verifier for Account {
         self.public_key_bls
     }
 
+    fn bls_verify(&self, message: &[u8], signature: G2Affine) -> Result<()> {
+        bls::verify(self.public_key_bls, message, signature)
+    }
+}
+
+impl Verifier for Account {
     fn ed25519_public_key(&self) -> Point25519 {
         self.public_key_c25519
-    }
-
-    fn bls_verify(&self, message: &[u8], signature: G2Affine) -> Result<()> {
-        let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
-        if pairing(&self.public_key_bls, &hash.into())
-            != pairing(&G1Affine::generator(), &signature)
-        {
-            return Err(anyhow!("invalid signature"));
-        }
-        Ok(())
     }
 
     fn ed25519_verify(&self, message: &[u8], signature: &ed25519_dalek::Signature) -> Result<()> {
@@ -114,9 +109,7 @@ impl Verifier for Account {
 
 impl Signer for Account {
     fn bls_sign(&self, message: &[u8]) -> G2Affine {
-        let hash = G2Projective::hash_to_curve(message, Self::SIGNATURE_DST, &[]);
-        let gamma = hash * self.private_key_bls;
-        gamma.into()
+        bls::sign(self.private_key_bls, message)
     }
 
     fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature {

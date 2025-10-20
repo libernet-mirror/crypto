@@ -155,7 +155,7 @@ impl Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signer::Verifier;
+    use crate::signer::PartialVerifier;
 
     const NUM_ROUNDS: usize = 3;
 

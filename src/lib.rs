@@ -1,4 +1,4 @@
-use crate::signer::{Signer, Verifier};
+use crate::signer::{PartialVerifier, Signer, Verifier};
 use anyhow::Context;
 use blstrs::G1Affine;
 use primitive_types::H512;
@@ -8,6 +8,7 @@ use wasm_bindgen::prelude::*;
 mod params;
 
 pub mod account;
+pub mod bls;
 pub mod kzg;
 pub mod pem;
 pub mod remote;
