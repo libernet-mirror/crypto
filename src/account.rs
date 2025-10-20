@@ -77,6 +77,10 @@ impl Account {
     ) -> Result<Vec<u8>> {
         ssl::generate_certificate(self, not_before, not_after)
     }
+
+    pub fn verify_ssl_certificate(der: &[u8], now: SystemTime) -> Result<RemoteAccount> {
+        ssl::verify_certificate(der, now)
+    }
 }
 
 impl Verifier for Account {
@@ -357,5 +361,20 @@ mod tests {
             bls_public_key.value,
             account.bls_public_key().to_compressed()
         );
+    }
+
+    #[test]
+    fn test_verify_ssl_certificate() {
+        let account = get_random_account();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der = account
+            .generate_ssl_certificate(not_before, not_after)
+            .unwrap();
+        let verifier = Account::verify_ssl_certificate(der.as_slice(), now).unwrap();
+        assert_eq!(account.address(), verifier.address());
+        assert_eq!(account.bls_public_key(), verifier.bls_public_key());
+        assert_eq!(account.ed25519_public_key(), verifier.ed25519_public_key());
     }
 }

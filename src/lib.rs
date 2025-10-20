@@ -1,6 +1,5 @@
 use crate::signer::{Signer, Verifier};
 use anyhow::Context;
-use base64::prelude::*;
 use blstrs::G1Affine;
 use primitive_types::H512;
 use std::time::{Duration, UNIX_EPOCH};
@@ -10,6 +9,7 @@ mod params;
 
 pub mod account;
 pub mod kzg;
+pub mod pem;
 pub mod remote;
 pub mod signer;
 pub mod ssl;
@@ -21,6 +21,52 @@ pub const MAX_PASSWORDS: usize = wallet::MAX_PASSWORDS;
 
 fn map_err(error: anyhow::Error) -> JsValue {
     JsValue::from_str(error.to_string().as_str())
+}
+
+#[wasm_bindgen]
+pub struct RemoteAccount {
+    inner: remote::RemoteAccount,
+}
+
+#[wasm_bindgen]
+impl RemoteAccount {
+    #[wasm_bindgen]
+    pub fn address(&self) -> String {
+        utils::format_scalar(self.inner.address())
+    }
+
+    #[wasm_bindgen]
+    pub fn public_key(&self) -> String {
+        utils::format_g1(self.inner.bls_public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn bls_public_key(&self) -> String {
+        utils::format_g1(self.inner.bls_public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn ed25519_public_key(&self) -> String {
+        utils::format_point_25519(self.inner.ed25519_public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn bls_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
+        self.inner
+            .bls_verify(message, utils::parse_g2(signature).map_err(map_err)?)
+            .map_err(map_err)
+    }
+
+    #[wasm_bindgen]
+    pub fn ed25519_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
+        let signature = signature
+            .parse::<H512>()
+            .map_err(|_| JsValue::from_str("invalid Ed25519 signature format"))?;
+        let signature = ed25519_dalek::Signature::from_bytes(signature.as_fixed_bytes());
+        self.inner
+            .ed25519_verify(message, &signature)
+            .map_err(map_err)
+    }
 }
 
 /// JavaScript bindings for the `Account` class.
@@ -43,18 +89,30 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn public_key(&self) -> String {
-        utils::format_g1(self.inner.public_key())
-    }
-
-    #[wasm_bindgen]
-    pub fn ed25519_public_key(&self) -> String {
-        utils::format_point_25519(self.inner.ed25519_public_key())
+    pub fn to_remote(&self) -> RemoteAccount {
+        RemoteAccount {
+            inner: self.inner.to_remote(),
+        }
     }
 
     #[wasm_bindgen]
     pub fn address(&self) -> String {
         utils::format_scalar(self.inner.address())
+    }
+
+    #[wasm_bindgen]
+    pub fn public_key(&self) -> String {
+        utils::format_g1(self.inner.public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn bls_public_key(&self) -> String {
+        utils::format_g1(self.inner.bls_public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn ed25519_public_key(&self) -> String {
+        utils::format_point_25519(self.inner.ed25519_public_key())
     }
 
     #[wasm_bindgen]
@@ -107,11 +165,21 @@ impl Account {
             .inner
             .generate_ssl_certificate(not_before, not_after)
             .map_err(map_err)?;
-        let base64 = BASE64_STANDARD.encode(der);
-        Ok(format!(
-            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
-            base64
-        ))
+        Ok(pem::der_to_pem(der.as_slice(), "CERTIFICATE"))
+    }
+
+    #[wasm_bindgen]
+    pub fn verify_ssl_certificate(pem: &str, now: u64) -> Result<RemoteAccount, JsValue> {
+        let (label, der) = pem::pem_to_der(pem).map_err(map_err)?;
+        if label != "CERTIFICATE" {
+            return Err(JsValue::from_str("not an X.509 certificate"));
+        }
+        let remote = account::Account::verify_ssl_certificate(
+            der.as_slice(),
+            UNIX_EPOCH + Duration::from_millis(now),
+        )
+        .map_err(map_err)?;
+        Ok(RemoteAccount { inner: remote })
     }
 }
 
@@ -216,16 +284,41 @@ mod tests {
     fn test_imported_account() {
         let account = test_account();
         assert_eq!(
+            account.address(),
+            "0x6563a40ba6be6653ec41760b41f9acaba89989fa1fa1e90dc57d41fb811b7a45",
+        );
+        assert_eq!(
             account.public_key(),
+            "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
+        );
+        assert_eq!(
+            account.bls_public_key(),
             "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
         );
         assert_eq!(
             account.ed25519_public_key(),
             "0xfe5bbf1520e0c5185425dbff7aabe4c3bb1c86efd76c16678e3694c51894578f",
         );
+    }
+
+    #[test]
+    fn test_remote_account() {
+        let account = test_account().to_remote();
         assert_eq!(
             account.address(),
             "0x6563a40ba6be6653ec41760b41f9acaba89989fa1fa1e90dc57d41fb811b7a45",
+        );
+        assert_eq!(
+            account.public_key(),
+            "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
+        );
+        assert_eq!(
+            account.bls_public_key(),
+            "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
+        );
+        assert_eq!(
+            account.ed25519_public_key(),
+            "0xfe5bbf1520e0c5185425dbff7aabe4c3bb1c86efd76c16678e3694c51894578f",
         );
     }
 
@@ -318,6 +411,29 @@ mod tests {
                 .unwrap()
                 .to_compressed()
         );
+    }
+
+    #[test]
+    fn test_verify_ssl_certificate() {
+        let account = test_account();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(34);
+        let not_after = now + Duration::from_secs(56);
+        let pem = account
+            .generate_ssl_certificate_pem(
+                not_before.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+            )
+            .unwrap();
+        let remote = Account::verify_ssl_certificate(
+            pem.as_str(),
+            now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+        )
+        .unwrap();
+        assert_eq!(account.address(), remote.address());
+        assert_eq!(account.public_key(), remote.public_key());
+        assert_eq!(account.bls_public_key(), remote.bls_public_key());
+        assert_eq!(account.ed25519_public_key(), remote.ed25519_public_key());
     }
 
     #[test]
