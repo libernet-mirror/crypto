@@ -11,6 +11,18 @@ pub struct PartialRemoteAccount {
     public_key_bls: G1Affine,
 }
 
+impl PartialRemoteAccount {
+    fn new(bls_public_key: G1Affine) -> Self {
+        Self {
+            public_key_bls: bls_public_key,
+        }
+    }
+
+    pub fn public_key(&self) -> G1Affine {
+        self.public_key_bls
+    }
+}
+
 impl PartialVerifier for PartialRemoteAccount {
     fn address(&self) -> Scalar {
         utils::hash_g1_to_scalar(self.public_key_bls)
@@ -29,6 +41,12 @@ impl PartialVerifier for PartialRemoteAccount {
 pub struct RemoteAccount {
     public_key_bls: G1Affine,
     ed25519_verifying_key: ed25519_dalek::VerifyingKey,
+}
+
+impl RemoteAccount {
+    pub fn public_key(&self) -> G1Affine {
+        self.public_key_bls
+    }
 }
 
 impl PartialVerifier for RemoteAccount {
@@ -74,6 +92,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_partial_remote_account() {
+        let account = PartialRemoteAccount::new(
+            utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5").unwrap(),
+        );
+        assert_eq!(
+            account.address(),
+            utils::parse_scalar(
+                "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            account.public_key(),
+            utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
+                .unwrap()
+        );
+        assert_eq!(
+            account.bls_public_key(),
+            utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
+                .unwrap()
+        );
+    }
+
+    #[test]
     fn test_remote_account() {
         let account = RemoteAccount::new(
             utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5").unwrap(),
@@ -85,6 +127,11 @@ mod tests {
                 "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
             )
             .unwrap()
+        );
+        assert_eq!(
+            account.public_key(),
+            utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
+                .unwrap()
         );
         assert_eq!(
             account.bls_public_key(),
