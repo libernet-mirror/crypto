@@ -349,7 +349,7 @@ mod tests {
         let bls_public_key = extensions
             .get(&utils::testing::OID_LIBERNET_BLS_PUBLIC_KEY)
             .unwrap();
-        assert!(bls_public_key.critical);
+        assert!(!bls_public_key.critical);
         assert_eq!(
             bls_public_key.value,
             account.bls_public_key().to_compressed()

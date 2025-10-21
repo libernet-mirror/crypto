@@ -166,7 +166,7 @@ fn make_libernet_extensions(signer: &impl Signer, serial_number: i128) -> Result
     let mut extensions = Vec::default();
     extensions.push(Extension {
         extension_id: OID_LIBERNET_BLS_PUBLIC_KEY,
-        critical: true,
+        critical: false,
         extension_value: OctetString::new(signer.bls_public_key().to_compressed())?,
     });
     let identity_extension = LibernetIdentityExtension::new(signer, serial_number)?;
@@ -177,7 +177,7 @@ fn make_libernet_extensions(signer: &impl Signer, serial_number: i128) -> Result
     };
     extensions.push(Extension {
         extension_id: OID_LIBERNET_IDENTITY_SIGNATURE_V1,
-        critical: true,
+        critical: false,
         extension_value: OctetString::new(der.as_slice())?,
     });
     Ok(extensions)
@@ -545,7 +545,7 @@ mod tests {
         let bls_public_key = extensions
             .get(&utils::testing::OID_LIBERNET_BLS_PUBLIC_KEY)
             .unwrap();
-        assert!(bls_public_key.critical);
+        assert!(!bls_public_key.critical);
         assert_eq!(
             bls_public_key.value,
             signer.bls_public_key().to_compressed()
@@ -553,7 +553,7 @@ mod tests {
         let identity_signature = extensions
             .get(&utils::testing::OID_LIBERNET_IDENTITY_SIGNATURE_V1)
             .unwrap();
-        assert!(identity_signature.critical);
+        assert!(!identity_signature.critical);
         let identity_signature =
             LibernetIdentityExtension::from_der(identity_signature.value).unwrap();
         let serial_number = {
@@ -638,7 +638,7 @@ mod tests {
         let mut certificate = Certificate::from_der(der.as_slice()).unwrap();
         certificate.tbs_certificate.extensions.value[1] = Extension {
             extension_id: OID_LIBERNET_IDENTITY_SIGNATURE_V1,
-            critical: true,
+            critical: false,
             extension_value: {
                 let mut buffer = Vec::<u8>::default();
                 LibernetIdentityExtension::new(&signer2, certificate.tbs_certificate.serial_number)
@@ -666,7 +666,7 @@ mod tests {
         let mut certificate = Certificate::from_der(der.as_slice()).unwrap();
         certificate.tbs_certificate.extensions.value[1] = Extension {
             extension_id: OID_LIBERNET_IDENTITY_SIGNATURE_V1,
-            critical: true,
+            critical: false,
             extension_value: {
                 let mut buffer = Vec::<u8>::default();
                 LibernetIdentityExtension::new(&signer, generate_serial_number())
