@@ -1,6 +1,8 @@
 use crate::signer::{Signer, Verifier, VerifierConstructor};
 use crate::utils;
 use anyhow::{Result, anyhow};
+use blstrs::G1Affine;
+use curve25519_dalek::EdwardsPoint as Point25519;
 use der::{
     Any, Choice, Decode, Encode, Sequence, TagMode, TagNumber, ValueOrd,
     asn1::{BitString, ContextSpecific, GeneralizedTime, OctetString, SetOfVec, UtcTime},
@@ -288,6 +290,21 @@ fn get_extension<'a>(
     }
 }
 
+fn recover_ed25519_public_key_impl(tbs: &TbsCertificate) -> Result<Point25519> {
+    validate_algorithm(&tbs.subject_public_key_info.algorithm)?;
+    utils::decompress_point_25519(H256::from_slice(
+        tbs.subject_public_key_info.subject_public_key.raw_bytes(),
+    ))
+}
+
+fn recover_bls_public_key_impl(tbs: &TbsCertificate) -> Result<G1Affine> {
+    let extension = get_extension(
+        tbs.extensions.value.as_slice(),
+        &OID_LIBERNET_BLS_PUBLIC_KEY,
+    )?;
+    utils::decompress_g1(H384::from_slice(extension.as_bytes()))
+}
+
 pub fn verify_certificate<V: VerifierConstructor>(der: &[u8], now: SystemTime) -> Result<V> {
     let certificate = Certificate::from_der(der)?;
 
@@ -324,18 +341,8 @@ pub fn verify_certificate<V: VerifierConstructor>(der: &[u8], now: SystemTime) -
 
     let subject_common_name = get_common_name(&tbs.subject)?;
 
-    validate_algorithm(&tbs.subject_public_key_info.algorithm)?;
-
-    let ed25519_public_key = utils::decompress_point_25519(H256::from_slice(
-        tbs.subject_public_key_info.subject_public_key.raw_bytes(),
-    ))?;
-
-    let bls_public_key_extension = get_extension(
-        tbs.extensions.value.as_slice(),
-        &OID_LIBERNET_BLS_PUBLIC_KEY,
-    )?;
-    let bls_public_key =
-        utils::decompress_g1(H384::from_slice(bls_public_key_extension.as_bytes()))?;
+    let ed25519_public_key = recover_ed25519_public_key_impl(tbs)?;
+    let bls_public_key = recover_bls_public_key_impl(tbs)?;
     let verifier: V = VerifierConstructor::new(bls_public_key, ed25519_public_key);
     {
         let formatted_address = utils::format_scalar(verifier.address());
@@ -375,11 +382,23 @@ pub fn verify_certificate<V: VerifierConstructor>(der: &[u8], now: SystemTime) -
     Ok(verifier)
 }
 
+pub fn recover_bls_public_key(certificate_der: &[u8]) -> Result<G1Affine> {
+    let certificate = Certificate::from_der(certificate_der)?;
+    recover_bls_public_key_impl(&certificate.tbs_certificate)
+}
+
+pub fn recover_public_keys(certificate_der: &[u8]) -> Result<(G1Affine, Point25519)> {
+    let certificate = Certificate::from_der(certificate_der)?;
+    let ed25519_public_key = recover_ed25519_public_key_impl(&certificate.tbs_certificate)?;
+    let bls_public_key = recover_bls_public_key_impl(&certificate.tbs_certificate)?;
+    Ok((bls_public_key, ed25519_public_key))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::bls;
-    use crate::remote::RemoteAccount;
+    use crate::remote::{PartialRemoteAccount, RemoteAccount};
     use crate::signer::PartialVerifier;
     use blstrs::{G1Affine, G1Projective, G2Affine, Scalar};
     use curve25519_dalek::EdwardsPoint as Point25519;
@@ -387,10 +406,8 @@ mod tests {
     use ed25519_dalek::ed25519::signature::SignerMut;
     use group::Group;
     use primitive_types::H512;
-    use std::{
-        sync::Mutex,
-        time::{Duration, UNIX_EPOCH},
-    };
+    use std::sync::Mutex;
+    use std::time::{Duration, UNIX_EPOCH};
     use x509_parser::{
         asn1_rs::BitString, oid_registry::OID_SIG_ED25519, parse_x509_certificate,
         public_key::PublicKey, x509::X509Version,
@@ -561,6 +578,52 @@ mod tests {
         assert_eq!(signer.address(), verifier.address());
         assert_eq!(signer.bls_public_key(), verifier.bls_public_key());
         assert_eq!(signer.ed25519_public_key(), verifier.ed25519_public_key());
+    }
+
+    #[test]
+    fn test_public_key_recovery() {
+        let signer = TestSigner::default();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der = generate_certificate(&signer, not_before, not_after).unwrap();
+        let der = der.as_slice();
+        assert_eq!(
+            recover_bls_public_key(der).unwrap(),
+            signer.bls_public_key()
+        );
+        let (bls_public_key, ed25519_public_key) = recover_public_keys(der).unwrap();
+        assert_eq!(bls_public_key, signer.bls_public_key());
+        assert_eq!(ed25519_public_key, signer.ed25519_public_key());
+    }
+
+    #[test]
+    fn test_partial_remote_account() {
+        let signer = TestSigner::default();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der = generate_certificate(&signer, not_before, not_after).unwrap();
+        let der = der.as_slice();
+        let remote = PartialRemoteAccount::from_certificate(der).unwrap();
+        assert_eq!(remote.address(), signer.address());
+        assert_eq!(remote.public_key(), signer.bls_public_key());
+        assert_eq!(remote.bls_public_key(), signer.bls_public_key());
+    }
+
+    #[test]
+    fn test_remote_account() {
+        let signer = TestSigner::default();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der = generate_certificate(&signer, not_before, not_after).unwrap();
+        let der = der.as_slice();
+        let remote = RemoteAccount::from_certificate(der).unwrap();
+        assert_eq!(remote.address(), signer.address());
+        assert_eq!(remote.public_key(), signer.bls_public_key());
+        assert_eq!(remote.bls_public_key(), signer.bls_public_key());
+        assert_eq!(remote.ed25519_public_key(), signer.ed25519_public_key());
     }
 
     #[test]

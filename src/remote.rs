@@ -1,5 +1,6 @@
 use crate::bls;
 use crate::signer::{PartialVerifier, Verifier, VerifierConstructor};
+use crate::ssl;
 use crate::utils;
 use anyhow::Result;
 use blstrs::Scalar;
@@ -12,10 +13,16 @@ pub struct PartialRemoteAccount {
 }
 
 impl PartialRemoteAccount {
-    fn new(bls_public_key: G1Affine) -> Self {
+    pub fn new(bls_public_key: G1Affine) -> Self {
         Self {
             public_key_bls: bls_public_key,
         }
+    }
+
+    pub fn from_certificate(der: &[u8]) -> Result<Self> {
+        Ok(Self {
+            public_key_bls: ssl::recover_bls_public_key(der)?,
+        })
     }
 
     pub fn public_key(&self) -> G1Affine {
@@ -44,6 +51,17 @@ pub struct RemoteAccount {
 }
 
 impl RemoteAccount {
+    pub fn from_certificate(der: &[u8]) -> Result<Self> {
+        let (bls_public_key, ed25519_public_key) = ssl::recover_public_keys(der)?;
+        Ok(Self {
+            public_key_bls: bls_public_key,
+            ed25519_verifying_key: ed25519_dalek::VerifyingKey::from_bytes(
+                utils::compress_point_25519(ed25519_public_key).as_fixed_bytes(),
+            )
+            .unwrap(),
+        })
+    }
+
     pub fn public_key(&self) -> G1Affine {
         self.public_key_bls
     }
