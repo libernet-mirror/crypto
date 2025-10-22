@@ -73,7 +73,7 @@ impl Account {
     /// The generated certificate includes the extensions defined by Libernet for authentication of
     /// the BLS12-381 keypair and is therefore suitable for use in all Libernet connections.
     ///
-    /// The implementation is RFC-528 compliant.
+    /// The implementation is RFC-5280 compliant.
     pub fn generate_ssl_certificate(
         &self,
         not_before: SystemTime,
