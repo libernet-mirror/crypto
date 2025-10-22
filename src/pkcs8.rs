@@ -17,6 +17,9 @@ struct PrivateKeyInfo {
     private_key: OctetString,
 }
 
+/// Encodes an unencrypted Ed25519 private key in PKCS#8 as per RFC-5208.
+///
+/// The returned byte array is in DER format, suitable for PEM with the `PRIVATE KEY` label.
 pub fn encode_ed25519_private_key(secret_key: H256) -> Result<Vec<u8>> {
     let mut key_der = Vec::<u8>::default();
     OctetString::new(secret_key.as_bytes())?.encode_to_vec(&mut key_der)?;
@@ -33,6 +36,14 @@ pub fn encode_ed25519_private_key(secret_key: H256) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Decodes an unencrypted Ed25519 private key specified in PKCS#8 DER format.
+///
+/// The returned 32-byte value represents the secret key, not the private key scalar. To obtain a
+/// full Ed25519 signing key you need to run:
+///
+///    let secret_key = pkcs8::decode_ed25519_private_key(der)?;
+///    let signing_key = ed25519_dalek::SigningKey::from_bytes(secret_key.as_fixed_bytes());
+///
 pub fn decode_ed25519_private_key(der: &[u8]) -> Result<H256> {
     let pki = PrivateKeyInfo::from_der(der)?;
     if pki.version != 0 {
