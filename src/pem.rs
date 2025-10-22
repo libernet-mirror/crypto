@@ -1,6 +1,9 @@
 use anyhow::{Context, Result, anyhow};
 use base64::prelude::*;
 
+pub const CERTIFICATE_LABEL: &'static str = "CERTIFICATE";
+pub const PRIVATE_KEY_LABEL: &'static str = "PRIVATE KEY";
+
 pub fn der_to_pem(der: &[u8], label: &str) -> String {
     let base64 = BASE64_STANDARD.encode(der);
     let mut pem = String::new();

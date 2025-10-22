@@ -1,4 +1,6 @@
 use crate::bls;
+use crate::pem;
+use crate::pkcs8;
 use crate::remote::RemoteAccount;
 use crate::signer::{PartialVerifier, Signer, Verifier, VerifierConstructor};
 use crate::ssl;
@@ -6,12 +8,9 @@ use crate::utils;
 use anyhow::Result;
 use blstrs::{G1Affine, G1Projective, G2Affine, Scalar};
 use curve25519_dalek::EdwardsPoint as Point25519;
-use ed25519_dalek::{
-    ed25519::signature::SignerMut,
-    pkcs8::{EncodePrivateKey, spki::der::pem::LineEnding},
-};
+use ed25519_dalek::ed25519::signature::SignerMut;
 use group::Group;
-use primitive_types::H512;
+use primitive_types::{H256, H512};
 use std::{sync::Mutex, time::SystemTime};
 use zeroize::{Zeroizing, zeroize_flat_type};
 
@@ -53,14 +52,20 @@ impl Account {
         self.public_key_bls
     }
 
-    pub fn export_ed25519_private_key_der(&self) -> Result<Zeroizing<Vec<u8>>> {
+    fn encode_private_key(&self) -> Result<Vec<u8>> {
         let signing_key = self.ed25519_signing_key.lock().unwrap();
-        Ok(signing_key.to_pkcs8_der()?.to_bytes())
+        pkcs8::encode_ed25519_private_key(H256::from_slice(signing_key.as_bytes()))
+    }
+
+    pub fn export_ed25519_private_key_der(&self) -> Result<Zeroizing<Vec<u8>>> {
+        let der = self.encode_private_key()?;
+        Ok(Zeroizing::new(der))
     }
 
     pub fn export_ed25519_private_key_pem(&self) -> Result<Zeroizing<String>> {
-        let signing_key = self.ed25519_signing_key.lock().unwrap();
-        Ok(signing_key.to_pkcs8_pem(LineEnding::LF)?)
+        let der = self.encode_private_key()?;
+        let pem = pem::der_to_pem(der.as_slice(), pem::PRIVATE_KEY_LABEL);
+        Ok(Zeroizing::new(pem))
     }
 
     /// Generates a new self-signed Ed25519 certificate in DER format.
@@ -131,7 +136,6 @@ mod tests {
     use super::*;
     use crate::signer::{Signer, Verifier};
     use crate::utils;
-    use ed25519_dalek::pkcs8::DecodePrivateKey;
     use std::time::Duration;
     use x509_parser::{asn1_rs::BitString, parse_x509_certificate, public_key::PublicKey};
 
@@ -204,8 +208,8 @@ mod tests {
     fn test_ed25519_private_key_der() {
         let account = get_random_account();
         let private_key = account.export_ed25519_private_key_der().unwrap();
-        let signing_key =
-            ed25519_dalek::SigningKey::from_pkcs8_der(private_key.as_slice()).unwrap();
+        let secret_key = pkcs8::decode_ed25519_private_key(private_key.as_slice()).unwrap();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(secret_key.as_fixed_bytes());
         assert_eq!(
             signing_key.verifying_key().to_edwards(),
             account.ed25519_public_key()
@@ -216,7 +220,10 @@ mod tests {
     fn test_ed25519_private_key_pem() {
         let account = Account::new(utils::get_random_bytes());
         let private_key = account.export_ed25519_private_key_pem().unwrap();
-        let signing_key = ed25519_dalek::SigningKey::from_pkcs8_pem(private_key.as_str()).unwrap();
+        let (label, der) = pem::pem_to_der(private_key.as_str()).unwrap();
+        assert_eq!(label, pem::PRIVATE_KEY_LABEL);
+        let secret_key = pkcs8::decode_ed25519_private_key(der.as_slice()).unwrap();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(secret_key.as_fixed_bytes());
         assert_eq!(
             signing_key.verifying_key().to_edwards(),
             account.ed25519_public_key()

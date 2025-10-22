@@ -11,6 +11,7 @@ pub mod account;
 pub mod bls;
 pub mod kzg;
 pub mod pem;
+pub mod pkcs8;
 pub mod remote;
 pub mod signer;
 pub mod ssl;

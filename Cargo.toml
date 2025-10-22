@@ -12,10 +12,10 @@ base64 = "0.22.1"
 bincode = { version = "2.0.1", features = ["serde"] }
 blstrs = "0.7.1"
 curve25519-dalek = "4.1.3"
-der = { version = "0.7.10", features = ["alloc", "derive"] }
+der = { version = "0.7.10", features = ["alloc", "arbitrary", "derive", "oid"] }
 dusk-bls12_381 = "0.14.2"
 dusk-poseidon = "0.41.0"
-ed25519-dalek = { version = "2.2.0", features = ["alloc", "pem", "pkcs8"] }
+ed25519-dalek = { version = "2.2.0", features = ["alloc"] }
 ff = "0.13.1"
 getrandom = { version = "0.2.16", features = ["js"] }
 group = "0.13.0"
