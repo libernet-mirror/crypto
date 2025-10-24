@@ -13,6 +13,9 @@ use primitive_types::{H256, H384, H768};
 use std::time::SystemTime;
 
 const OID_SIG_ED25519: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
+const OID_SIG_ECDSA_WITH_SHA256: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
+
 const OID_X509_COMMON_NAME: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.4.3");
 
 const OID_LIBERNET_BLS_PUBLIC_KEY: ObjectIdentifier =
@@ -28,6 +31,13 @@ struct AlgorithmIdentifier {
 }
 
 impl AlgorithmIdentifier {
+    fn ecdsa() -> Self {
+        Self {
+            algorithm: OID_SIG_ECDSA_WITH_SHA256,
+            parameters: None,
+        }
+    }
+
     fn ed25519() -> Self {
         Self {
             algorithm: OID_SIG_ED25519,

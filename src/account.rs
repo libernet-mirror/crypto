@@ -18,30 +18,37 @@ use zeroize::{Zeroizing, zeroize_flat_type};
 pub struct Account {
     private_key_bls: Scalar,
     public_key_bls: G1Affine,
+    ecdsa_signing_key: p256::ecdsa::SigningKey,
+    public_key_ecdsa: p256::AffinePoint,
     ed25519_signing_key: Mutex<ed25519_dalek::SigningKey>,
     public_key_c25519: Point25519,
 }
 
 impl Account {
-    pub fn new(secret_key: H512) -> Self {
-        let secret_key_prefix = {
-            let mut prefix = [0u8; 32];
-            prefix.copy_from_slice(&secret_key.to_fixed_bytes()[0..32]);
-            prefix
-        };
-
+    pub fn new(secret_key: H512) -> Result<Self> {
         let private_key_bls = utils::h512_to_scalar(secret_key);
         let public_key_bls = (G1Projective::generator() * private_key_bls).into();
 
-        let ed25519_signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_key_prefix);
+        let ephemeral_seed = {
+            let mut bytes = [0u8; 32];
+            getrandom::getrandom(&mut bytes)?;
+            bytes
+        };
+
+        let ecdsa_signing_key = p256::ecdsa::SigningKey::from_slice(&ephemeral_seed)?;
+        let public_key_ecdsa = *ecdsa_signing_key.verifying_key().as_affine();
+
+        let ed25519_signing_key = ed25519_dalek::SigningKey::from_bytes(&ephemeral_seed);
         let public_key_c25519 = ed25519_signing_key.verifying_key().to_edwards();
 
-        Self {
+        Ok(Self {
             private_key_bls,
             public_key_bls,
+            ecdsa_signing_key,
+            public_key_ecdsa,
             ed25519_signing_key: Mutex::new(ed25519_signing_key),
             public_key_c25519,
-        }
+        })
     }
 
     pub fn to_remote(&self) -> RemoteAccount {
@@ -52,18 +59,33 @@ impl Account {
         self.public_key_bls
     }
 
-    fn encode_private_key(&self) -> Result<Vec<u8>> {
+    fn encode_ecdsa_private_key(&self) -> Result<Vec<u8>> {
+        pkcs8::encode_ecdsa_private_key(&self.ecdsa_signing_key)
+    }
+
+    pub fn export_ecdsa_private_key_der(&self) -> Result<Zeroizing<Vec<u8>>> {
+        let der = self.encode_ecdsa_private_key()?;
+        Ok(Zeroizing::new(der))
+    }
+
+    pub fn export_ecdsa_private_key_pem(&self) -> Result<Zeroizing<String>> {
+        let der = self.encode_ecdsa_private_key()?;
+        let pem = pem::der_to_pem(der.as_slice(), pem::EC_PRIVATE_KEY_LABEL);
+        Ok(Zeroizing::new(pem))
+    }
+
+    fn encode_ed25519_private_key(&self) -> Result<Vec<u8>> {
         let signing_key = self.ed25519_signing_key.lock().unwrap();
         pkcs8::encode_ed25519_private_key(H256::from_slice(signing_key.as_bytes()))
     }
 
     pub fn export_ed25519_private_key_der(&self) -> Result<Zeroizing<Vec<u8>>> {
-        let der = self.encode_private_key()?;
+        let der = self.encode_ed25519_private_key()?;
         Ok(Zeroizing::new(der))
     }
 
     pub fn export_ed25519_private_key_pem(&self) -> Result<Zeroizing<String>> {
-        let der = self.encode_private_key()?;
+        let der = self.encode_ed25519_private_key()?;
         let pem = pem::der_to_pem(der.as_slice(), pem::PRIVATE_KEY_LABEL);
         Ok(Zeroizing::new(pem))
     }
@@ -145,7 +167,7 @@ mod tests {
             "0xcbf6220bf9c4c4d0a6e1b414671564a882f913d031f69202534d3b7f6d2780082cd83c76dfc1656a03ead24d79278b68a0b0ea4aa93dd100f88040e717a886f9"
                 .parse()
                 .unwrap(),
-        );
+        ).unwrap();
         assert_eq!(
             account.address(),
             utils::parse_scalar(
@@ -163,13 +185,6 @@ mod tests {
             utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
                 .unwrap()
         );
-        assert_eq!(
-            account.ed25519_public_key(),
-            utils::parse_point_25519(
-                "0x9cd641f9ca69a10dfe48cf7f57ee802d1e549053be6e9347a8e38f4a6a9b2161"
-            )
-            .unwrap()
-        );
     }
 
     #[test]
@@ -178,7 +193,7 @@ mod tests {
             "0xcbf6220bf9c4c4d0a6e1b414671564a882f913d031f69202534d3b7f6d2780082cd83c76dfc1656a03ead24d79278b68a0b0ea4aa93dd100f88040e717a886f9"
                 .parse()
                 .unwrap(),
-        ).to_remote();
+            ).unwrap().to_remote();
         assert_eq!(
             account.address(),
             utils::parse_scalar(
@@ -191,17 +206,10 @@ mod tests {
             utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
                 .unwrap()
         );
-        assert_eq!(
-            account.ed25519_public_key(),
-            utils::parse_point_25519(
-                "0x9cd641f9ca69a10dfe48cf7f57ee802d1e549053be6e9347a8e38f4a6a9b2161"
-            )
-            .unwrap()
-        );
     }
 
     fn get_random_account() -> Account {
-        Account::new(utils::get_random_bytes())
+        Account::new(utils::get_random_bytes()).unwrap()
     }
 
     #[test]
@@ -218,7 +226,7 @@ mod tests {
 
     #[test]
     fn test_ed25519_private_key_pem() {
-        let account = Account::new(utils::get_random_bytes());
+        let account = Account::new(utils::get_random_bytes()).unwrap();
         let private_key = account.export_ed25519_private_key_pem().unwrap();
         let (label, der) = pem::pem_to_der(private_key.as_str()).unwrap();
         assert_eq!(label, pem::PRIVATE_KEY_LABEL);

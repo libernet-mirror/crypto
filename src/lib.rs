@@ -86,7 +86,8 @@ impl Account {
                 secret_key
                     .parse()
                     .map_err(|_| JsValue::from_str("invalid secret key"))?,
-            ),
+            )
+            .map_err(map_err)?,
         })
     }
 
@@ -297,10 +298,6 @@ mod tests {
             account.bls_public_key(),
             "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
         );
-        assert_eq!(
-            account.ed25519_public_key(),
-            "0xfe5bbf1520e0c5185425dbff7aabe4c3bb1c86efd76c16678e3694c51894578f",
-        );
     }
 
     #[test]
@@ -317,10 +314,6 @@ mod tests {
         assert_eq!(
             account.bls_public_key(),
             "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
-        );
-        assert_eq!(
-            account.ed25519_public_key(),
-            "0xfe5bbf1520e0c5185425dbff7aabe4c3bb1c86efd76c16678e3694c51894578f",
         );
     }
 
