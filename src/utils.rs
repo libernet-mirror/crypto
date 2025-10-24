@@ -5,7 +5,9 @@ use curve25519_dalek::{
 };
 use dusk_bls12_381::BlsScalar as DuskScalar;
 use dusk_poseidon as poseidon;
+use fixed_hash::construct_fixed_hash;
 use group::GroupEncoding;
+use p256::AffinePoint as PointP256;
 use primitive_types::{H256, H384, H512, H768, U256};
 use sha3::{self, Digest};
 
@@ -102,6 +104,30 @@ pub fn format_g2(point: G2Affine) -> String {
 
 pub fn parse_g2(s: &str) -> Result<G2Affine> {
     decompress_g2(s.parse()?)
+}
+
+// H264 is not provided by the `primitive-types` crate but we need it to manage compressed SEC1
+// representations of Nist P256 points, which take 33 bytes.
+construct_fixed_hash! {
+    pub struct H264(33);
+}
+
+pub fn compress_p256(point: PointP256) -> H264 {
+    H264::from_slice(&point.to_bytes())
+}
+
+pub fn decompress_p256(hex: H264) -> Result<PointP256> {
+    PointP256::from_bytes(hex.as_bytes().into())
+        .into_option()
+        .context("invalid compressed Nist P256 point")
+}
+
+pub fn format_p256(point: PointP256) -> String {
+    format!("{:#x}", compress_p256(point))
+}
+
+pub fn parse_p256(s: &str) -> Result<PointP256> {
+    decompress_p256(s.parse()?)
 }
 
 pub fn compress_point_25519(point: Point25519) -> H256 {
@@ -242,4 +268,6 @@ mod tests {
                 .unwrap()
         );
     }
+
+    // TODO
 }

@@ -1,4 +1,4 @@
-use crate::signer::{PartialVerifier, Signer, Verifier};
+use crate::signer::{BlsVerifier, EcDsaVerifier, Ed25519Verifier, Signer};
 use anyhow::Context;
 use blstrs::G1Affine;
 use primitive_types::H512;
@@ -21,17 +21,64 @@ pub mod xits;
 
 pub const MAX_PASSWORDS: usize = wallet::MAX_PASSWORDS;
 
-fn map_err(error: anyhow::Error) -> JsValue {
-    JsValue::from_str(error.to_string().as_str())
+fn map_err<E: Into<anyhow::Error>>(error: E) -> JsValue {
+    JsValue::from_str(error.into().to_string().as_str())
 }
 
 #[wasm_bindgen]
-pub struct RemoteAccount {
-    inner: remote::RemoteAccount,
+pub struct RemoteEcDsaAccount {
+    inner: remote::RemoteEcDsaAccount,
 }
 
 #[wasm_bindgen]
-impl RemoteAccount {
+impl RemoteEcDsaAccount {
+    #[wasm_bindgen]
+    pub fn address(&self) -> String {
+        utils::format_scalar(self.inner.address())
+    }
+
+    #[wasm_bindgen]
+    pub fn public_key(&self) -> String {
+        utils::format_g1(self.inner.bls_public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn bls_public_key(&self) -> String {
+        utils::format_g1(self.inner.bls_public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn ecdsa_public_key(&self) -> String {
+        utils::format_p256(self.inner.ecdsa_public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn bls_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
+        self.inner
+            .bls_verify(message, utils::parse_g2(signature).map_err(map_err)?)
+            .map_err(map_err)
+    }
+
+    #[wasm_bindgen]
+    pub fn ecdsa_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
+        let signature = signature
+            .parse::<H512>()
+            .map_err(|_| JsValue::from_str("invalid ECDSA signature format"))?;
+        let signature =
+            p256::ecdsa::Signature::from_slice(signature.as_fixed_bytes()).map_err(map_err)?;
+        self.inner
+            .ecdsa_verify(message, &signature)
+            .map_err(map_err)
+    }
+}
+
+#[wasm_bindgen]
+pub struct RemoteEd25519Account {
+    inner: remote::RemoteEd25519Account,
+}
+
+#[wasm_bindgen]
+impl RemoteEd25519Account {
     #[wasm_bindgen]
     pub fn address(&self) -> String {
         utils::format_scalar(self.inner.address())
@@ -92,9 +139,16 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn to_remote(&self) -> RemoteAccount {
-        RemoteAccount {
-            inner: self.inner.to_remote(),
+    pub fn to_ecdsa_remote(&self) -> RemoteEcDsaAccount {
+        RemoteEcDsaAccount {
+            inner: self.inner.to_ecdsa_remote(),
+        }
+    }
+
+    #[wasm_bindgen]
+    pub fn to_ed25519_remote(&self) -> RemoteEd25519Account {
+        RemoteEd25519Account {
+            inner: self.inner.to_ed25519_remote(),
         }
     }
 
@@ -114,8 +168,19 @@ impl Account {
     }
 
     #[wasm_bindgen]
+    pub fn ecdsa_public_key(&self) -> String {
+        utils::format_p256(self.inner.ecdsa_public_key())
+    }
+
+    #[wasm_bindgen]
     pub fn ed25519_public_key(&self) -> String {
         utils::format_point_25519(self.inner.ed25519_public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn export_ecdsa_private_key_pem(&self) -> Result<String, JsValue> {
+        let zeroizing_pem = self.inner.export_ecdsa_private_key_pem().map_err(map_err)?;
+        Ok((*zeroizing_pem).clone())
     }
 
     #[wasm_bindgen]
@@ -136,6 +201,24 @@ impl Account {
     pub fn bls_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
         self.inner
             .bls_verify(message, utils::parse_g2(signature).map_err(map_err)?)
+            .map_err(map_err)
+    }
+
+    #[wasm_bindgen]
+    pub fn ecdsa_sign(&self, message: &[u8]) -> String {
+        let signature = self.inner.ecdsa_sign(message);
+        format!("{:#x}", H512::from_slice(signature.to_bytes().as_slice()))
+    }
+
+    #[wasm_bindgen]
+    pub fn ecdsa_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
+        let signature = signature
+            .parse::<H512>()
+            .map_err(|_| JsValue::from_str("invalid ECDSA signature format"))?;
+        let signature =
+            p256::ecdsa::Signature::from_slice(signature.as_fixed_bytes()).map_err(map_err)?;
+        self.inner
+            .ecdsa_verify(message, &signature)
             .map_err(map_err)
     }
 
@@ -172,7 +255,7 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn verify_ssl_certificate(pem: &str, now: u64) -> Result<RemoteAccount, JsValue> {
+    pub fn verify_ssl_certificate(pem: &str, now: u64) -> Result<RemoteEd25519Account, JsValue> {
         let (label, der) = pem::pem_to_der(pem).map_err(map_err)?;
         if label != "CERTIFICATE" {
             return Err(JsValue::from_str("not an X.509 certificate"));
@@ -182,7 +265,7 @@ impl Account {
             UNIX_EPOCH + Duration::from_millis(now),
         )
         .map_err(map_err)?;
-        Ok(RemoteAccount { inner: remote })
+        Ok(RemoteEd25519Account { inner: remote })
     }
 }
 
@@ -301,8 +384,25 @@ mod tests {
     }
 
     #[test]
-    fn test_remote_account() {
-        let account = test_account().to_remote();
+    fn test_ecdsa_remote_account() {
+        let account = test_account().to_ecdsa_remote();
+        assert_eq!(
+            account.address(),
+            "0x6563a40ba6be6653ec41760b41f9acaba89989fa1fa1e90dc57d41fb811b7a45",
+        );
+        assert_eq!(
+            account.public_key(),
+            "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
+        );
+        assert_eq!(
+            account.bls_public_key(),
+            "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
+        );
+    }
+
+    #[test]
+    fn test_ed25519_remote_account() {
+        let account = test_account().to_ed25519_remote();
         assert_eq!(
             account.address(),
             "0x6563a40ba6be6653ec41760b41f9acaba89989fa1fa1e90dc57d41fb811b7a45",
@@ -323,6 +423,14 @@ mod tests {
         let message = b"lorem ipsum";
         let signature = account.bls_sign(message);
         assert!(account.bls_verify(message, signature.as_str()).is_ok());
+    }
+
+    #[test]
+    fn test_ecdsa_signature() {
+        let account = test_account();
+        let message = b"lorem ipsum";
+        let signature = account.ecdsa_sign(message);
+        assert!(account.ecdsa_verify(message, signature.as_str()).is_ok());
     }
 
     #[test]

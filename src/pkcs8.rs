@@ -48,13 +48,12 @@ pub fn encode_ecdsa_private_key(signing_key: &p256::ecdsa::SigningKey) -> Result
         private_key: OctetString::new(signing_key.to_bytes().to_vec())?,
         // NOTE: the two following tags are being set to explicit even though the schema in RFC-5915
         // defines them as implicit. We do this because the `der` crate has a bug that causes
-        // decoding to fail if the tags are encoded as implicit. Encoding as explicit is fine-ish
-        // because the encoding is still valid (it unequivocally represents the exact data we want
-        // to represent) and most implementations accept it silently, but we should really fix this
-        // because if a strict implementation provides us with implicitly tagged fields our decoding
-        // will fail. That won't happen any time soon because this code is the only one generating
-        // Libernet's self-signed certificates with Libernet-specific extensions, but we should
-        // future-proof.
+        // decoding to fail if the tags are implicit. Encoding as explicit is fine-ish because the
+        // encoding is still valid (it unequivocally represents the exact data we want to represent)
+        // and most implementations accept it silently, but we should really fix this because if a
+        // strict implementation provides us with implicitly tagged fields our decoding will fail.
+        // That won't happen any time soon because this code is the only one generating Libernet's
+        // self-signed certificates with Libernet-specific extensions, but we should future-proof.
         parameters: Some(ContextSpecific {
             tag_number: TagNumber::N0,
             tag_mode: TagMode::Explicit,

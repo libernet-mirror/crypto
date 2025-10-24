@@ -1,11 +1,15 @@
 use crate::bls;
-use crate::signer::{PartialVerifier, Verifier, VerifierConstructor};
+use crate::signer::{
+    BlsVerifier, EcDsaVerifier, EcDsaVerifierConstructor, Ed25519Verifier,
+    Ed25519VerifierConstructor,
+};
 use crate::ssl;
 use crate::utils;
 use anyhow::Result;
-use blstrs::Scalar;
-use blstrs::{G1Affine, G2Affine};
+use blstrs::{G1Affine, G2Affine, Scalar};
 use curve25519_dalek::EdwardsPoint as Point25519;
+use ecdsa::signature::Verifier;
+use p256::AffinePoint as PointP256;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PartialRemoteAccount {
@@ -30,7 +34,7 @@ impl PartialRemoteAccount {
     }
 }
 
-impl PartialVerifier for PartialRemoteAccount {
+impl BlsVerifier for PartialRemoteAccount {
     fn address(&self) -> Scalar {
         utils::hash_g1_to_scalar(self.public_key_bls)
     }
@@ -45,14 +49,67 @@ impl PartialVerifier for PartialRemoteAccount {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct RemoteAccount {
+pub struct RemoteEcDsaAccount {
+    public_key_bls: G1Affine,
+    ecdsa_verifying_key: p256::ecdsa::VerifyingKey,
+}
+
+impl RemoteEcDsaAccount {
+    pub fn from_certificate(der: &[u8]) -> Result<Self> {
+        let (bls_public_key, ecdsa_public_key) = ssl::recover_ecdsa_public_keys(der)?;
+        Ok(Self {
+            public_key_bls: bls_public_key,
+            ecdsa_verifying_key: p256::ecdsa::VerifyingKey::from_affine(ecdsa_public_key).unwrap(),
+        })
+    }
+
+    pub fn public_key(&self) -> G1Affine {
+        self.public_key_bls
+    }
+}
+
+impl BlsVerifier for RemoteEcDsaAccount {
+    fn address(&self) -> Scalar {
+        utils::hash_g1_to_scalar(self.public_key_bls)
+    }
+
+    fn bls_public_key(&self) -> G1Affine {
+        self.public_key_bls
+    }
+
+    fn bls_verify(&self, message: &[u8], signature: G2Affine) -> Result<()> {
+        bls::verify(self.public_key_bls, message, signature)
+    }
+}
+
+impl EcDsaVerifier for RemoteEcDsaAccount {
+    fn ecdsa_public_key(&self) -> PointP256 {
+        *self.ecdsa_verifying_key.as_affine()
+    }
+
+    fn ecdsa_verify(&self, message: &[u8], signature: &p256::ecdsa::Signature) -> Result<()> {
+        Ok(self.ecdsa_verifying_key.verify(message, signature)?)
+    }
+}
+
+impl EcDsaVerifierConstructor for RemoteEcDsaAccount {
+    fn new(bls_public_key: G1Affine, ecdsa_public_key: PointP256) -> Self {
+        Self {
+            public_key_bls: bls_public_key,
+            ecdsa_verifying_key: p256::ecdsa::VerifyingKey::from_affine(ecdsa_public_key).unwrap(),
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct RemoteEd25519Account {
     public_key_bls: G1Affine,
     ed25519_verifying_key: ed25519_dalek::VerifyingKey,
 }
 
-impl RemoteAccount {
+impl RemoteEd25519Account {
     pub fn from_certificate(der: &[u8]) -> Result<Self> {
-        let (bls_public_key, ed25519_public_key) = ssl::recover_public_keys(der)?;
+        let (bls_public_key, ed25519_public_key) = ssl::recover_ed25519_public_keys(der)?;
         Ok(Self {
             public_key_bls: bls_public_key,
             ed25519_verifying_key: ed25519_dalek::VerifyingKey::from_bytes(
@@ -67,7 +124,7 @@ impl RemoteAccount {
     }
 }
 
-impl PartialVerifier for RemoteAccount {
+impl BlsVerifier for RemoteEd25519Account {
     fn address(&self) -> Scalar {
         utils::hash_g1_to_scalar(self.public_key_bls)
     }
@@ -81,7 +138,7 @@ impl PartialVerifier for RemoteAccount {
     }
 }
 
-impl Verifier for RemoteAccount {
+impl Ed25519Verifier for RemoteEd25519Account {
     fn ed25519_public_key(&self) -> Point25519 {
         self.ed25519_verifying_key.to_edwards()
     }
@@ -93,7 +150,7 @@ impl Verifier for RemoteAccount {
     }
 }
 
-impl VerifierConstructor for RemoteAccount {
+impl Ed25519VerifierConstructor for RemoteEd25519Account {
     fn new(bls_public_key: G1Affine, ed25519_public_key: Point25519) -> Self {
         Self {
             public_key_bls: bls_public_key,
@@ -135,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_remote_account() {
-        let account = RemoteAccount::new(
+        let account = RemoteEd25519Account::new(
             utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5").unwrap(),
             utils::parse_point_25519("0x9cd641f9ca69a10dfe48cf7f57ee802d1e549053be6e9347a8e38f4a6a9b2161").unwrap(),
         );

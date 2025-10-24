@@ -293,8 +293,10 @@ dependencies = [
  "der",
  "dusk-bls12_381",
  "dusk-poseidon",
+ "ecdsa",
  "ed25519-dalek",
  "ff",
+ "fixed-hash",
  "getrandom",
  "group",
  "p256",
@@ -526,6 +528,7 @@ dependencies = [
  "digest",
  "elliptic-curve",
  "rfc6979",
+ "sha2",
  "signature",
  "spki",
 ]

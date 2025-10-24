@@ -1,15 +1,20 @@
 use crate::bls;
 use crate::pem;
 use crate::pkcs8;
-use crate::remote::RemoteAccount;
-use crate::signer::{PartialVerifier, Signer, Verifier, VerifierConstructor};
+use crate::remote::{RemoteEcDsaAccount, RemoteEd25519Account};
+use crate::signer::{
+    BlsVerifier, EcDsaVerifier, EcDsaVerifierConstructor, Ed25519Verifier,
+    Ed25519VerifierConstructor, Signer,
+};
 use crate::ssl;
 use crate::utils;
 use anyhow::Result;
 use blstrs::{G1Affine, G1Projective, G2Affine, Scalar};
 use curve25519_dalek::EdwardsPoint as Point25519;
+use ecdsa::signature::Verifier;
 use ed25519_dalek::ed25519::signature::SignerMut;
 use group::Group;
+use p256::AffinePoint as PointP256;
 use primitive_types::{H256, H512};
 use std::{sync::Mutex, time::SystemTime};
 use zeroize::{Zeroizing, zeroize_flat_type};
@@ -18,8 +23,8 @@ use zeroize::{Zeroizing, zeroize_flat_type};
 pub struct Account {
     private_key_bls: Scalar,
     public_key_bls: G1Affine,
-    ecdsa_signing_key: p256::ecdsa::SigningKey,
-    public_key_ecdsa: p256::AffinePoint,
+    ecdsa_signing_key: Mutex<p256::ecdsa::SigningKey>,
+    public_key_p256: p256::AffinePoint,
     ed25519_signing_key: Mutex<ed25519_dalek::SigningKey>,
     public_key_c25519: Point25519,
 }
@@ -36,7 +41,7 @@ impl Account {
         };
 
         let ecdsa_signing_key = p256::ecdsa::SigningKey::from_slice(&ephemeral_seed)?;
-        let public_key_ecdsa = *ecdsa_signing_key.verifying_key().as_affine();
+        let public_key_p256 = *ecdsa_signing_key.verifying_key().as_affine();
 
         let ed25519_signing_key = ed25519_dalek::SigningKey::from_bytes(&ephemeral_seed);
         let public_key_c25519 = ed25519_signing_key.verifying_key().to_edwards();
@@ -44,15 +49,19 @@ impl Account {
         Ok(Self {
             private_key_bls,
             public_key_bls,
-            ecdsa_signing_key,
-            public_key_ecdsa,
+            ecdsa_signing_key: Mutex::new(ecdsa_signing_key),
+            public_key_p256,
             ed25519_signing_key: Mutex::new(ed25519_signing_key),
             public_key_c25519,
         })
     }
 
-    pub fn to_remote(&self) -> RemoteAccount {
-        RemoteAccount::new(self.public_key_bls, self.public_key_c25519)
+    pub fn to_ecdsa_remote(&self) -> RemoteEcDsaAccount {
+        RemoteEcDsaAccount::new(self.public_key_bls, self.public_key_p256)
+    }
+
+    pub fn to_ed25519_remote(&self) -> RemoteEd25519Account {
+        RemoteEd25519Account::new(self.public_key_bls, self.public_key_c25519)
     }
 
     pub fn public_key(&self) -> G1Affine {
@@ -60,7 +69,8 @@ impl Account {
     }
 
     fn encode_ecdsa_private_key(&self) -> Result<Vec<u8>> {
-        pkcs8::encode_ecdsa_private_key(&self.ecdsa_signing_key)
+        let signing_key = self.ecdsa_signing_key.lock().unwrap();
+        pkcs8::encode_ecdsa_private_key(&*signing_key)
     }
 
     pub fn export_ecdsa_private_key_der(&self) -> Result<Zeroizing<Vec<u8>>> {
@@ -104,12 +114,12 @@ impl Account {
         ssl::generate_certificate(self, not_before, not_after)
     }
 
-    pub fn verify_ssl_certificate(der: &[u8], now: SystemTime) -> Result<RemoteAccount> {
+    pub fn verify_ssl_certificate(der: &[u8], now: SystemTime) -> Result<RemoteEd25519Account> {
         ssl::verify_certificate(der, now)
     }
 }
 
-impl PartialVerifier for Account {
+impl BlsVerifier for Account {
     fn address(&self) -> Scalar {
         utils::hash_g1_to_scalar(self.public_key_bls)
     }
@@ -123,7 +133,18 @@ impl PartialVerifier for Account {
     }
 }
 
-impl Verifier for Account {
+impl EcDsaVerifier for Account {
+    fn ecdsa_public_key(&self) -> PointP256 {
+        self.public_key_p256
+    }
+
+    fn ecdsa_verify(&self, message: &[u8], signature: &p256::ecdsa::Signature) -> Result<()> {
+        let verifying_key = self.ecdsa_signing_key.lock().unwrap();
+        Ok(verifying_key.verifying_key().verify(message, signature)?)
+    }
+}
+
+impl Ed25519Verifier for Account {
     fn ed25519_public_key(&self) -> Point25519 {
         self.public_key_c25519
     }
@@ -137,6 +158,11 @@ impl Verifier for Account {
 impl Signer for Account {
     fn bls_sign(&self, message: &[u8]) -> G2Affine {
         bls::sign(self.private_key_bls, message)
+    }
+
+    fn ecdsa_sign(&self, message: &[u8]) -> p256::ecdsa::Signature {
+        let mut signing_key = self.ecdsa_signing_key.lock().unwrap();
+        signing_key.sign(message)
     }
 
     fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
@@ -156,7 +182,7 @@ impl Drop for Account {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signer::{Signer, Verifier};
+    use crate::signer::{Ed25519Verifier, Signer};
     use crate::utils;
     use std::time::Duration;
     use x509_parser::{asn1_rs::BitString, parse_x509_certificate, public_key::PublicKey};
@@ -188,21 +214,35 @@ mod tests {
     }
 
     #[test]
-    fn test_remote_account() {
+    fn test_remote_accounts() {
         let account = Account::new(
             "0xcbf6220bf9c4c4d0a6e1b414671564a882f913d031f69202534d3b7f6d2780082cd83c76dfc1656a03ead24d79278b68a0b0ea4aa93dd100f88040e717a886f9"
                 .parse()
                 .unwrap(),
-            ).unwrap().to_remote();
+            ).unwrap();
+        let ecdsa_remote = account.to_ecdsa_remote();
         assert_eq!(
-            account.address(),
+            ecdsa_remote.address(),
             utils::parse_scalar(
                 "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
             )
             .unwrap()
         );
         assert_eq!(
-            account.bls_public_key(),
+            ecdsa_remote.bls_public_key(),
+            utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
+                .unwrap()
+        );
+        let ed25519_remote = account.to_ed25519_remote();
+        assert_eq!(
+            ed25519_remote.address(),
+            utils::parse_scalar(
+                "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            ed25519_remote.bls_public_key(),
             utils::parse_g1("0x81fa06efd3a3103f1c4b8276d489eb92821413292cda90ddccff85d284dbfe62b798a019124a75d21bbcdc90106c65f5")
                 .unwrap()
         );
@@ -210,6 +250,30 @@ mod tests {
 
     fn get_random_account() -> Account {
         Account::new(utils::get_random_bytes()).unwrap()
+    }
+
+    #[test]
+    fn test_ecdsa_private_key_der() {
+        let account = get_random_account();
+        let private_key = account.export_ecdsa_private_key_der().unwrap();
+        let signing_key = pkcs8::decode_ecdsa_private_key(private_key.as_slice()).unwrap();
+        assert_eq!(
+            *signing_key.verifying_key().as_affine(),
+            account.ecdsa_public_key()
+        );
+    }
+
+    #[test]
+    fn test_ecdsa_private_key_pem() {
+        let account = Account::new(utils::get_random_bytes()).unwrap();
+        let private_key = account.export_ecdsa_private_key_pem().unwrap();
+        let (label, der) = pem::pem_to_der(private_key.as_str()).unwrap();
+        assert_eq!(label, pem::EC_PRIVATE_KEY_LABEL);
+        let signing_key = pkcs8::decode_ecdsa_private_key(der.as_slice()).unwrap();
+        assert_eq!(
+            *signing_key.verifying_key().as_affine(),
+            account.ecdsa_public_key()
+        );
     }
 
     #[test]
@@ -269,7 +333,18 @@ mod tests {
         let account = get_random_account();
         let message = b"Hello, world!";
         let signature = account.bls_sign(message);
-        assert!(account.to_remote().bls_verify(message, signature).is_ok());
+        assert!(
+            account
+                .to_ecdsa_remote()
+                .bls_verify(message, signature)
+                .is_ok()
+        );
+        assert!(
+            account
+                .to_ed25519_remote()
+                .bls_verify(message, signature)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -279,7 +354,13 @@ mod tests {
         let wrong_message = b"Hello, world!";
         assert!(
             account
-                .to_remote()
+                .to_ecdsa_remote()
+                .bls_verify(wrong_message, signature)
+                .is_err()
+        );
+        assert!(
+            account
+                .to_ed25519_remote()
                 .bls_verify(wrong_message, signature)
                 .is_err()
         );
@@ -288,11 +369,40 @@ mod tests {
     #[test]
     fn test_verify_bls_signature_with_wrong_remote_key() {
         let account1 = get_random_account();
-        let account2 = get_random_account().to_remote();
+        let account2 = get_random_account().to_ecdsa_remote();
+        let account3 = get_random_account().to_ed25519_remote();
         assert_ne!(account1.public_key(), account2.bls_public_key());
+        assert_ne!(account1.public_key(), account3.bls_public_key());
         let message = b"Hello, world!";
         let signature = account1.bls_sign(message);
         assert!(account2.bls_verify(message, signature).is_err());
+        assert!(account3.bls_verify(message, signature).is_err());
+    }
+
+    #[test]
+    fn test_ecdsa_signature() {
+        let account = get_random_account();
+        let message = b"Hello, world!";
+        let signature = account.ecdsa_sign(message);
+        assert!(account.ecdsa_verify(message, &signature).is_ok());
+    }
+
+    #[test]
+    fn test_wrong_ecdsa_signature() {
+        let account = get_random_account();
+        let signature = account.ecdsa_sign(b"World, hello!");
+        let wrong_message = b"Hello, world!";
+        assert!(account.ecdsa_verify(wrong_message, &signature).is_err());
+    }
+
+    #[test]
+    fn test_verify_ecdsa_signature_with_wrong_key() {
+        let account1 = get_random_account();
+        let account2 = get_random_account();
+        assert_ne!(account1.ecdsa_public_key(), account2.ecdsa_public_key());
+        let message = b"Hello, world!";
+        let signature = account1.ecdsa_sign(message);
+        assert!(account2.ecdsa_verify(message, &signature).is_err());
     }
 
     #[test]

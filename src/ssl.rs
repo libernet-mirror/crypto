@@ -1,5 +1,5 @@
-use crate::signer::{Signer, Verifier, VerifierConstructor};
-use crate::utils;
+use crate::signer::{Ed25519Verifier, Ed25519VerifierConstructor, Signer};
+use crate::utils::{self, H264};
 use anyhow::{Result, anyhow};
 use blstrs::G1Affine;
 use curve25519_dalek::EdwardsPoint as Point25519;
@@ -9,6 +9,7 @@ use der::{
     oid::ObjectIdentifier,
 };
 use ed25519_dalek::SIGNATURE_LENGTH;
+use p256::AffinePoint as PointP256;
 use primitive_types::{H256, H384, H768};
 use std::time::SystemTime;
 
@@ -38,11 +39,33 @@ impl AlgorithmIdentifier {
         }
     }
 
+    fn validate_ecdsa(&self) -> Result<()> {
+        if self.algorithm != OID_SIG_ECDSA_WITH_SHA256 {
+            return Err(anyhow!("invalid signature algorithm -- ECDSA is required"));
+        }
+        if self.parameters.is_some() {
+            return Err(anyhow!("invalid signature parameters"));
+        }
+        Ok(())
+    }
+
     fn ed25519() -> Self {
         Self {
             algorithm: OID_SIG_ED25519,
             parameters: None,
         }
+    }
+
+    fn validate_ed25519(&self) -> Result<()> {
+        if self.algorithm != OID_SIG_ED25519 {
+            return Err(anyhow!(
+                "invalid signature algorithm -- Ed25519 is required"
+            ));
+        }
+        if self.parameters.is_some() {
+            return Err(anyhow!("invalid signature parameters"));
+        }
+        Ok(())
     }
 }
 
@@ -117,13 +140,17 @@ impl LibernetIdentityExtension {
         })
     }
 
-    pub fn verify_ed25519(&self, verifier: &impl Verifier, serial_number: i128) -> Result<()> {
+    pub fn verify_ed25519(
+        &self,
+        verifier: &impl Ed25519Verifier,
+        serial_number: i128,
+    ) -> Result<()> {
         if serial_number != self.message.serial_number {
             return Err(anyhow!(
                 "incorrect serial number in the BLS identity signature"
             ));
         }
-        validate_algorithm(&self.message.algorithm_identifier)?;
+        self.message.algorithm_identifier.validate_ed25519()?;
         let ed25519_public_key =
             utils::decompress_point_25519(H256::from_slice(self.message.public_key.as_bytes()))?;
         if ed25519_public_key != verifier.ed25519_public_key() {
@@ -252,18 +279,6 @@ pub fn generate_certificate(
     Ok(buffer)
 }
 
-fn validate_algorithm(algorithm: &AlgorithmIdentifier) -> Result<()> {
-    if algorithm.algorithm != OID_SIG_ED25519 {
-        return Err(anyhow!(
-            "invalid signature algorithm -- Ed25519 is required"
-        ));
-    }
-    if algorithm.parameters.is_some() {
-        return Err(anyhow!("invalid signature parameters"));
-    }
-    Ok(())
-}
-
 fn get_common_name(name: &Name) -> Result<String> {
     match name {
         Name::RdnSequence(sequence) => {
@@ -303,8 +318,15 @@ fn get_extension<'a>(
     }
 }
 
+fn recover_ecdsa_public_key_impl(tbs: &TbsCertificate) -> Result<PointP256> {
+    tbs.subject_public_key_info.algorithm.validate_ecdsa()?;
+    utils::decompress_p256(H264::from_slice(
+        tbs.subject_public_key_info.subject_public_key.raw_bytes(),
+    ))
+}
+
 fn recover_ed25519_public_key_impl(tbs: &TbsCertificate) -> Result<Point25519> {
-    validate_algorithm(&tbs.subject_public_key_info.algorithm)?;
+    tbs.subject_public_key_info.algorithm.validate_ed25519()?;
     utils::decompress_point_25519(H256::from_slice(
         tbs.subject_public_key_info.subject_public_key.raw_bytes(),
     ))
@@ -318,10 +340,10 @@ fn recover_bls_public_key_impl(tbs: &TbsCertificate) -> Result<G1Affine> {
     utils::decompress_g1(H384::from_slice(extension.as_bytes()))
 }
 
-pub fn verify_certificate<V: VerifierConstructor>(der: &[u8], now: SystemTime) -> Result<V> {
+pub fn verify_certificate<V: Ed25519VerifierConstructor>(der: &[u8], now: SystemTime) -> Result<V> {
     let certificate = Certificate::from_der(der)?;
 
-    validate_algorithm(&certificate.signature_algorithm)?;
+    certificate.signature_algorithm.validate_ed25519()?;
     let tbs = &certificate.tbs_certificate;
 
     if tbs.version.value != 2 {
@@ -331,7 +353,7 @@ pub fn verify_certificate<V: VerifierConstructor>(der: &[u8], now: SystemTime) -
         ));
     }
 
-    validate_algorithm(&tbs.signature)?;
+    tbs.signature.validate_ed25519()?;
 
     let not_before = get_system_time(&tbs.validity.not_before);
     let not_after = get_system_time(&tbs.validity.not_after);
@@ -356,7 +378,7 @@ pub fn verify_certificate<V: VerifierConstructor>(der: &[u8], now: SystemTime) -
 
     let ed25519_public_key = recover_ed25519_public_key_impl(tbs)?;
     let bls_public_key = recover_bls_public_key_impl(tbs)?;
-    let verifier: V = VerifierConstructor::new(bls_public_key, ed25519_public_key);
+    let verifier: V = Ed25519VerifierConstructor::new(bls_public_key, ed25519_public_key);
     {
         let formatted_address = utils::format_scalar(verifier.address());
         if subject_common_name != formatted_address {
@@ -400,7 +422,14 @@ pub fn recover_bls_public_key(certificate_der: &[u8]) -> Result<G1Affine> {
     recover_bls_public_key_impl(&certificate.tbs_certificate)
 }
 
-pub fn recover_public_keys(certificate_der: &[u8]) -> Result<(G1Affine, Point25519)> {
+pub fn recover_ecdsa_public_keys(certificate_der: &[u8]) -> Result<(G1Affine, PointP256)> {
+    let certificate = Certificate::from_der(certificate_der)?;
+    let ecdsa_public_key = recover_ecdsa_public_key_impl(&certificate.tbs_certificate)?;
+    let bls_public_key = recover_bls_public_key_impl(&certificate.tbs_certificate)?;
+    Ok((bls_public_key, ecdsa_public_key))
+}
+
+pub fn recover_ed25519_public_keys(certificate_der: &[u8]) -> Result<(G1Affine, Point25519)> {
     let certificate = Certificate::from_der(certificate_der)?;
     let ed25519_public_key = recover_ed25519_public_key_impl(&certificate.tbs_certificate)?;
     let bls_public_key = recover_bls_public_key_impl(&certificate.tbs_certificate)?;
@@ -411,8 +440,8 @@ pub fn recover_public_keys(certificate_der: &[u8]) -> Result<(G1Affine, Point255
 mod tests {
     use super::*;
     use crate::bls;
-    use crate::remote::{PartialRemoteAccount, RemoteAccount};
-    use crate::signer::PartialVerifier;
+    use crate::remote::{PartialRemoteAccount, RemoteEd25519Account};
+    use crate::signer::{BlsVerifier, EcDsaVerifier};
     use blstrs::{G1Affine, G1Projective, G2Affine, Scalar};
     use curve25519_dalek::EdwardsPoint as Point25519;
     use der::Decode;
@@ -430,6 +459,8 @@ mod tests {
     struct TestSigner {
         private_key_bls: Scalar,
         public_key_bls: G1Affine,
+        ecdsa_signing_key: Mutex<p256::ecdsa::SigningKey>,
+        public_key_p256: PointP256,
         ed25519_signing_key: Mutex<ed25519_dalek::SigningKey>,
         public_key_c25519: Point25519,
     }
@@ -454,19 +485,25 @@ mod tests {
             let private_key_bls = utils::h512_to_scalar(secret_key);
             let public_key_bls = (G1Projective::generator() * private_key_bls).into();
 
+            let ecdsa_signing_key =
+                p256::ecdsa::SigningKey::from_slice(&secret_key_prefix).unwrap();
+            let public_key_p256 = *ecdsa_signing_key.verifying_key().as_affine();
+
             let ed25519_signing_key = ed25519_dalek::SigningKey::from_bytes(&secret_key_prefix);
             let public_key_c25519 = ed25519_signing_key.verifying_key().to_edwards();
 
             Self {
                 private_key_bls,
                 public_key_bls,
+                ecdsa_signing_key: Mutex::new(ecdsa_signing_key),
+                public_key_p256,
                 ed25519_signing_key: Mutex::new(ed25519_signing_key),
                 public_key_c25519,
             }
         }
     }
 
-    impl PartialVerifier for TestSigner {
+    impl BlsVerifier for TestSigner {
         fn address(&self) -> Scalar {
             utils::hash_g1_to_scalar(self.public_key_bls)
         }
@@ -480,7 +517,17 @@ mod tests {
         }
     }
 
-    impl Verifier for TestSigner {
+    impl EcDsaVerifier for TestSigner {
+        fn ecdsa_public_key(&self) -> PointP256 {
+            self.public_key_p256
+        }
+
+        fn ecdsa_verify(&self, _message: &[u8], _signature: &p256::ecdsa::Signature) -> Result<()> {
+            unimplemented!()
+        }
+    }
+
+    impl Ed25519Verifier for TestSigner {
         fn ed25519_public_key(&self) -> Point25519 {
             self.public_key_c25519
         }
@@ -497,6 +544,11 @@ mod tests {
     impl Signer for TestSigner {
         fn bls_sign(&self, message: &[u8]) -> G2Affine {
             bls::sign(self.private_key_bls, message)
+        }
+
+        fn ecdsa_sign(&self, message: &[u8]) -> p256::ecdsa::Signature {
+            let mut signing_key = self.ecdsa_signing_key.lock().unwrap();
+            signing_key.sign(message)
         }
 
         fn ed25519_sign(&self, message: &[u8]) -> ed25519_dalek::Signature {
@@ -587,7 +639,7 @@ mod tests {
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
         let der = generate_certificate(&signer, not_before, not_after).unwrap();
-        let verifier = verify_certificate::<RemoteAccount>(der.as_slice(), now).unwrap();
+        let verifier = verify_certificate::<RemoteEd25519Account>(der.as_slice(), now).unwrap();
         assert_eq!(signer.address(), verifier.address());
         assert_eq!(signer.bls_public_key(), verifier.bls_public_key());
         assert_eq!(signer.ed25519_public_key(), verifier.ed25519_public_key());
@@ -605,7 +657,7 @@ mod tests {
             recover_bls_public_key(der).unwrap(),
             signer.bls_public_key()
         );
-        let (bls_public_key, ed25519_public_key) = recover_public_keys(der).unwrap();
+        let (bls_public_key, ed25519_public_key) = recover_ed25519_public_keys(der).unwrap();
         assert_eq!(bls_public_key, signer.bls_public_key());
         assert_eq!(ed25519_public_key, signer.ed25519_public_key());
     }
@@ -632,7 +684,7 @@ mod tests {
         let not_after = now + Duration::from_secs(34);
         let der = generate_certificate(&signer, not_before, not_after).unwrap();
         let der = der.as_slice();
-        let remote = RemoteAccount::from_certificate(der).unwrap();
+        let remote = RemoteEd25519Account::from_certificate(der).unwrap();
         assert_eq!(remote.address(), signer.address());
         assert_eq!(remote.public_key(), signer.bls_public_key());
         assert_eq!(remote.bls_public_key(), signer.bls_public_key());
@@ -669,7 +721,7 @@ mod tests {
             certificate.encode_to_vec(&mut buffer).unwrap();
             buffer
         };
-        assert!(verify_certificate::<RemoteAccount>(der.as_slice(), now).is_err());
+        assert!(verify_certificate::<RemoteEd25519Account>(der.as_slice(), now).is_err());
     }
 
     #[test]
@@ -697,6 +749,6 @@ mod tests {
             certificate.encode_to_vec(&mut buffer).unwrap();
             buffer
         };
-        assert!(verify_certificate::<RemoteAccount>(der.as_slice(), now).is_err());
+        assert!(verify_certificate::<RemoteEd25519Account>(der.as_slice(), now).is_err());
     }
 }
