@@ -85,7 +85,8 @@ struct Extension {
 #[derive(Debug, Sequence, ValueOrd, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LibernetIdentityMessage {
     serial_number: i128,
-    ed25519_public_key: OctetString,
+    algorithm_identifier: AlgorithmIdentifier,
+    public_key: OctetString,
 }
 
 #[derive(Debug, Sequence, ValueOrd, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -95,12 +96,14 @@ pub struct LibernetIdentityExtension {
 }
 
 impl LibernetIdentityExtension {
-    pub fn new(signer: &impl Signer, serial_number: i128) -> Result<Self> {
+    pub fn ed25519(signer: &impl Signer, serial_number: i128) -> Result<Self> {
         let identity_message = LibernetIdentityMessage {
             serial_number,
-            ed25519_public_key: OctetString::new(
-                signer.ed25519_public_key().compress().as_bytes(),
-            )?,
+            algorithm_identifier: AlgorithmIdentifier {
+                algorithm: OID_SIG_ED25519,
+                parameters: None,
+            },
+            public_key: OctetString::new(signer.ed25519_public_key().compress().as_bytes())?,
         };
         let der = {
             let mut der = Vec::<u8>::default();
@@ -114,15 +117,15 @@ impl LibernetIdentityExtension {
         })
     }
 
-    pub fn verify(&self, verifier: &impl Verifier, serial_number: i128) -> Result<()> {
+    pub fn verify_ed25519(&self, verifier: &impl Verifier, serial_number: i128) -> Result<()> {
         if serial_number != self.message.serial_number {
             return Err(anyhow!(
                 "incorrect serial number in the BLS identity signature"
             ));
         }
-        let ed25519_public_key = utils::decompress_point_25519(H256::from_slice(
-            self.message.ed25519_public_key.as_bytes(),
-        ))?;
+        validate_algorithm(&self.message.algorithm_identifier)?;
+        let ed25519_public_key =
+            utils::decompress_point_25519(H256::from_slice(self.message.public_key.as_bytes()))?;
         if ed25519_public_key != verifier.ed25519_public_key() {
             return Err(anyhow!("invalid Ed25519 key in the BLS identity signature"));
         }
@@ -179,7 +182,7 @@ fn make_libernet_extensions(signer: &impl Signer, serial_number: i128) -> Result
         critical: false,
         extension_value: OctetString::new(signer.bls_public_key().to_compressed())?,
     });
-    let identity_extension = LibernetIdentityExtension::new(signer, serial_number)?;
+    let identity_extension = LibernetIdentityExtension::ed25519(signer, serial_number)?;
     let der = {
         let mut der = Vec::<u8>::default();
         identity_extension.encode_to_vec(&mut der)?;
@@ -371,7 +374,7 @@ pub fn verify_certificate<V: VerifierConstructor>(der: &[u8], now: SystemTime) -
     )?;
     let identity_signature =
         LibernetIdentityExtension::from_der(identity_signature_extension.as_bytes())?;
-    identity_signature.verify(&verifier, tbs.serial_number)?;
+    identity_signature.verify_ed25519(&verifier, tbs.serial_number)?;
 
     let der = {
         let mut buffer = Vec::<u8>::default();
@@ -573,7 +576,7 @@ mod tests {
         };
         assert_eq!(
             identity_signature,
-            LibernetIdentityExtension::new(&signer, serial_number).unwrap()
+            LibernetIdentityExtension::ed25519(&signer, serial_number).unwrap()
         );
     }
 
@@ -651,10 +654,13 @@ mod tests {
             critical: false,
             extension_value: {
                 let mut buffer = Vec::<u8>::default();
-                LibernetIdentityExtension::new(&signer2, certificate.tbs_certificate.serial_number)
-                    .unwrap()
-                    .encode_to_vec(&mut buffer)
-                    .unwrap();
+                LibernetIdentityExtension::ed25519(
+                    &signer2,
+                    certificate.tbs_certificate.serial_number,
+                )
+                .unwrap()
+                .encode_to_vec(&mut buffer)
+                .unwrap();
                 OctetString::new(buffer).unwrap()
             },
         };
@@ -679,7 +685,7 @@ mod tests {
             critical: false,
             extension_value: {
                 let mut buffer = Vec::<u8>::default();
-                LibernetIdentityExtension::new(&signer, generate_serial_number())
+                LibernetIdentityExtension::ed25519(&signer, generate_serial_number())
                     .unwrap()
                     .encode_to_vec(&mut buffer)
                     .unwrap();

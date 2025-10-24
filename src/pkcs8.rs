@@ -46,6 +46,15 @@ pub fn encode_ecdsa_private_key(signing_key: &p256::ecdsa::SigningKey) -> Result
     EcPrivateKey {
         version: 1,
         private_key: OctetString::new(signing_key.to_bytes().to_vec())?,
+        // NOTE: the two following tags are being set to explicit even though the schema in RFC-5915
+        // defines them as implicit. We do this because the `der` crate has a bug that causes
+        // decoding to fail if the tags are encoded as implicit. Encoding as explicit is fine-ish
+        // because the encoding is still valid (it unequivocally represents the exact data we want
+        // to represent) and most implementations accept it silently, but we should really fix this
+        // because if a strict implementation provides us with implicitly tagged fields our decoding
+        // will fail. That won't happen any time soon because this code is the only one generating
+        // Libernet's self-signed certificates with Libernet-specific extensions, but we should
+        // future-proof.
         parameters: Some(ContextSpecific {
             tag_number: TagNumber::N0,
             tag_mode: TagMode::Explicit,
@@ -102,17 +111,11 @@ pub fn decode_ecdsa_private_key(der: &[u8]) -> Result<p256::ecdsa::SigningKey> {
     }
     let signing_key = p256::ecdsa::SigningKey::from_slice(ec_private_key.private_key.as_bytes())?;
     if let Some(public_key) = ec_private_key.public_key {
-        match public_key.value.as_bytes() {
-            Some(bytes) => {
-                let verifying_key = p256::ecdsa::VerifyingKey::from_sec1_bytes(bytes)?;
-                if verifying_key.as_affine() != signing_key.verifying_key().as_affine() {
-                    return Err(anyhow!("ECDSA keypair mismatch"));
-                }
-            }
-            None => {
-                return Err(anyhow!("invalid ECDSA public key"));
-            }
-        };
+        let verifying_key =
+            p256::ecdsa::VerifyingKey::from_sec1_bytes(public_key.value.raw_bytes())?;
+        if verifying_key.as_affine() != signing_key.verifying_key().as_affine() {
+            return Err(anyhow!("ECDSA keypair mismatch"));
+        }
     }
     Ok(signing_key)
 }
