@@ -1,8 +1,9 @@
 use anyhow::{Context, Result, anyhow};
 use base64::prelude::*;
 
-pub const CERTIFICATE_LABEL: &'static str = "CERTIFICATE";
+pub const EC_PRIVATE_KEY_LABEL: &'static str = "EC PRIVATE KEY";
 pub const PRIVATE_KEY_LABEL: &'static str = "PRIVATE KEY";
+pub const CERTIFICATE_LABEL: &'static str = "CERTIFICATE";
 
 pub fn der_to_pem(der: &[u8], label: &str) -> String {
     let base64 = BASE64_STANDARD.encode(der);
@@ -134,7 +135,6 @@ mod tests {
             "-----BEGIN LOREM-----\n",
             "c2F0b3IgYXJlcG8gdGVuZXQgb3BlcmEgcm90YXMgc2F0b3IgYXJlcG8gdGVuZXQg\n",
             "b3BlcmEgcm90YXMgc2F0b3IgYXJlcG8gdGVuZXQgb3BlcmEgcm90YXMgc2F0b3Ig\n",
-            "YXJlcG8gdGVuZXQgb3BlcmEgcm90YXM=\n",
             "-----END LOREM-----\n",
             "YXJlcG8gdGVuZXQgb3BlcmEgcm90YXM=\n",
         );

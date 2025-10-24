@@ -145,7 +145,7 @@ impl Wallet {
                 hasher.update(key.to_bytes_le());
                 hasher.update((index as u64).to_le_bytes());
                 let secret_key = H512::from_slice(&hasher.finalize());
-                result = Ok(Account::new(secret_key));
+                result = Ok(Account::new(secret_key)?);
             }
         }
         result
@@ -155,7 +155,7 @@ impl Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signer::PartialVerifier;
+    use crate::signer::BlsVerifier;
 
     const NUM_ROUNDS: usize = 3;
 

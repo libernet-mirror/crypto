@@ -1,4 +1,4 @@
-use crate::signer::{PartialVerifier, Signer, Verifier};
+use crate::signer::{BlsVerifier, EcDsaVerifier, Ed25519Verifier, Signer};
 use anyhow::Context;
 use blstrs::G1Affine;
 use primitive_types::H512;
@@ -21,13 +21,13 @@ pub mod xits;
 
 pub const MAX_PASSWORDS: usize = wallet::MAX_PASSWORDS;
 
-fn map_err(error: anyhow::Error) -> JsValue {
-    JsValue::from_str(error.to_string().as_str())
+fn map_err<E: Into<anyhow::Error>>(error: E) -> JsValue {
+    JsValue::from_str(error.into().to_string().as_str())
 }
 
 #[wasm_bindgen]
 pub struct RemoteAccount {
-    inner: remote::RemoteAccount,
+    inner: remote::PartialRemoteAccount,
 }
 
 #[wasm_bindgen]
@@ -48,25 +48,9 @@ impl RemoteAccount {
     }
 
     #[wasm_bindgen]
-    pub fn ed25519_public_key(&self) -> String {
-        utils::format_point_25519(self.inner.ed25519_public_key())
-    }
-
-    #[wasm_bindgen]
     pub fn bls_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
         self.inner
             .bls_verify(message, utils::parse_g2(signature).map_err(map_err)?)
-            .map_err(map_err)
-    }
-
-    #[wasm_bindgen]
-    pub fn ed25519_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
-        let signature = signature
-            .parse::<H512>()
-            .map_err(|_| JsValue::from_str("invalid Ed25519 signature format"))?;
-        let signature = ed25519_dalek::Signature::from_bytes(signature.as_fixed_bytes());
-        self.inner
-            .ed25519_verify(message, &signature)
             .map_err(map_err)
     }
 }
@@ -86,7 +70,8 @@ impl Account {
                 secret_key
                     .parse()
                     .map_err(|_| JsValue::from_str("invalid secret key"))?,
-            ),
+            )
+            .map_err(map_err)?,
         })
     }
 
@@ -113,8 +98,19 @@ impl Account {
     }
 
     #[wasm_bindgen]
+    pub fn ecdsa_public_key(&self) -> String {
+        utils::format_p256(self.inner.ecdsa_public_key())
+    }
+
+    #[wasm_bindgen]
     pub fn ed25519_public_key(&self) -> String {
         utils::format_point_25519(self.inner.ed25519_public_key())
+    }
+
+    #[wasm_bindgen]
+    pub fn export_ecdsa_private_key_pem(&self) -> Result<String, JsValue> {
+        let zeroizing_pem = self.inner.export_ecdsa_private_key_pem().map_err(map_err)?;
+        Ok((*zeroizing_pem).clone())
     }
 
     #[wasm_bindgen]
@@ -139,6 +135,24 @@ impl Account {
     }
 
     #[wasm_bindgen]
+    pub fn ecdsa_sign(&self, message: &[u8]) -> String {
+        let signature = self.inner.ecdsa_sign(message);
+        format!("{:#x}", H512::from_slice(signature.to_bytes().as_slice()))
+    }
+
+    #[wasm_bindgen]
+    pub fn ecdsa_verify(&self, message: &[u8], signature: &str) -> Result<(), JsValue> {
+        let signature = signature
+            .parse::<H512>()
+            .map_err(|_| JsValue::from_str("invalid ECDSA signature format"))?;
+        let signature =
+            p256::ecdsa::Signature::from_slice(signature.as_fixed_bytes()).map_err(map_err)?;
+        self.inner
+            .ecdsa_verify(message, &signature)
+            .map_err(map_err)
+    }
+
+    #[wasm_bindgen]
     pub fn ed25519_sign(&self, message: &[u8]) -> String {
         let signature = self.inner.ed25519_sign(message);
         format!("{:#x}", H512::from_slice(&signature.to_bytes()))
@@ -156,7 +170,7 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn generate_ssl_certificate_pem(
+    pub fn generate_ecdsa_certificate_pem(
         &self,
         not_before: u64,
         not_after: u64,
@@ -165,18 +179,33 @@ impl Account {
         let not_after = UNIX_EPOCH + Duration::from_millis(not_after);
         let der = self
             .inner
-            .generate_ssl_certificate(not_before, not_after)
+            .generate_ecdsa_certificate(not_before, not_after)
             .map_err(map_err)?;
         Ok(pem::der_to_pem(der.as_slice(), "CERTIFICATE"))
     }
 
     #[wasm_bindgen]
-    pub fn verify_ssl_certificate(pem: &str, now: u64) -> Result<RemoteAccount, JsValue> {
+    pub fn generate_ed25519_certificate_pem(
+        &self,
+        not_before: u64,
+        not_after: u64,
+    ) -> Result<String, JsValue> {
+        let not_before = UNIX_EPOCH + Duration::from_millis(not_before);
+        let not_after = UNIX_EPOCH + Duration::from_millis(not_after);
+        let der = self
+            .inner
+            .generate_ed25519_certificate(not_before, not_after)
+            .map_err(map_err)?;
+        Ok(pem::der_to_pem(der.as_slice(), "CERTIFICATE"))
+    }
+
+    #[wasm_bindgen]
+    pub fn verify_certificate(pem: &str, now: u64) -> Result<RemoteAccount, JsValue> {
         let (label, der) = pem::pem_to_der(pem).map_err(map_err)?;
         if label != "CERTIFICATE" {
             return Err(JsValue::from_str("not an X.509 certificate"));
         }
-        let remote = account::Account::verify_ssl_certificate(
+        let remote = account::Account::verify_certificate(
             der.as_slice(),
             UNIX_EPOCH + Duration::from_millis(now),
         )
@@ -297,10 +326,6 @@ mod tests {
             account.bls_public_key(),
             "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
         );
-        assert_eq!(
-            account.ed25519_public_key(),
-            "0xfe5bbf1520e0c5185425dbff7aabe4c3bb1c86efd76c16678e3694c51894578f",
-        );
     }
 
     #[test]
@@ -318,10 +343,6 @@ mod tests {
             account.bls_public_key(),
             "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
         );
-        assert_eq!(
-            account.ed25519_public_key(),
-            "0xfe5bbf1520e0c5185425dbff7aabe4c3bb1c86efd76c16678e3694c51894578f",
-        );
     }
 
     #[test]
@@ -330,6 +351,14 @@ mod tests {
         let message = b"lorem ipsum";
         let signature = account.bls_sign(message);
         assert!(account.bls_verify(message, signature.as_str()).is_ok());
+    }
+
+    #[test]
+    fn test_ecdsa_signature() {
+        let account = test_account();
+        let message = b"lorem ipsum";
+        let signature = account.ecdsa_sign(message);
+        assert!(account.ecdsa_verify(message, signature.as_str()).is_ok());
     }
 
     #[test]
@@ -347,7 +376,7 @@ mod tests {
         let not_before = now + Duration::from_secs(34);
         let not_after = now + Duration::from_secs(56);
         let pem = account
-            .generate_ssl_certificate_pem(
+            .generate_ed25519_certificate_pem(
                 not_before.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
                 not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
             )
@@ -416,18 +445,18 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_ssl_certificate() {
+    fn test_verify_ecdsa_certificate() {
         let account = test_account();
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(34);
         let not_after = now + Duration::from_secs(56);
         let pem = account
-            .generate_ssl_certificate_pem(
+            .generate_ecdsa_certificate_pem(
                 not_before.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
                 not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
             )
             .unwrap();
-        let remote = Account::verify_ssl_certificate(
+        let remote = Account::verify_certificate(
             pem.as_str(),
             now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
         )
@@ -435,7 +464,28 @@ mod tests {
         assert_eq!(account.address(), remote.address());
         assert_eq!(account.public_key(), remote.public_key());
         assert_eq!(account.bls_public_key(), remote.bls_public_key());
-        assert_eq!(account.ed25519_public_key(), remote.ed25519_public_key());
+    }
+
+    #[test]
+    fn test_verify_ed25519_certificate() {
+        let account = test_account();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(34);
+        let not_after = now + Duration::from_secs(56);
+        let pem = account
+            .generate_ed25519_certificate_pem(
+                not_before.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+            )
+            .unwrap();
+        let remote = Account::verify_certificate(
+            pem.as_str(),
+            now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+        )
+        .unwrap();
+        assert_eq!(account.address(), remote.address());
+        assert_eq!(account.public_key(), remote.public_key());
+        assert_eq!(account.bls_public_key(), remote.bls_public_key());
     }
 
     #[test]
