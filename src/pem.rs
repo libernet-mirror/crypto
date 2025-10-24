@@ -135,7 +135,6 @@ mod tests {
             "-----BEGIN LOREM-----\n",
             "c2F0b3IgYXJlcG8gdGVuZXQgb3BlcmEgcm90YXMgc2F0b3IgYXJlcG8gdGVuZXQg\n",
             "b3BlcmEgcm90YXMgc2F0b3IgYXJlcG8gdGVuZXQgb3BlcmEgcm90YXMgc2F0b3Ig\n",
-            "YXJlcG8gdGVuZXQgb3BlcmEgcm90YXM=\n",
             "-----END LOREM-----\n",
             "YXJlcG8gdGVuZXQgb3BlcmEgcm90YXM=\n",
         );

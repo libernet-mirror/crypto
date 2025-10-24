@@ -204,6 +204,23 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use blstrs::{G1Projective, G2Projective};
+    use ff::PrimeField;
+    use group::Group;
+    use p256::{AffinePoint as PointP256, Scalar as ScalarP256};
+
+    pub fn get_random_scalar_p256() -> ScalarP256 {
+        let mut bytes = [0u8; 32];
+        getrandom::getrandom(&mut bytes).unwrap();
+        bytes[0] &= 0x0F;
+        ScalarP256::from_repr_vartime(bytes.into()).unwrap()
+    }
+
+    pub fn get_random_scalar_25519() -> Scalar25519 {
+        let mut bytes = [0u8; 64];
+        getrandom::getrandom(&mut bytes).unwrap();
+        Scalar25519::from_bytes_mod_order_wide(&bytes)
+    }
 
     #[test]
     fn test_random_bytes() {
@@ -247,6 +264,35 @@ mod tests {
     }
 
     #[test]
+    fn test_scalar_25519_to_u256() {
+        assert_eq!(
+            c25519_to_u256(
+                parse_scalar_25519(
+                    "0x3d71ee7152c7a3b47427e88627f7a0c63f544811f7df81307bd3195c5b1a885"
+                )
+                .unwrap()
+            ),
+            "0x3d71ee7152c7a3b47427e88627f7a0c63f544811f7df81307bd3195c5b1a885"
+                .parse()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_u256_to_scalar_25519() {
+        assert_eq!(
+            u256_to_c25519(
+                "0xcc02473ca9aa2b1bda2153de920d30425673bd62c27ca2208b3189ba22f738f"
+                    .parse()
+                    .unwrap()
+            )
+            .unwrap(),
+            parse_scalar_25519("0xcc02473ca9aa2b1bda2153de920d30425673bd62c27ca2208b3189ba22f738f")
+                .unwrap()
+        );
+    }
+
+    #[test]
     fn test_format_scalar() {
         assert_eq!(
             format_scalar(
@@ -255,6 +301,75 @@ mod tests {
             ),
             "0x6852853d54d552eddd0eb793944dd4512bdff54d27bfd688f4e45bc48e31c687"
         );
+    }
+
+    #[test]
+    fn test_format_scalar_25519() {
+        assert_eq!(
+            format_scalar_25519(
+                parse_scalar_25519(
+                    "0x61d10d6dc788950a6998bea2a3013e3b5e3062e32225b9ec049f4a367b70135"
+                )
+                .unwrap()
+            ),
+            "0x61d10d6dc788950a6998bea2a3013e3b5e3062e32225b9ec049f4a367b70135"
+        );
+    }
+
+    #[test]
+    fn test_g1_compression() {
+        let point = G1Projective::generator() * get_random_scalar();
+        let decompressed = decompress_g1(compress_g1(point.into())).unwrap();
+        assert_eq!(point, decompressed.into());
+    }
+
+    #[test]
+    fn test_format_g1() {
+        let point = G1Projective::generator() * get_random_scalar();
+        let parsed = parse_g1(format_g1(point.into()).as_str()).unwrap();
+        assert_eq!(point, parsed.into());
+    }
+
+    #[test]
+    fn test_g2_compression() {
+        let point = G2Projective::generator() * get_random_scalar();
+        let decompressed = decompress_g2(compress_g2(point.into())).unwrap();
+        assert_eq!(point, decompressed.into());
+    }
+
+    #[test]
+    fn test_format_g2() {
+        let point = G2Projective::generator() * get_random_scalar();
+        let parsed = parse_g2(format_g2(point.into()).as_str()).unwrap();
+        assert_eq!(point, parsed.into());
+    }
+
+    #[test]
+    fn test_p256_compression() {
+        let point = (PointP256::GENERATOR * get_random_scalar_p256()).into();
+        let decompressed = decompress_p256(compress_p256(point)).unwrap();
+        assert_eq!(point, decompressed);
+    }
+
+    #[test]
+    fn test_format_p256() {
+        let point = (PointP256::GENERATOR * get_random_scalar_p256()).into();
+        let parsed = parse_p256(format_p256(point).as_str()).unwrap();
+        assert_eq!(point, parsed);
+    }
+
+    #[test]
+    fn test_point_25519_compression() {
+        let point = Point25519::mul_base(&get_random_scalar_25519()).into();
+        let decompressed = decompress_point_25519(compress_point_25519(point)).unwrap();
+        assert_eq!(point, decompressed);
+    }
+
+    #[test]
+    fn test_format_point_25519() {
+        let point = Point25519::mul_base(&get_random_scalar_25519()).into();
+        let parsed = parse_point_25519(format_point_25519(point).as_str()).unwrap();
+        assert_eq!(point, parsed);
     }
 
     #[test]
@@ -268,6 +383,4 @@ mod tests {
                 .unwrap()
         );
     }
-
-    // TODO
 }
