@@ -200,12 +200,12 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn verify_certificate(pem: &str, now: u64) -> Result<RemoteAccount, JsValue> {
+    pub fn verify_ssl_certificate(pem: &str, now: u64) -> Result<RemoteAccount, JsValue> {
         let (label, der) = pem::pem_to_der(pem).map_err(map_err)?;
         if label != "CERTIFICATE" {
             return Err(JsValue::from_str("not an X.509 certificate"));
         }
-        let remote = account::Account::verify_certificate(
+        let remote = account::Account::verify_ssl_certificate(
             der.as_slice(),
             UNIX_EPOCH + Duration::from_millis(now),
         )
@@ -456,7 +456,7 @@ mod tests {
                 not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
             )
             .unwrap();
-        let remote = Account::verify_certificate(
+        let remote = Account::verify_ssl_certificate(
             pem.as_str(),
             now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
         )
@@ -478,7 +478,7 @@ mod tests {
                 not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
             )
             .unwrap();
-        let remote = Account::verify_certificate(
+        let remote = Account::verify_ssl_certificate(
             pem.as_str(),
             now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
         )
