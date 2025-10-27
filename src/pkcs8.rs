@@ -1,3 +1,4 @@
+use crate::utils;
 use anyhow::{Result, anyhow};
 use der::{
     Any, Choice, Decode, Encode, Sequence, TagMode, TagNumber, ValueOrd,
@@ -65,7 +66,9 @@ pub fn encode_ecdsa_private_key(signing_key: &p256::ecdsa::SigningKey) -> Result
         public_key: Some(ContextSpecific {
             tag_number: TagNumber::N1,
             tag_mode: TagMode::Explicit,
-            value: BitString::from_bytes(&*signing_key.verifying_key().to_sec1_bytes())?,
+            value: BitString::from_bytes(
+                utils::compress_p256(*signing_key.verifying_key().as_affine()).as_fixed_bytes(),
+            )?,
         }),
     }
     .encode_to_vec(&mut key_der)?;

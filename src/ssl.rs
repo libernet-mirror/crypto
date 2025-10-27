@@ -306,7 +306,7 @@ fn make_libernet_extensions(
     Ok(extensions)
 }
 
-/// Generates a new self-signed Ed25519 certificate in DER format.
+/// Generates a new self-signed ECDSA or Ed25519 certificate in DER format.
 ///
 /// The generated certificate includes the extensions defined by Libernet for authentication of the
 /// BLS12-381 keypair and is therefore suitable for use in all Libernet connections.
