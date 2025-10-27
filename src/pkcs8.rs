@@ -10,6 +10,9 @@ const OID_SIG_ED25519: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.
 const OID_SIG_ECDSA_WITH_SHA256: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
 
+const OID_KEY_TYPE_EC_PUBLIC_KEY: ObjectIdentifier =
+    ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
+
 const OID_EC_P256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 
 #[derive(Debug, Sequence, ValueOrd, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -69,8 +72,8 @@ pub fn encode_ecdsa_private_key(signing_key: &p256::ecdsa::SigningKey) -> Result
     let pki = PrivateKeyInfo {
         version: 0,
         private_key_algorithm: AlgorithmIdentifier {
-            algorithm: OID_SIG_ECDSA_WITH_SHA256,
-            parameters: None,
+            algorithm: OID_KEY_TYPE_EC_PUBLIC_KEY,
+            parameters: Some(Any::encode_from(&OID_EC_P256)?),
         },
         private_key: OctetString::new(key_der.as_slice())?,
     };
@@ -87,7 +90,7 @@ pub fn decode_ecdsa_private_key(der: &[u8]) -> Result<p256::ecdsa::SigningKey> {
             pki.version
         ));
     }
-    if pki.private_key_algorithm.algorithm != OID_SIG_ECDSA_WITH_SHA256 {
+    if pki.private_key_algorithm.algorithm != OID_KEY_TYPE_EC_PUBLIC_KEY {
         return Err(anyhow!("incorrect algorithm OID"));
     }
     let ec_private_key = EcPrivateKey::from_der(pki.private_key.as_bytes())?;
