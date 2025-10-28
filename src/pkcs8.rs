@@ -8,8 +8,6 @@ use der::{
 use primitive_types::H256;
 
 const OID_SIG_ED25519: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
-const OID_SIG_ECDSA_WITH_SHA256: ObjectIdentifier =
-    ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
 
 const OID_KEY_TYPE_EC_PUBLIC_KEY: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
@@ -67,7 +65,7 @@ pub fn encode_ecdsa_private_key(signing_key: &p256::ecdsa::SigningKey) -> Result
             tag_number: TagNumber::N1,
             tag_mode: TagMode::Explicit,
             value: BitString::from_bytes(
-                utils::compress_p256(*signing_key.verifying_key().as_affine()).as_fixed_bytes(),
+                utils::encode_p256(*signing_key.verifying_key().as_affine()).as_slice(),
             )?,
         }),
     }

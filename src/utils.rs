@@ -5,6 +5,7 @@ use curve25519_dalek::{
 };
 use dusk_bls12_381::BlsScalar as DuskScalar;
 use dusk_poseidon as poseidon;
+use ecdsa::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use fixed_hash::construct_fixed_hash;
 use group::GroupEncoding;
 use p256::AffinePoint as PointP256;
@@ -104,6 +105,16 @@ pub fn format_g2(point: G2Affine) -> String {
 
 pub fn parse_g2(s: &str) -> Result<G2Affine> {
     decompress_g2(s.parse()?)
+}
+
+pub fn encode_p256(point: PointP256) -> Vec<u8> {
+    point.to_encoded_point(false).as_bytes().to_vec()
+}
+
+pub fn decode_p256(bytes: &[u8]) -> Result<PointP256> {
+    PointP256::from_encoded_point(&bytes.try_into()?)
+        .into_option()
+        .context("invalid ECDSA Nist P256 public key")
 }
 
 // H264 is not provided by the `primitive-types` crate but we need it to manage compressed SEC1

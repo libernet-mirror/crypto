@@ -354,7 +354,7 @@ pub fn generate_certificate(
             SubjectPublicKeyInfo {
                 algorithm: AlgorithmIdentifier::ecdsa_public_key()?,
                 subject_public_key: BitString::from_bytes(
-                    utils::compress_p256(signer.ecdsa_public_key()).as_fixed_bytes(),
+                    utils::encode_p256(signer.ecdsa_public_key()).as_slice(),
                 )?,
             }
         },
@@ -537,9 +537,8 @@ pub fn verify_certificate<
         tbs.subject_public_key_info
             .algorithm
             .validate_for_ecdsa_public_key()?;
-        let ecdsa_public_key = utils::decompress_p256(H264::from_slice(
-            tbs.subject_public_key_info.subject_public_key.raw_bytes(),
-        ))?;
+        let ecdsa_public_key =
+            utils::decode_p256(tbs.subject_public_key_info.subject_public_key.raw_bytes())?;
         let verifier = VC1::new(bls_public_key, ecdsa_public_key);
         identity_signature.verify_ecdsa(&verifier, tbs.serial_number)?;
         let signature = {
@@ -577,9 +576,8 @@ pub fn recover_public_keys(certificate_der: &[u8]) -> Result<(G1Affine, SslPubli
             tbs.subject_public_key_info
                 .algorithm
                 .validate_for_ecdsa_public_key()?;
-            let ecdsa_public_key = utils::decompress_p256(H264::from_slice(
-                tbs.subject_public_key_info.subject_public_key.raw_bytes(),
-            ))?;
+            let ecdsa_public_key =
+                utils::decode_p256(tbs.subject_public_key_info.subject_public_key.raw_bytes())?;
             Ok((bls_public_key, SslPublicKey::EcDsa(ecdsa_public_key)))
         }
         OID_SIG_ED25519 => {
@@ -763,7 +761,7 @@ mod tests {
         assert_eq!(
             certificate.public_key().parsed().unwrap(),
             PublicKey::EC(ECPoint::from(
-                utils::compress_p256(signer.ecdsa_public_key()).as_bytes()
+                utils::encode_p256(signer.ecdsa_public_key()).as_slice()
             ))
         );
         let address_bytes = signer.address().to_bytes_le();

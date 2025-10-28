@@ -487,7 +487,7 @@ mod tests {
         assert_eq!(
             certificate.public_key().parsed().unwrap(),
             PublicKey::EC(ECPoint::from(
-                utils::compress_p256(account.ecdsa_public_key()).as_bytes()
+                utils::encode_p256(account.ecdsa_public_key()).as_slice()
             ))
         );
         let address_bytes = account.address().to_bytes_le();
