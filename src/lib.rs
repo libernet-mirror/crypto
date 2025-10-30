@@ -199,8 +199,11 @@ impl Account {
         Ok(pem::der_to_pem(der.as_slice(), "CERTIFICATE"))
     }
 
+    /// NOTE: this method could in principle be static, but in practice we cannot easily access the
+    /// `Account` class in JavaScript due to the async module loading, so we prefer accessing this
+    /// method via an instance object.
     #[wasm_bindgen]
-    pub fn verify_ssl_certificate(pem: &str, now: u64) -> Result<RemoteAccount, JsValue> {
+    pub fn verify_ssl_certificate(&self, pem: &str, now: u64) -> Result<RemoteAccount, JsValue> {
         let (label, der) = pem::pem_to_der(pem).map_err(map_err)?;
         if label != "CERTIFICATE" {
             return Err(JsValue::from_str("not an X.509 certificate"));
@@ -456,11 +459,12 @@ mod tests {
                 not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
             )
             .unwrap();
-        let remote = Account::verify_ssl_certificate(
-            pem.as_str(),
-            now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
-        )
-        .unwrap();
+        let remote = account
+            .verify_ssl_certificate(
+                pem.as_str(),
+                now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+            )
+            .unwrap();
         assert_eq!(account.address(), remote.address());
         assert_eq!(account.public_key(), remote.public_key());
         assert_eq!(account.bls_public_key(), remote.bls_public_key());
@@ -478,11 +482,12 @@ mod tests {
                 not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
             )
             .unwrap();
-        let remote = Account::verify_ssl_certificate(
-            pem.as_str(),
-            now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
-        )
-        .unwrap();
+        let remote = account
+            .verify_ssl_certificate(
+                pem.as_str(),
+                now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+            )
+            .unwrap();
         assert_eq!(account.address(), remote.address());
         assert_eq!(account.public_key(), remote.public_key());
         assert_eq!(account.bls_public_key(), remote.bls_public_key());
