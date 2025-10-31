@@ -1,6 +1,6 @@
 use crate::signer::{BlsVerifier, EcDsaVerifier, Ed25519Verifier, Signer};
 use anyhow::Context;
-use blstrs::G1Affine;
+use blstrs::{G1Affine, Scalar};
 use primitive_types::H512;
 use std::time::{Duration, UNIX_EPOCH};
 use wasm_bindgen::prelude::*;
@@ -23,6 +23,18 @@ pub const MAX_PASSWORDS: usize = wallet::MAX_PASSWORDS;
 
 fn map_err<E: Into<anyhow::Error>>(error: E) -> JsValue {
     JsValue::from_str(error.into().to_string().as_str())
+}
+
+#[wasm_bindgen]
+pub fn poseidon_hash(inputs: Vec<String>) -> Result<String, JsValue> {
+    Ok(utils::format_scalar(utils::poseidon_hash(
+        inputs
+            .iter()
+            .map(|input| utils::parse_scalar(input.as_str()))
+            .collect::<anyhow::Result<Vec<Scalar>>>()
+            .map_err(map_err)?
+            .as_slice(),
+    )))
 }
 
 #[wasm_bindgen]
@@ -312,6 +324,18 @@ mod tests {
     fn test_account() -> Account {
         Account::import("0x7c3a55192992a3ec1936d436f0b69efb8b4506c7e0ab55679d04534b5fc30ae86edd53d2626d396586e8abd0f932c9bfd95d83c682f178faa41a2baf7e19492b")
             .unwrap()
+    }
+
+    #[test]
+    fn test_poseidon_hash() {
+        assert_eq!(
+            poseidon_hash(vec![
+                "0x255144e621ed2a6e5717c3164e8cf146b4a757369db8ea63c739843ef1c16364".to_string(),
+                "0x638a49ba49c18944c21827cbab35b970ef3763a4639ec2d30eaf1fc8ee6da2ec".to_string()
+            ])
+            .unwrap(),
+            "0x4338d3c3d5b9b5c526ad0d4ccaf364a7f32ddede0c898f46ec72e16ba4d9766c"
+        );
     }
 
     #[test]
