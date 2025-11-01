@@ -238,25 +238,17 @@ pub struct Wallet {
 #[wasm_bindgen]
 impl Wallet {
     #[wasm_bindgen]
-    pub fn create(passwords: Vec<String>, num_kdf_rounds: usize) -> Result<Self, JsValue> {
+    pub fn create(passwords: Vec<String>) -> Result<Self, JsValue> {
         Ok(Self {
-            inner: wallet::Wallet::create(passwords, num_kdf_rounds).map_err(map_err)?,
+            inner: wallet::Wallet::create(passwords).map_err(map_err)?,
         })
     }
 
     #[wasm_bindgen]
-    pub fn load(
-        num_kdf_rounds: usize,
-        salt: &str,
-        seed: &str,
-        commitment: &str,
-        y: Vec<String>,
-    ) -> Result<Self, JsValue> {
+    pub fn load(seed: &str, commitment: &str, y: Vec<String>) -> Result<Self, JsValue> {
         Ok(Self {
             inner: wallet::Wallet::load(
-                num_kdf_rounds,
-                salt.parse().context("invalid salt").map_err(map_err)?,
-                utils::parse_scalar(seed).map_err(map_err)?,
+                seed.parse().context("invalid seed").map_err(map_err)?,
                 utils::parse_g1(commitment).map_err(map_err)?,
                 &y.iter()
                     .map(|y| utils::parse_g1(y.as_str()).map_err(map_err))
@@ -268,18 +260,8 @@ impl Wallet {
     }
 
     #[wasm_bindgen]
-    pub fn num_kdf_rounds(&self) -> usize {
-        self.inner.num_kdf_rounds()
-    }
-
-    #[wasm_bindgen]
-    pub fn salt(&self) -> String {
-        format!("{:#x}", self.inner.salt())
-    }
-
-    #[wasm_bindgen]
     pub fn seed(&self) -> String {
-        utils::format_scalar(self.inner.seed())
+        format!("{:#x}", self.inner.seed())
     }
 
     #[wasm_bindgen]
@@ -521,7 +503,7 @@ mod tests {
     fn test_wallet_passwords() {
         let password1 = "sator arepo tenet opera rotas";
         let password2 = "lorem ipsum dolor amet";
-        let wallet = Wallet::create(vec![password1.into(), password2.into()], 3).unwrap();
+        let wallet = Wallet::create(vec![password1.into(), password2.into()]).unwrap();
         assert!(wallet.verify(password1));
         assert!(wallet.verify(password2));
         assert!(!wallet.verify("foo bar baz"));
@@ -531,7 +513,7 @@ mod tests {
     fn test_wallet_accounts() {
         let password1 = "sator arepo tenet opera rotas";
         let password2 = "lorem ipsum dolor amet";
-        let wallet = Wallet::create(vec![password1.into(), password2.into()], 3).unwrap();
+        let wallet = Wallet::create(vec![password1.into(), password2.into()]).unwrap();
         let address1 = wallet.derive_account(password1, 0).unwrap().address();
         let address2 = wallet.derive_account(password1, 1).unwrap().address();
         let address3 = wallet.derive_account(password2, 0).unwrap().address();
@@ -548,26 +530,13 @@ mod tests {
     fn test_load_wallet() {
         let password1 = "sator arepo tenet opera rotas";
         let password2 = "lorem ipsum dolor amet";
-        let wallet1 = Wallet::create(vec![password1.into(), password2.into()], 3).unwrap();
+        let wallet1 = Wallet::create(vec![password1.into(), password2.into()]).unwrap();
         let address1 = wallet1.derive_account(password1, 0).unwrap().address();
         let address2 = wallet1.derive_account(password1, 1).unwrap().address();
         let address3 = wallet1.derive_account(password2, 0).unwrap().address();
         let address4 = wallet1.derive_account(password2, 1).unwrap().address();
-        let (num_kdf_rounds, salt, seed, commitment, y) = (
-            wallet1.num_kdf_rounds(),
-            wallet1.salt(),
-            wallet1.seed(),
-            wallet1.commitment(),
-            wallet1.y(),
-        );
-        let wallet2 = Wallet::load(
-            num_kdf_rounds,
-            salt.as_str(),
-            seed.as_str(),
-            commitment.as_str(),
-            y,
-        )
-        .unwrap();
+        let (seed, commitment, y) = (wallet1.seed(), wallet1.commitment(), wallet1.y());
+        let wallet2 = Wallet::load(seed.as_str(), commitment.as_str(), y).unwrap();
         assert_eq!(
             address1,
             wallet2.derive_account(password1, 0).unwrap().address()
