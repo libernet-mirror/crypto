@@ -10,6 +10,7 @@ mod params;
 pub mod account;
 pub mod bls;
 pub mod kzg;
+pub mod merkle;
 pub mod pem;
 pub mod pkcs8;
 pub mod remote;
@@ -35,6 +36,63 @@ pub fn poseidon_hash(inputs: Vec<String>) -> Result<String, JsValue> {
             .map_err(map_err)?
             .as_slice(),
     )))
+}
+
+#[wasm_bindgen]
+pub struct TernaryMerkleProof {
+    inner: merkle::Proof<Scalar, Scalar, 3, 161>,
+}
+
+#[wasm_bindgen]
+impl TernaryMerkleProof {
+    #[wasm_bindgen]
+    pub fn from_compressed(
+        key: &str,
+        value: &str,
+        root_hash: &str,
+        hashes: Vec<String>,
+    ) -> Result<Self, JsValue> {
+        if hashes.len() != 2 * 161 {
+            return Err(JsValue::from_str(
+                format!(
+                    "incorrect number of hashes: got {}, want 2 * 161",
+                    hashes.len(),
+                )
+                .as_str(),
+            ));
+        }
+        let hashes = hashes
+            .iter()
+            .map(|s| utils::parse_scalar(s.as_str()))
+            .collect::<anyhow::Result<Vec<Scalar>>>()
+            .map_err(map_err)?;
+        let hashes: [[Scalar; 2]; 161] =
+            std::array::from_fn(|i| [hashes[i * 2], hashes[i * 2 + 1]]);
+        Ok(Self {
+            inner: merkle::Proof::<Scalar, Scalar, 3, 161>::from_compressed(
+                utils::parse_scalar(key).map_err(map_err)?,
+                utils::parse_scalar(value).map_err(map_err)?,
+                utils::parse_scalar(root_hash).map_err(map_err)?,
+                &hashes,
+            )
+            .map_err(map_err)?,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn compressed_path(&self) -> Vec<String> {
+        self.inner
+            .compressed_path()
+            .iter()
+            .flatten()
+            .map(|v| utils::format_scalar(*v))
+            .collect()
+    }
+
+    #[wasm_bindgen]
+    pub fn verify(&self) -> Result<(), JsValue> {
+        self.inner.verify().map_err(map_err)
+    }
 }
 
 #[wasm_bindgen]
