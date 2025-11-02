@@ -5,7 +5,6 @@ use std::sync::LazyLock;
 
 const G1_BYTES: &[u8] = include_bytes!("../params/g1.bin");
 const G2_BYTES: &[u8] = include_bytes!("../params/g2.bin");
-const P_BYTES: &[u8] = include_bytes!("../params/p.bin");
 
 static G1: LazyLock<Vec<H384>> = LazyLock::new(|| {
     let (params, _) =
@@ -16,12 +15,6 @@ static G1: LazyLock<Vec<H384>> = LazyLock::new(|| {
 static G2: LazyLock<H768> = LazyLock::new(|| {
     let (params, _) =
         bincode::serde::decode_from_slice(G2_BYTES, bincode::config::standard()).unwrap();
-    params
-});
-
-static P: LazyLock<Vec<H384>> = LazyLock::new(|| {
-    let (params, _) =
-        bincode::serde::decode_from_slice(P_BYTES, bincode::config::standard()).unwrap();
     params
 });
 
@@ -41,13 +34,6 @@ pub fn g1(index: usize) -> G1Affine {
 /// Returns `G2 * tau`, with `G2` being the G2 generator of BLS12-381. Used in KZG.
 pub fn g2() -> G2Affine {
     G2Affine::from_compressed(G2.as_fixed_bytes())
-        .into_option()
-        .unwrap()
-}
-
-/// Returns the i-th generator for Pedersen hash.
-pub fn p(index: usize) -> G1Affine {
-    G1Affine::from_compressed(P[index].as_fixed_bytes())
         .into_option()
         .unwrap()
 }
@@ -76,15 +62,5 @@ mod tests {
             G2Projective::from(g2()),
             G2Projective::generator() * Scalar::ZERO
         );
-    }
-
-    #[test]
-    fn test_p() {
-        assert_eq!(P.len(), 65536);
-        let mut p = P.clone();
-        p.sort();
-        for i in 1..p.len() {
-            assert_ne!(p[i], p[i - 1]);
-        }
     }
 }
