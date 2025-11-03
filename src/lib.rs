@@ -1,3 +1,4 @@
+use crate::merkle::AsScalar;
 use crate::signer::{BlsVerifier, EcDsaVerifier, Ed25519Verifier, Signer};
 use anyhow::Context;
 use blstrs::{G1Affine, Scalar};
@@ -80,11 +81,36 @@ impl TernaryMerkleProof {
     }
 
     #[wasm_bindgen]
+    pub fn key(&self) -> String {
+        utils::format_scalar(self.inner.key().as_scalar())
+    }
+
+    #[wasm_bindgen]
+    pub fn value(&self) -> String {
+        utils::format_scalar(self.inner.value().as_scalar())
+    }
+
+    #[wasm_bindgen]
+    pub fn root_hash(&self) -> String {
+        utils::format_scalar(self.inner.root_hash().as_scalar())
+    }
+
+    #[wasm_bindgen]
+    pub fn path(&self) -> Vec<String> {
+        self.inner
+            .path()
+            .as_flattened()
+            .iter()
+            .map(|v| utils::format_scalar(*v))
+            .collect()
+    }
+
+    #[wasm_bindgen]
     pub fn compressed_path(&self) -> Vec<String> {
         self.inner
             .compressed_path()
+            .as_flattened()
             .iter()
-            .flatten()
             .map(|v| utils::format_scalar(*v))
             .collect()
     }
@@ -355,6 +381,7 @@ impl Wallet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ff::Field;
     use std::time::SystemTime;
     use x509_parser::{
         asn1_rs::BitString, oid_registry::OID_SIG_ED25519, pem::parse_x509_pem,
@@ -376,6 +403,48 @@ mod tests {
             .unwrap(),
             "0x4338d3c3d5b9b5c526ad0d4ccaf364a7f32ddede0c898f46ec72e16ba4d9766c"
         );
+    }
+
+    #[test]
+    fn test_ternary_merkle_proof() {
+        let key = utils::get_random_scalar();
+        let value = utils::get_random_scalar();
+        let (path, root_hash) = {
+            let mut key = key;
+            let mut hash = value;
+            let mut path = [[Scalar::ZERO; 2]; 161];
+            for i in 0..161 {
+                let sister1 = utils::get_random_scalar();
+                let sister2 = utils::get_random_scalar();
+                path[i] = [sister1, sister2];
+                let trit = xits::mod3(key);
+                key = xits::div3(key);
+                if trit == 0.into() {
+                    hash = utils::poseidon_hash(&[hash, sister1, sister2]);
+                } else if trit == 1.into() {
+                    hash = utils::poseidon_hash(&[sister1, hash, sister2]);
+                } else if trit == 2.into() {
+                    hash = utils::poseidon_hash(&[sister1, sister2, hash]);
+                } else {
+                    unreachable!();
+                }
+            }
+            (path, hash)
+        };
+        let proof = TernaryMerkleProof::from_compressed(
+            utils::format_scalar(key).as_str(),
+            utils::format_scalar(value).as_str(),
+            utils::format_scalar(root_hash).as_str(),
+            path.as_flattened()
+                .iter()
+                .map(|v| utils::format_scalar(*v))
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(proof.key(), utils::format_scalar(key));
+        assert_eq!(proof.value(), utils::format_scalar(value));
+        assert_eq!(proof.root_hash(), utils::format_scalar(root_hash));
+        assert!(proof.verify().is_ok());
     }
 
     #[test]
