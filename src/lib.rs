@@ -266,7 +266,7 @@ impl Account {
     }
 
     #[wasm_bindgen]
-    pub fn generate_ecdsa_certificate_pem(
+    pub fn generate_client_ecdsa_certificate_pem(
         &self,
         not_before: u64,
         not_after: u64,
@@ -275,13 +275,13 @@ impl Account {
         let not_after = UNIX_EPOCH + Duration::from_millis(not_after);
         let der = self
             .inner
-            .generate_ecdsa_certificate(not_before, not_after)
+            .generate_ecdsa_certificate(not_before, not_after, None)
             .map_err(map_err)?;
         Ok(pem::der_to_pem(der.as_slice(), "CERTIFICATE"))
     }
 
     #[wasm_bindgen]
-    pub fn generate_ed25519_certificate_pem(
+    pub fn generate_client_ed25519_certificate_pem(
         &self,
         not_before: u64,
         not_after: u64,
@@ -290,16 +290,28 @@ impl Account {
         let not_after = UNIX_EPOCH + Duration::from_millis(not_after);
         let der = self
             .inner
-            .generate_ed25519_certificate(not_before, not_after)
+            .generate_ed25519_certificate(not_before, not_after, None)
             .map_err(map_err)?;
         Ok(pem::der_to_pem(der.as_slice(), "CERTIFICATE"))
     }
 
+    /// Validates the provided certificate.
+    ///
+    /// If `server_address` is specified this function will verify a server's certificate, which is
+    /// the same as verifying a client's one and additionally checking the specified server address
+    /// against the Common Names. If `server_address` is not provided this function will verify a
+    /// client's certificate.
+    ///
     /// NOTE: this method could in principle be static, but in practice we cannot easily access the
     /// `Account` class in JavaScript due to the async module loading, so we prefer accessing this
     /// method via an instance object.
     #[wasm_bindgen]
-    pub fn verify_ssl_certificate(&self, pem: &str, now: u64) -> Result<RemoteAccount, JsValue> {
+    pub fn verify_ssl_certificate(
+        &self,
+        pem: &str,
+        now: u64,
+        server_address: Option<String>,
+    ) -> Result<RemoteAccount, JsValue> {
         let (label, der) = pem::pem_to_der(pem).map_err(map_err)?;
         if label != "CERTIFICATE" {
             return Err(JsValue::from_str("not an X.509 certificate"));
@@ -307,6 +319,7 @@ impl Account {
         let remote = account::Account::verify_ssl_certificate(
             der.as_slice(),
             UNIX_EPOCH + Duration::from_millis(now),
+            server_address.as_ref().map(|s| s.as_str()),
         )
         .map_err(map_err)?;
         Ok(RemoteAccount { inner: remote })
@@ -512,7 +525,7 @@ mod tests {
         let not_before = now + Duration::from_secs(34);
         let not_after = now + Duration::from_secs(56);
         let pem = account
-            .generate_ed25519_certificate_pem(
+            .generate_client_ed25519_certificate_pem(
                 not_before.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
                 not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
             )
@@ -581,13 +594,13 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_ecdsa_certificate() {
+    fn test_verify_client_ecdsa_certificate() {
         let account = test_account();
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(34);
         let not_after = now + Duration::from_secs(56);
         let pem = account
-            .generate_ecdsa_certificate_pem(
+            .generate_client_ecdsa_certificate_pem(
                 not_before.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
                 not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
             )
@@ -596,6 +609,7 @@ mod tests {
             .verify_ssl_certificate(
                 pem.as_str(),
                 now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                None,
             )
             .unwrap();
         assert_eq!(account.address(), remote.address());
@@ -604,13 +618,36 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_ed25519_certificate() {
+    fn test_verify_server_ecdsa_certificate() {
+        let account = test_account();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(34);
+        let not_after = now + Duration::from_secs(56);
+        let der = account
+            .inner
+            .generate_ecdsa_certificate(not_before, not_after, Some("ecdsa_server:123"))
+            .unwrap();
+        let pem = pem::der_to_pem(der.as_slice(), "CERTIFICATE");
+        let remote = account
+            .verify_ssl_certificate(
+                pem.as_str(),
+                now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                Some("ecdsa_server:123".to_string()),
+            )
+            .unwrap();
+        assert_eq!(account.address(), remote.address());
+        assert_eq!(account.public_key(), remote.public_key());
+        assert_eq!(account.bls_public_key(), remote.bls_public_key());
+    }
+
+    #[test]
+    fn test_verify_client_ed25519_certificate() {
         let account = test_account();
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(34);
         let not_after = now + Duration::from_secs(56);
         let pem = account
-            .generate_ed25519_certificate_pem(
+            .generate_client_ed25519_certificate_pem(
                 not_before.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
                 not_after.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
             )
@@ -619,6 +656,30 @@ mod tests {
             .verify_ssl_certificate(
                 pem.as_str(),
                 now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                None,
+            )
+            .unwrap();
+        assert_eq!(account.address(), remote.address());
+        assert_eq!(account.public_key(), remote.public_key());
+        assert_eq!(account.bls_public_key(), remote.bls_public_key());
+    }
+
+    #[test]
+    fn test_verify_server_ed25519_certificate() {
+        let account = test_account();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(34);
+        let not_after = now + Duration::from_secs(56);
+        let der = account
+            .inner
+            .generate_ed25519_certificate(not_before, not_after, Some("ed25519_server:456"))
+            .unwrap();
+        let pem = pem::der_to_pem(der.as_slice(), "CERTIFICATE");
+        let remote = account
+            .verify_ssl_certificate(
+                pem.as_str(),
+                now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
+                Some("ed25519_server:456".to_string()),
             )
             .unwrap();
         assert_eq!(account.address(), remote.address());

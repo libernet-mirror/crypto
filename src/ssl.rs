@@ -268,12 +268,21 @@ fn generate_serial_number() -> i128 {
     i128::from_be_bytes(bytes)
 }
 
-fn make_rdn_sequence(common_name: &str) -> Result<Vec<SetOfVec<AttributeTypeAndValue>>> {
+fn make_rdn_sequence(
+    account_address: &str,
+    server_address: Option<&str>,
+) -> Result<Vec<SetOfVec<AttributeTypeAndValue>>> {
     let mut atvs = SetOfVec::<AttributeTypeAndValue>::default();
     atvs.insert(AttributeTypeAndValue {
         r#type: OID_X509_COMMON_NAME,
-        value: Any::encode_from(&common_name.to_string())?,
+        value: Any::encode_from(&account_address.to_string())?,
     })?;
+    if let Some(server_address) = server_address {
+        atvs.insert(AttributeTypeAndValue {
+            r#type: OID_X509_COMMON_NAME,
+            value: Any::encode_from(&server_address.to_string())?,
+        })?;
+    }
     Ok(vec![atvs])
 }
 
@@ -311,11 +320,16 @@ fn make_libernet_extensions(
 /// The generated certificate includes the extensions defined by Libernet for authentication of the
 /// BLS12-381 keypair and is therefore suitable for use in all Libernet connections.
 ///
+/// Server certificates must have an additional Common Name set to the canonical server address &
+/// port, which must be specified in the `server_address` parameter. Client certificates don't have
+/// that, so `server_address` must be set to `None` for those.
+///
 /// The implementation is RFC-5280 compliant.
 pub fn generate_certificate(
     signer: &impl Signer,
     not_before: SystemTime,
     not_after: SystemTime,
+    server_address: Option<&str>,
     use_ed25519: bool,
 ) -> Result<Vec<u8>> {
     if not_after < not_before {
@@ -323,7 +337,7 @@ pub fn generate_certificate(
             "invalid validity range: not_after must be greater than not_before"
         ));
     }
-    let common_name = utils::format_scalar(signer.address());
+    let account_address = utils::format_scalar(signer.address());
     let serial_number = generate_serial_number();
     let tbs_certificate = TbsCertificate {
         version: ContextSpecific {
@@ -337,12 +351,12 @@ pub fn generate_certificate(
         } else {
             AlgorithmIdentifier::ecdsa_signature()?
         },
-        issuer: Name::RdnSequence(make_rdn_sequence(common_name.as_str())?),
+        issuer: Name::RdnSequence(make_rdn_sequence(account_address.as_str(), None)?),
         validity: Validity {
             not_before: Time::GeneralTime(GeneralizedTime::from_system_time(not_before)?),
             not_after: Time::GeneralTime(GeneralizedTime::from_system_time(not_after)?),
         },
-        subject: Name::RdnSequence(make_rdn_sequence(common_name.as_str())?),
+        subject: Name::RdnSequence(make_rdn_sequence(account_address.as_str(), server_address)?),
         subject_public_key_info: if use_ed25519 {
             SubjectPublicKeyInfo {
                 algorithm: AlgorithmIdentifier::ed25519(),
@@ -388,17 +402,18 @@ pub fn generate_certificate(
     Ok(buffer)
 }
 
-fn get_common_name(name: &Name) -> Result<String> {
+fn get_common_names(name: &Name) -> Result<Vec<String>> {
     match name {
         Name::RdnSequence(sequence) => {
+            let mut names = vec![];
             for rdn in sequence {
                 for atv in rdn.iter() {
                     if atv.r#type == OID_X509_COMMON_NAME {
-                        return Ok(atv.value.decode_as()?);
+                        names.push(atv.value.decode_as()?);
                     }
                 }
             }
-            Err(anyhow!("common name not found"))
+            return Ok(names);
         }
     }
 }
@@ -442,6 +457,7 @@ pub fn verify_certificate<
 >(
     der: &[u8],
     now: SystemTime,
+    server_address: Option<&str>,
 ) -> Result<V> {
     let certificate = Certificate::from_der(der)?;
     let is_ed25519 = certificate.signature_algorithm.algorithm == OID_SIG_ED25519;
@@ -488,17 +504,25 @@ pub fn verify_certificate<
         return Err(anyhow!("certificate expired (ended at {:?})", not_after));
     }
 
-    let subject_common_name = get_common_name(&tbs.subject)?;
+    let subject_common_names = get_common_names(&tbs.subject)?;
 
     let bls_public_key = recover_bls_public_key_impl(tbs)?;
     let verifier: V = BlsVerifierConstructor::new(bls_public_key);
     {
         let formatted_address = utils::format_scalar(verifier.address());
-        if subject_common_name != formatted_address {
+        if !subject_common_names.contains(&formatted_address) {
             return Err(anyhow!(
-                "incorrect subject common name: `{}` (expected: `{}`)",
-                subject_common_name,
+                "incorrect subject common name(s): expected `{}`",
                 formatted_address
+            ));
+        }
+    }
+
+    if let Some(server_address) = server_address {
+        if !subject_common_names.contains(&server_address.to_string()) {
+            return Err(anyhow!(
+                "incorrect subject common name(s): expected `{}`",
+                server_address
             ));
         }
     }
@@ -717,25 +741,25 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_ecdsa_certificate() {
+    fn test_ecdsa_certificate(server_address: Option<&str>) {
         let signer = TestSigner::default();
+        let signer_address = utils::format_scalar(signer.address());
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, false).unwrap();
+        let der =
+            generate_certificate(&signer, not_before, not_after, server_address, false).unwrap();
         let (_, certificate) = parse_x509_certificate(der.as_slice()).unwrap();
         assert_eq!(certificate.version(), X509Version::V3);
         assert_ne!(certificate.serial, 0u64.into());
         assert_eq!(*certificate.signature.oid(), OID_SIG_ECDSA_WITH_SHA256);
-        assert_eq!(
+        assert!(
             certificate
                 .issuer()
                 .iter_common_name()
-                .next()
-                .and_then(|common_name| common_name.as_str().ok())
-                .unwrap(),
-            utils::format_scalar(signer.address())
+                .map(|common_name| common_name.as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+                .contains(&signer_address)
         );
         assert_eq!(
             certificate.validity().not_before.timestamp(),
@@ -745,15 +769,15 @@ mod tests {
             certificate.validity().not_after.timestamp(),
             not_after.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
         );
-        assert_eq!(
-            certificate
-                .subject()
-                .iter_common_name()
-                .next()
-                .and_then(|common_name| common_name.as_str().ok())
-                .unwrap(),
-            utils::format_scalar(signer.address())
-        );
+        let common_names = certificate
+            .subject()
+            .iter_common_name()
+            .map(|common_name| common_name.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        assert!(common_names.contains(&signer_address));
+        if let Some(server_address) = server_address {
+            assert!(common_names.contains(&server_address.to_string()));
+        }
         assert_eq!(
             *certificate.public_key().algorithm.oid(),
             OID_KEY_TYPE_EC_PUBLIC_KEY
@@ -798,24 +822,39 @@ mod tests {
     }
 
     #[test]
-    fn test_ed25519_certificate() {
+    fn test_client_ecdsa_certificate() {
+        test_ecdsa_certificate(None);
+    }
+
+    #[test]
+    fn test_server_ecdsa_certificate1() {
+        test_ecdsa_certificate(Some("foo:42"));
+    }
+
+    #[test]
+    fn test_server_ecdsa_certificate2() {
+        test_ecdsa_certificate(Some("bar:43"));
+    }
+
+    fn test_ed25519_certificate(server_address: Option<&str>) {
         let signer = TestSigner::default();
+        let signer_address = utils::format_scalar(signer.address());
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, true).unwrap();
+        let der =
+            generate_certificate(&signer, not_before, not_after, server_address, true).unwrap();
         let (_, certificate) = parse_x509_certificate(der.as_slice()).unwrap();
         assert_eq!(certificate.version(), X509Version::V3);
         assert_ne!(certificate.serial, 0u64.into());
         assert_eq!(*certificate.signature.oid(), OID_SIG_ED25519);
-        assert_eq!(
+        assert!(
             certificate
                 .issuer()
                 .iter_common_name()
-                .next()
-                .and_then(|common_name| common_name.as_str().ok())
-                .unwrap(),
-            utils::format_scalar(signer.address())
+                .map(|common_name| common_name.as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+                .contains(&signer_address)
         );
         assert_eq!(
             certificate.validity().not_before.timestamp(),
@@ -825,15 +864,15 @@ mod tests {
             certificate.validity().not_after.timestamp(),
             not_after.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
         );
-        assert_eq!(
-            certificate
-                .subject()
-                .iter_common_name()
-                .next()
-                .and_then(|common_name| common_name.as_str().ok())
-                .unwrap(),
-            utils::format_scalar(signer.address())
-        );
+        let common_names = certificate
+            .subject()
+            .iter_common_name()
+            .map(|common_name| common_name.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        assert!(common_names.contains(&signer_address));
+        if let Some(server_address) = server_address {
+            assert!(common_names.contains(&server_address.to_string()));
+        }
         assert_eq!(*certificate.public_key().algorithm.oid(), OID_SIG_ED25519);
         assert_eq!(
             certificate.public_key().parsed().unwrap(),
@@ -875,17 +914,32 @@ mod tests {
     }
 
     #[test]
-    fn test_ecdsa_certificate_verification() {
+    fn test_client_ed25519_certificate() {
+        test_ed25519_certificate(None);
+    }
+
+    #[test]
+    fn test_server_ed25519_certificate1() {
+        test_ed25519_certificate(Some("foo:42"));
+    }
+
+    #[test]
+    fn test_server_ed25519_certificate2() {
+        test_ed25519_certificate(Some("bar:43"));
+    }
+
+    #[test]
+    fn test_client_ecdsa_certificate_verification() {
         let signer = TestSigner::default();
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, false).unwrap();
+        let der = generate_certificate(&signer, not_before, not_after, None, false).unwrap();
         let verifier = verify_certificate::<
             PartialRemoteAccount,
             RemoteEcDsaAccount,
             RemoteEd25519Account,
-        >(der.as_slice(), now)
+        >(der.as_slice(), now, None)
         .unwrap();
         assert_eq!(signer.address(), verifier.address());
         assert_eq!(signer.bls_public_key(), verifier.public_key());
@@ -893,21 +947,96 @@ mod tests {
     }
 
     #[test]
-    fn test_ed25519_certificate_verification() {
+    fn test_server_ecdsa_certificate_verification() {
         let signer = TestSigner::default();
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, true).unwrap();
+        let der = generate_certificate(&signer, not_before, not_after, Some("server:123"), false)
+            .unwrap();
         let verifier = verify_certificate::<
             PartialRemoteAccount,
             RemoteEcDsaAccount,
             RemoteEd25519Account,
-        >(der.as_slice(), now)
+        >(der.as_slice(), now, Some("server:123"))
         .unwrap();
         assert_eq!(signer.address(), verifier.address());
         assert_eq!(signer.bls_public_key(), verifier.public_key());
         assert_eq!(signer.bls_public_key(), verifier.bls_public_key());
+    }
+
+    #[test]
+    fn test_server_ecdsa_certificate_verification_failure() {
+        let signer = TestSigner::default();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der =
+            generate_certificate(&signer, not_before, not_after, Some("incorrect:321"), false)
+                .unwrap();
+        assert!(
+            verify_certificate::<PartialRemoteAccount, RemoteEcDsaAccount, RemoteEd25519Account>(
+                der.as_slice(),
+                now,
+                Some("server:123")
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_client_ed25519_certificate_verification() {
+        let signer = TestSigner::default();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der = generate_certificate(&signer, not_before, not_after, None, true).unwrap();
+        let verifier = verify_certificate::<
+            PartialRemoteAccount,
+            RemoteEcDsaAccount,
+            RemoteEd25519Account,
+        >(der.as_slice(), now, None)
+        .unwrap();
+        assert_eq!(signer.address(), verifier.address());
+        assert_eq!(signer.bls_public_key(), verifier.public_key());
+        assert_eq!(signer.bls_public_key(), verifier.bls_public_key());
+    }
+
+    #[test]
+    fn test_server_ed25519_certificate_verification() {
+        let signer = TestSigner::default();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der =
+            generate_certificate(&signer, not_before, not_after, Some("server:456"), true).unwrap();
+        let verifier = verify_certificate::<
+            PartialRemoteAccount,
+            RemoteEcDsaAccount,
+            RemoteEd25519Account,
+        >(der.as_slice(), now, Some("server:456"))
+        .unwrap();
+        assert_eq!(signer.address(), verifier.address());
+        assert_eq!(signer.bls_public_key(), verifier.public_key());
+        assert_eq!(signer.bls_public_key(), verifier.bls_public_key());
+    }
+
+    #[test]
+    fn test_server_ed25519_certificate_verification_failure() {
+        let signer = TestSigner::default();
+        let now = SystemTime::now();
+        let not_before = now - Duration::from_secs(12);
+        let not_after = now + Duration::from_secs(34);
+        let der = generate_certificate(&signer, not_before, not_after, Some("incorrect:654"), true)
+            .unwrap();
+        assert!(
+            verify_certificate::<PartialRemoteAccount, RemoteEcDsaAccount, RemoteEd25519Account>(
+                der.as_slice(),
+                now,
+                Some("server:456")
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -916,7 +1045,7 @@ mod tests {
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, false).unwrap();
+        let der = generate_certificate(&signer, not_before, not_after, None, false).unwrap();
         let der = der.as_slice();
         assert_eq!(
             recover_bls_public_key(der).unwrap(),
@@ -938,7 +1067,7 @@ mod tests {
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, true).unwrap();
+        let der = generate_certificate(&signer, not_before, not_after, None, true).unwrap();
         let der = der.as_slice();
         assert_eq!(
             recover_bls_public_key(der).unwrap(),
@@ -960,7 +1089,7 @@ mod tests {
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, true).unwrap();
+        let der = generate_certificate(&signer, not_before, not_after, None, true).unwrap();
         let der = der.as_slice();
         let remote = PartialRemoteAccount::from_certificate(der).unwrap();
         assert_eq!(remote.address(), signer.address());
@@ -974,7 +1103,7 @@ mod tests {
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, true).unwrap();
+        let der = generate_certificate(&signer, not_before, not_after, None, true).unwrap();
         let der = der.as_slice();
         let remote = RemoteEd25519Account::from_certificate(der).unwrap();
         assert_eq!(remote.address(), signer.address());
@@ -991,7 +1120,7 @@ mod tests {
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer1, not_before, not_after, true).unwrap();
+        let der = generate_certificate(&signer1, not_before, not_after, None, true).unwrap();
         let mut certificate = Certificate::from_der(der.as_slice()).unwrap();
         certificate.tbs_certificate.extensions.value[1] = Extension {
             extension_id: OID_LIBERNET_IDENTITY_SIGNATURE_V1,
@@ -1016,7 +1145,8 @@ mod tests {
         assert!(
             verify_certificate::<PartialRemoteAccount, RemoteEcDsaAccount, RemoteEd25519Account>(
                 der.as_slice(),
-                now
+                now,
+                None
             )
             .is_err()
         );
@@ -1028,7 +1158,7 @@ mod tests {
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, true).unwrap();
+        let der = generate_certificate(&signer, not_before, not_after, None, true).unwrap();
         let mut certificate = Certificate::from_der(der.as_slice()).unwrap();
         certificate.tbs_certificate.extensions.value[1] = Extension {
             extension_id: OID_LIBERNET_IDENTITY_SIGNATURE_V1,
@@ -1050,7 +1180,8 @@ mod tests {
         assert!(
             verify_certificate::<PartialRemoteAccount, RemoteEcDsaAccount, RemoteEd25519Account>(
                 der.as_slice(),
-                now
+                now,
+                None
             )
             .is_err()
         );
