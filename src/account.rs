@@ -536,7 +536,7 @@ mod tests {
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
         let der = account
-            .generate_ecdsa_certificate(not_before, not_after, Some("server:1234"))
+            .generate_ecdsa_certificate(not_before, not_after, Some("server"))
             .unwrap();
         let (_, certificate) = parse_x509_certificate(der.as_slice()).unwrap();
         assert!(
@@ -553,7 +553,7 @@ mod tests {
             .map(|common_name| common_name.as_str().unwrap().to_string())
             .collect::<Vec<_>>();
         assert!(common_names.contains(&account_address));
-        assert!(common_names.contains(&"server:1234".to_string()));
+        assert!(common_names.contains(&"server".to_string()));
         assert_eq!(
             certificate.public_key().parsed().unwrap(),
             PublicKey::EC(ECPoint::from(
@@ -635,7 +635,7 @@ mod tests {
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
         let der = account
-            .generate_ed25519_certificate(not_before, not_after, Some("server:1234"))
+            .generate_ed25519_certificate(not_before, not_after, Some("server"))
             .unwrap();
         let (_, certificate) = parse_x509_certificate(der.as_slice()).unwrap();
         assert!(
@@ -652,7 +652,7 @@ mod tests {
             .map(|common_name| common_name.as_str().unwrap().to_string())
             .collect::<Vec<_>>();
         assert!(common_names.contains(&account_address));
-        assert!(common_names.contains(&"server:1234".to_string()));
+        assert!(common_names.contains(&"server".to_string()));
         assert_eq!(
             certificate.public_key().parsed().unwrap(),
             PublicKey::Unknown(account.ed25519_public_key().compress().as_bytes())
@@ -696,10 +696,10 @@ mod tests {
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
         let der = account
-            .generate_ecdsa_certificate(not_before, not_after, Some("ecdsa_server:456"))
+            .generate_ecdsa_certificate(not_before, not_after, Some("ecdsa_server"))
             .unwrap();
         let verifier =
-            Account::verify_ssl_certificate(der.as_slice(), now, Some("ecdsa_server:456")).unwrap();
+            Account::verify_ssl_certificate(der.as_slice(), now, Some("ecdsa_server")).unwrap();
         assert_eq!(account.address(), verifier.address());
         assert_eq!(account.bls_public_key(), verifier.bls_public_key());
     }
@@ -725,11 +725,10 @@ mod tests {
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
         let der = account
-            .generate_ed25519_certificate(not_before, not_after, Some("ed25519_server:123"))
+            .generate_ed25519_certificate(not_before, not_after, Some("ed25519_server"))
             .unwrap();
         let verifier =
-            Account::verify_ssl_certificate(der.as_slice(), now, Some("ed25519_server:123"))
-                .unwrap();
+            Account::verify_ssl_certificate(der.as_slice(), now, Some("ed25519_server")).unwrap();
         assert_eq!(account.address(), verifier.address());
         assert_eq!(account.bls_public_key(), verifier.bls_public_key());
     }

@@ -625,14 +625,14 @@ mod tests {
         let not_after = now + Duration::from_secs(56);
         let der = account
             .inner
-            .generate_ecdsa_certificate(not_before, not_after, Some("ecdsa_server:123"))
+            .generate_ecdsa_certificate(not_before, not_after, Some("ecdsa_server"))
             .unwrap();
         let pem = pem::der_to_pem(der.as_slice(), "CERTIFICATE");
         let remote = account
             .verify_ssl_certificate(
                 pem.as_str(),
                 now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
-                Some("ecdsa_server:123".to_string()),
+                Some("ecdsa_server".to_string()),
             )
             .unwrap();
         assert_eq!(account.address(), remote.address());
@@ -672,14 +672,14 @@ mod tests {
         let not_after = now + Duration::from_secs(56);
         let der = account
             .inner
-            .generate_ed25519_certificate(not_before, not_after, Some("ed25519_server:456"))
+            .generate_ed25519_certificate(not_before, not_after, Some("ed25519_server"))
             .unwrap();
         let pem = pem::der_to_pem(der.as_slice(), "CERTIFICATE");
         let remote = account
             .verify_ssl_certificate(
                 pem.as_str(),
                 now.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64,
-                Some("ed25519_server:456".to_string()),
+                Some("ed25519_server".to_string()),
             )
             .unwrap();
         assert_eq!(account.address(), remote.address());

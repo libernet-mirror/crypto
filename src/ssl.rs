@@ -828,12 +828,12 @@ mod tests {
 
     #[test]
     fn test_server_ecdsa_certificate1() {
-        test_ecdsa_certificate(Some("foo:42"));
+        test_ecdsa_certificate(Some("foo"));
     }
 
     #[test]
     fn test_server_ecdsa_certificate2() {
-        test_ecdsa_certificate(Some("bar:43"));
+        test_ecdsa_certificate(Some("bar"));
     }
 
     fn test_ed25519_certificate(server_address: Option<&str>) {
@@ -920,12 +920,12 @@ mod tests {
 
     #[test]
     fn test_server_ed25519_certificate1() {
-        test_ed25519_certificate(Some("foo:42"));
+        test_ed25519_certificate(Some("foo"));
     }
 
     #[test]
     fn test_server_ed25519_certificate2() {
-        test_ed25519_certificate(Some("bar:43"));
+        test_ed25519_certificate(Some("bar"));
     }
 
     #[test]
@@ -952,13 +952,13 @@ mod tests {
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, Some("server:123"), false)
-            .unwrap();
+        let der =
+            generate_certificate(&signer, not_before, not_after, Some("server"), false).unwrap();
         let verifier = verify_certificate::<
             PartialRemoteAccount,
             RemoteEcDsaAccount,
             RemoteEd25519Account,
-        >(der.as_slice(), now, Some("server:123"))
+        >(der.as_slice(), now, Some("server"))
         .unwrap();
         assert_eq!(signer.address(), verifier.address());
         assert_eq!(signer.bls_public_key(), verifier.public_key());
@@ -972,13 +972,12 @@ mod tests {
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
         let der =
-            generate_certificate(&signer, not_before, not_after, Some("incorrect:321"), false)
-                .unwrap();
+            generate_certificate(&signer, not_before, not_after, Some("incorrect"), false).unwrap();
         assert!(
             verify_certificate::<PartialRemoteAccount, RemoteEcDsaAccount, RemoteEd25519Account>(
                 der.as_slice(),
                 now,
-                Some("server:123")
+                Some("server")
             )
             .is_err()
         );
@@ -1009,12 +1008,12 @@ mod tests {
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
         let der =
-            generate_certificate(&signer, not_before, not_after, Some("server:456"), true).unwrap();
+            generate_certificate(&signer, not_before, not_after, Some("server"), true).unwrap();
         let verifier = verify_certificate::<
             PartialRemoteAccount,
             RemoteEcDsaAccount,
             RemoteEd25519Account,
-        >(der.as_slice(), now, Some("server:456"))
+        >(der.as_slice(), now, Some("server"))
         .unwrap();
         assert_eq!(signer.address(), verifier.address());
         assert_eq!(signer.bls_public_key(), verifier.public_key());
@@ -1027,13 +1026,13 @@ mod tests {
         let now = SystemTime::now();
         let not_before = now - Duration::from_secs(12);
         let not_after = now + Duration::from_secs(34);
-        let der = generate_certificate(&signer, not_before, not_after, Some("incorrect:654"), true)
-            .unwrap();
+        let der =
+            generate_certificate(&signer, not_before, not_after, Some("incorrect"), true).unwrap();
         assert!(
             verify_certificate::<PartialRemoteAccount, RemoteEcDsaAccount, RemoteEd25519Account>(
                 der.as_slice(),
                 now,
-                Some("server:456")
+                Some("server")
             )
             .is_err()
         );
