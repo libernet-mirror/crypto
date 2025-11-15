@@ -286,7 +286,15 @@ fn make_rdn_sequence(
     Ok(vec![atvs])
 }
 
-fn make_libernet_extensions(
+/// Generates the extensions for a Libernet certificate.
+///
+/// The generated extensions currently include:
+///
+/// * the Libernet public key (OID `1.3.6.1.4.1.71104.1`),
+/// * and the Libernet identity signature (OID `1.3.6.1.4.1.71104.2`), a BLS signature certifying
+///   ownership of the ephemeral key used in mTLS (either ECDSA or Ed25519).
+///
+fn make_certificate_extensions(
     signer: &impl Signer,
     serial_number: i128,
     use_ed25519: bool,
@@ -324,7 +332,11 @@ fn make_libernet_extensions(
 /// port, which must be specified in the `server_address` parameter. Client certificates don't have
 /// that, so `server_address` must be set to `None` for those.
 ///
-/// The implementation is RFC-5280 compliant.
+/// NOTE: this X.509 / RFC-5280 implementation is not fully compliant because we can't generate a
+/// `SubjectAltName` extension at this time due to a few bugs in the `der` crate. Host name
+/// validation (for server certificates) is currently based on CN fields (aka the old way).
+///
+/// TODO: migrate off the `der` crate and make all Libernet certificates fully compliant.
 pub fn generate_certificate(
     signer: &impl Signer,
     not_before: SystemTime,
@@ -375,7 +387,7 @@ pub fn generate_certificate(
         extensions: ContextSpecific {
             tag_number: TagNumber::N3,
             tag_mode: TagMode::Explicit,
-            value: make_libernet_extensions(signer, serial_number, use_ed25519)?,
+            value: make_certificate_extensions(signer, serial_number, use_ed25519)?,
         },
     };
     let mut buffer = Vec::<u8>::default();
