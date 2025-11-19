@@ -4,7 +4,7 @@ use anyhow::{Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
 use ff::Field;
 use group::{Group, prime::PrimeCurveAffine};
-use std::ops::{Add, AddAssign, Mul, MulAssign};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
 
 fn dot<L, R, O>(u: &[L], v: &[R]) -> O
 where
@@ -120,6 +120,35 @@ impl AddAssign<Polynomial> for Polynomial {
     }
 }
 
+impl Sub<Polynomial> for Polynomial {
+    type Output = Polynomial;
+
+    fn sub(mut self, rhs: Self) -> Self::Output {
+        if rhs.len() > self.len() {
+            return rhs - self;
+        }
+        for i in 0..rhs.len() {
+            self.coefficients[i] -= rhs.coefficients[i];
+        }
+        self
+    }
+}
+
+impl SubAssign<Polynomial> for Polynomial {
+    fn sub_assign(&mut self, mut rhs: Polynomial) {
+        if rhs.len() > self.len() {
+            for i in 0..self.len() {
+                rhs.coefficients[i] -= self.coefficients[i];
+            }
+            self.coefficients = rhs.coefficients;
+        } else {
+            for i in 0..rhs.len() {
+                self.coefficients[i] -= rhs.coefficients[i];
+            }
+        }
+    }
+}
+
 impl Mul<Scalar> for Polynomial {
     type Output = Polynomial;
 
@@ -169,10 +198,10 @@ impl Proof {
 
     /// Verifies that the polynomial with commitment `c` evaluates to `v` in `z`.
     pub fn verify(&self, c: G1Affine, z: Scalar, v: Scalar) -> Result<()> {
-        let p1 = c + params::g1(0) * -v;
+        let p1 = c - params::g1(0) * v;
         let q1 = G2Affine::generator();
         let p2 = self.0;
-        let q2 = params::g2() + G2Projective::generator() * -z;
+        let q2 = params::g2() - G2Projective::generator() * z;
         if pairing(&p1.into(), &q1) == pairing(&p2, &q2.into()) {
             Ok(())
         } else {
@@ -385,6 +414,24 @@ mod tests {
         let mut p3 = p1;
         p3 += p2;
         assert_eq!(c1 + c2, p3.commitment());
+    }
+
+    #[test]
+    fn test_subtract_commitments1() {
+        let p1 = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
+        let p2 = Polynomial::from_roots(&[78.into(), 90.into()]).unwrap();
+        assert_eq!(p1.commitment() - p2.commitment(), (p1 - p2).commitment());
+    }
+
+    #[test]
+    fn test_subtract_commitments2() {
+        let p1 = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
+        let c1 = p1.commitment();
+        let p2 = Polynomial::from_roots(&[78.into(), 90.into()]).unwrap();
+        let c2 = p2.commitment();
+        let mut p3 = p1;
+        p3 -= p2;
+        assert_eq!(c1 - c2, p3.commitment());
     }
 
     #[test]
