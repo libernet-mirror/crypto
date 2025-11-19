@@ -110,9 +110,9 @@ impl Account {
     /// The generated certificate includes the extensions defined by Libernet for authentication of
     /// the BLS12-381 keypair and is therefore suitable for use in all Libernet connections.
     ///
-    /// Server certificates must have an additional Common Name set to the canonical server address
-    /// & port, which must be specified in the `server_address` parameter. Client certificates don't
-    /// have that, so `server_address` must be set to `None` for those.
+    /// Server certificates must have an additional Common Name set to the canonical server address,
+    /// which must be specified in the `server_address` parameter. Client certificates don't have
+    /// that, so `server_address` must be set to `None` for those.
     ///
     /// The implementation is RFC-5280 compliant.
     pub fn generate_ecdsa_certificate(
@@ -129,9 +129,9 @@ impl Account {
     /// The generated certificate includes the extensions defined by Libernet for authentication of
     /// the BLS12-381 keypair and is therefore suitable for use in all Libernet connections.
     ///
-    /// Server certificates must have an additional Common Name set to the canonical server address
-    /// & port, which must be specified in the `server_address` parameter. Client certificates don't
-    /// have that, so `server_address` must be set to `None` for those.
+    /// Server certificates must have an additional Common Name set to the canonical server address,
+    /// which must be specified in the `server_address` parameter. Client certificates don't have
+    /// that, so `server_address` must be set to `None` for those.
     ///
     /// The implementation is RFC-5280 compliant.
     pub fn generate_ed25519_certificate(
