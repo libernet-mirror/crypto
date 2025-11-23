@@ -148,6 +148,7 @@ impl Wallet {
 mod tests {
     use super::*;
     use crate::signer::BlsVerifier;
+    use utils::testing::parse_scalar;
 
     fn seed() -> H512 {
         H512::from_slice(&[
@@ -161,17 +162,11 @@ mod tests {
     fn test_derive_key() {
         assert_eq!(
             derive_key("lorem ipsum dolor sit amet", seed()),
-            utils::parse_scalar(
-                "0x274029075d5704edc31f852fa778b3f08d4fe23384d2af341eb30415a682e2bc"
-            )
-            .unwrap(),
+            parse_scalar("0x274029075d5704edc31f852fa778b3f08d4fe23384d2af341eb30415a682e2bc")
         );
         assert_eq!(
             derive_key("sator arepo tenet opera rotas", seed()),
-            utils::parse_scalar(
-                "0x673c739883a03d8d213349fe958a774d733bd9145dee11f5c760d88d9756a5cd"
-            )
-            .unwrap(),
+            parse_scalar("0x673c739883a03d8d213349fe958a774d733bd9145dee11f5c760d88d9756a5cd")
         );
     }
 

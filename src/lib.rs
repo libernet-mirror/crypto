@@ -396,6 +396,7 @@ mod tests {
     use super::*;
     use ff::Field;
     use std::time::SystemTime;
+    use utils::testing::parse_scalar;
     use x509_parser::{
         asn1_rs::BitString, oid_registry::OID_SIG_ED25519, pem::parse_x509_pem,
         public_key::PublicKey, x509::X509Version,
@@ -571,9 +572,7 @@ mod tests {
                     .as_bytes()
             )
         );
-        let address_bytes = utils::parse_scalar(account.address().as_str())
-            .unwrap()
-            .to_bytes_le();
+        let address_bytes = parse_scalar(account.address().as_str()).to_bytes_le();
         if let Some(issuer_uid) = certificate.issuer_uid.as_ref() {
             assert_eq!(issuer_uid.0, BitString::new(0, &address_bytes));
         }

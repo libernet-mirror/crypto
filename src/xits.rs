@@ -63,10 +63,7 @@ pub fn decompose_scalar_trits<const N: usize>(value: Scalar) -> [Scalar; N] {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn parse_scalar(s: &str) -> Scalar {
-        utils::parse_scalar(s).unwrap()
-    }
+    use utils::testing::parse_scalar;
 
     #[test]
     fn test_and1() {

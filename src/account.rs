@@ -227,7 +227,7 @@ impl Drop for Account {
 mod tests {
     use super::*;
     use crate::signer::{Ed25519Verifier, Signer};
-    use crate::utils;
+    use crate::utils::{self, testing::parse_scalar};
     use std::time::Duration;
     use x509_parser::{
         asn1_rs::BitString, parse_x509_certificate, public_key::ECPoint, public_key::PublicKey,
@@ -242,10 +242,7 @@ mod tests {
         ).unwrap();
         assert_eq!(
             account.address(),
-            utils::parse_scalar(
-                "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
-            )
-            .unwrap()
+            parse_scalar("0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016")
         );
         assert_eq!(
             account.public_key(),
@@ -269,10 +266,7 @@ mod tests {
         let ecdsa_remote = account.to_ecdsa_remote();
         assert_eq!(
             ecdsa_remote.address(),
-            utils::parse_scalar(
-                "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
-            )
-            .unwrap()
+            parse_scalar("0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016")
         );
         assert_eq!(
             ecdsa_remote.bls_public_key(),
@@ -282,10 +276,7 @@ mod tests {
         let ed25519_remote = account.to_ed25519_remote();
         assert_eq!(
             ed25519_remote.address(),
-            utils::parse_scalar(
-                "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
-            )
-            .unwrap()
+            parse_scalar("0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016")
         );
         assert_eq!(
             ed25519_remote.bls_public_key(),

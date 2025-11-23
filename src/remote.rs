@@ -172,6 +172,7 @@ impl Ed25519VerifierConstructor for RemoteEd25519Account {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use utils::testing::parse_scalar;
 
     #[test]
     fn test_partial_remote_account() {
@@ -180,10 +181,7 @@ mod tests {
         );
         assert_eq!(
             account.address(),
-            utils::parse_scalar(
-                "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
-            )
-            .unwrap()
+            parse_scalar("0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016")
         );
         assert_eq!(
             account.public_key(),
@@ -205,10 +203,7 @@ mod tests {
         );
         assert_eq!(
             account.address(),
-            utils::parse_scalar(
-                "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
-            )
-            .unwrap()
+            parse_scalar("0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016")
         );
         assert_eq!(
             account.public_key(),
@@ -237,10 +232,7 @@ mod tests {
         );
         assert_eq!(
             account.address(),
-            utils::parse_scalar(
-                "0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016"
-            )
-            .unwrap()
+            parse_scalar("0x16ea9577e1d275f09b31916585ffeed219f6b70644bbcc82a0bb2f0e206f5016")
         );
         assert_eq!(
             account.public_key(),
