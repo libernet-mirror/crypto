@@ -1,3 +1,6 @@
+// Copyright 2025 The Libernet Team
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::merkle::AsScalar;
 use crate::signer::{BlsVerifier, EcDsaVerifier, Ed25519Verifier, Signer};
 use anyhow::Context;
