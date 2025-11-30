@@ -3,7 +3,6 @@
 
 use crate::merkle::AsScalar;
 use crate::signer::{BlsVerifier, EcDsaVerifier, Ed25519Verifier, Signer};
-use anyhow::Context;
 use blstrs::{G1Affine, Scalar};
 use primitive_types::H512;
 use std::time::{Duration, UNIX_EPOCH};
@@ -348,7 +347,7 @@ impl Wallet {
     pub fn load(seed: &str, commitment: &str, y: Vec<String>) -> Result<Self, JsValue> {
         Ok(Self {
             inner: wallet::Wallet::load(
-                seed.parse().context("invalid seed").map_err(map_err)?,
+                utils::parse_scalar(seed).map_err(map_err)?,
                 utils::parse_g1(commitment).map_err(map_err)?,
                 &y.iter()
                     .map(|y| utils::parse_g1(y.as_str()).map_err(map_err))
@@ -361,7 +360,7 @@ impl Wallet {
 
     #[wasm_bindgen]
     pub fn seed(&self) -> String {
-        format!("{:#x}", self.inner.seed())
+        utils::format_scalar(self.inner.seed())
     }
 
     #[wasm_bindgen]
