@@ -117,6 +117,10 @@ impl<
         &self.value
     }
 
+    pub fn take_value(self) -> V {
+        self.value
+    }
+
     pub fn path(&self) -> &[[Scalar; W]; H] {
         &self.path
     }
