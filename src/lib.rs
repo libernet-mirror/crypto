@@ -43,6 +43,81 @@ pub fn poseidon_hash(inputs: Vec<String>) -> Result<String, JsValue> {
 }
 
 #[wasm_bindgen]
+pub struct BinaryMerkleProof32 {
+    inner: merkle::Proof<Scalar, Scalar, 2, 32>,
+}
+
+#[wasm_bindgen]
+impl BinaryMerkleProof32 {
+    #[wasm_bindgen]
+    pub fn from_compressed(
+        key: &str,
+        value: &str,
+        root_hash: &str,
+        hashes: Vec<String>,
+    ) -> Result<Self, JsValue> {
+        if hashes.len() != 32 {
+            return Err(JsValue::from_str(
+                format!("incorrect number of hashes: got {}, want 32", hashes.len(),).as_str(),
+            ));
+        }
+        let hashes = hashes
+            .iter()
+            .map(|s| utils::parse_scalar(s.as_str()))
+            .collect::<anyhow::Result<Vec<Scalar>>>()
+            .map_err(map_err)?;
+        Ok(Self {
+            inner: merkle::Proof::<Scalar, Scalar, 2, 32>::from_compressed(
+                utils::parse_scalar(key).map_err(map_err)?,
+                utils::parse_scalar(value).map_err(map_err)?,
+                utils::parse_scalar(root_hash).map_err(map_err)?,
+                &hashes,
+            )
+            .map_err(map_err)?,
+        })
+    }
+
+    #[wasm_bindgen]
+    pub fn key(&self) -> String {
+        utils::format_scalar(self.inner.key().as_scalar())
+    }
+
+    #[wasm_bindgen]
+    pub fn value(&self) -> String {
+        utils::format_scalar(self.inner.value().as_scalar())
+    }
+
+    #[wasm_bindgen]
+    pub fn root_hash(&self) -> String {
+        utils::format_scalar(self.inner.root_hash().as_scalar())
+    }
+
+    #[wasm_bindgen]
+    pub fn path(&self) -> Vec<String> {
+        self.inner
+            .path()
+            .as_flattened()
+            .iter()
+            .map(|v| utils::format_scalar(*v))
+            .collect()
+    }
+
+    #[wasm_bindgen]
+    pub fn compressed_path(&self) -> Vec<String> {
+        self.inner
+            .compressed_path()
+            .iter()
+            .map(|v| utils::format_scalar(*v))
+            .collect()
+    }
+
+    #[wasm_bindgen]
+    pub fn verify(&self) -> Result<(), JsValue> {
+        self.inner.verify().map_err(map_err)
+    }
+}
+
+#[wasm_bindgen]
 pub struct TernaryMerkleProof {
     inner: merkle::Proof<Scalar, Scalar, 3, 161>,
 }
@@ -420,6 +495,42 @@ mod tests {
             .unwrap(),
             "0x4338d3c3d5b9b5c526ad0d4ccaf364a7f32ddede0c898f46ec72e16ba4d9766c"
         );
+    }
+
+    #[test]
+    fn test_binary_merkle_proof_32() {
+        let key = utils::get_random_scalar();
+        let value = utils::get_random_scalar();
+        let (path, root_hash) = {
+            let mut key = key;
+            let mut hash = value;
+            let mut path = [Scalar::ZERO; 32];
+            for i in 0..32 {
+                let sister_hash = utils::get_random_scalar();
+                path[i] = sister_hash;
+                let bit = xits::and1(key);
+                key = xits::shr1(key);
+                if bit == 0.into() {
+                    hash = utils::poseidon_hash(&[hash, sister_hash]);
+                } else if bit == 1.into() {
+                    hash = utils::poseidon_hash(&[sister_hash, hash]);
+                } else {
+                    unreachable!();
+                }
+            }
+            (path, hash)
+        };
+        let proof = BinaryMerkleProof32::from_compressed(
+            utils::format_scalar(key).as_str(),
+            utils::format_scalar(value).as_str(),
+            utils::format_scalar(root_hash).as_str(),
+            path.iter().map(|v| utils::format_scalar(*v)).collect(),
+        )
+        .unwrap();
+        assert_eq!(proof.key(), utils::format_scalar(key));
+        assert_eq!(proof.value(), utils::format_scalar(value));
+        assert_eq!(proof.root_hash(), utils::format_scalar(root_hash));
+        assert!(proof.verify().is_ok());
     }
 
     #[test]
