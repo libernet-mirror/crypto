@@ -83,7 +83,7 @@ impl FromScalar for u64 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proof<
     K: Debug + Copy + Send + Sync + FromScalar + AsScalar + 'static,
-    V: Debug + Default + Clone + Send + Sync + AsScalar + 'static,
+    V: Debug + Clone + Send + Sync + AsScalar + 'static,
     const W: usize,
     const H: usize,
 > {
@@ -95,7 +95,7 @@ pub struct Proof<
 
 impl<
     K: Debug + Copy + Send + Sync + FromScalar + AsScalar + 'static,
-    V: Debug + Default + Clone + Send + Sync + AsScalar + 'static,
+    V: Debug + Clone + Send + Sync + AsScalar + 'static,
     const W: usize,
     const H: usize,
 > Proof<K, V, W, H>
@@ -132,7 +132,7 @@ impl<
 
 impl<
     K: Debug + Copy + Send + Sync + FromScalar + AsScalar + 'static,
-    V: Debug + Default + Clone + Send + Sync + AsScalar + 'static,
+    V: Debug + Clone + Send + Sync + AsScalar + 'static,
     const H: usize,
 > Proof<K, V, 2, H>
 {
@@ -216,7 +216,7 @@ impl<
 
 impl<
     K: Debug + Copy + Send + Sync + FromScalar + AsScalar + 'static,
-    V: Debug + Default + Clone + Send + Sync + AsScalar + 'static,
+    V: Debug + Clone + Send + Sync + AsScalar + 'static,
     const H: usize,
 > Proof<K, V, 3, H>
 {
