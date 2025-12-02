@@ -121,6 +121,29 @@ impl<
         self.value
     }
 
+    /// Returns a new proof with the value replaced by the provided one, failing if the scalar
+    /// representation of the two values doesn't match.
+    pub fn map<U: Debug + Clone + Send + Sync + AsScalar + 'static>(
+        self,
+        new_value: U,
+    ) -> Result<Proof<K, U, W, H>> {
+        let current_hash = self.value.as_scalar();
+        let new_hash = new_value.as_scalar();
+        if new_hash != current_hash {
+            return Err(anyhow!(
+                "cannot map Merkle proof from value hash {} to value hash {}",
+                utils::format_scalar(current_hash),
+                utils::format_scalar(new_hash)
+            ));
+        }
+        Ok(Proof {
+            key: self.key,
+            value: new_value,
+            path: self.path,
+            root_hash: self.root_hash,
+        })
+    }
+
     pub fn path(&self) -> &[[Scalar; W]; H] {
         &self.path
     }
@@ -763,5 +786,67 @@ mod tests {
         )
         .unwrap();
         assert!(proof.verify().is_ok());
+    }
+
+    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    struct TestValue {
+        scalar: Scalar,
+    }
+
+    impl AsScalar for TestValue {
+        fn as_scalar(&self) -> Scalar {
+            self.scalar
+        }
+    }
+
+    #[test]
+    fn test_map_value() {
+        let root_hash =
+            parse_scalar("0x1816238696218e1fd51ec1377520694e1105c7af2bfe5d5a544f1a8fe0dfcd43");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            8.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        let new_value = TestValue { scalar: value };
+        let mapped = proof.map(new_value).unwrap();
+        assert_eq!(*mapped.value(), new_value);
+        assert!(mapped.verify().is_ok());
+    }
+
+    #[test]
+    fn test_wrong_map_value() {
+        let root_hash =
+            parse_scalar("0x1816238696218e1fd51ec1377520694e1105c7af2bfe5d5a544f1a8fe0dfcd43");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            8.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.map(TestValue { scalar: root_hash }).is_err());
     }
 }
