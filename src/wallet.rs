@@ -1,5 +1,6 @@
 use crate::account::Account;
-use crate::kzg::{Polynomial, Proof};
+use crate::kzg::Proof;
+use crate::poly::Polynomial;
 use crate::utils;
 use anyhow::{Result, anyhow};
 use argon2::{self, Argon2};
