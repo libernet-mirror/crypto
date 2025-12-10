@@ -17,6 +17,7 @@ pub mod kzg;
 pub mod merkle;
 pub mod pem;
 pub mod pkcs8;
+pub mod plonk;
 pub mod poly;
 pub mod remote;
 pub mod signer;

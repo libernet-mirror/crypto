@@ -9,7 +9,7 @@ use ecdsa::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use fixed_hash::construct_fixed_hash;
 use group::GroupEncoding;
 use p256::AffinePoint as PointP256;
-use primitive_types::{H256, H384, H512, H768, U256};
+use primitive_types::{H256, H384, H512, H768, U256, U512};
 use sha3::{self, Digest};
 
 pub fn get_random_bytes() -> H512 {
@@ -163,11 +163,22 @@ pub fn parse_point_25519(s: &str) -> Result<Point25519> {
     decompress_point_25519(s.parse()?)
 }
 
-pub fn poseidon_hash(values: &[Scalar]) -> Scalar {
+pub fn shuffle<T>(elements: &mut [T]) {
+    for i in 0..elements.len() {
+        let mut bytes = [0u8; 64];
+        getrandom::getrandom(&mut bytes).unwrap();
+        let r = U512::from_little_endian(&bytes);
+        let j = r % (elements.len() - i);
+        let j = i + j.as_u64() as usize;
+        elements.swap(i, j);
+    }
+}
+
+pub fn poseidon_hash<'a, I: IntoIterator<Item = &'a Scalar>>(values: I) -> Scalar {
     let dusk_scalar = poseidon::Hash::digest(
         poseidon::Domain::Other,
         values
-            .iter()
+            .into_iter()
             .map(|value| {
                 DuskScalar::from_bytes(&value.to_bytes_le())
                     .into_option()

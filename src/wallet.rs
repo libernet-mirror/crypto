@@ -5,7 +5,7 @@ use crate::utils;
 use anyhow::{Result, anyhow};
 use argon2::{self, Argon2};
 use blstrs::{G1Affine, Scalar};
-use primitive_types::{H512, U512};
+use primitive_types::H512;
 use sha3::{self, Digest};
 
 pub const MAX_PASSWORDS: usize = 10;
@@ -46,17 +46,6 @@ impl Wallet {
         H512::from_slice(&bytes)
     }
 
-    fn shuffle_proofs(proofs: &mut Vec<Proof>) {
-        for i in 0..proofs.len() {
-            let mut bytes = [0u8; 64];
-            getrandom::getrandom(&mut bytes).unwrap();
-            let r = U512::from_little_endian(&bytes);
-            let j = r % (proofs.len() - i);
-            let j = i + j.as_u64() as usize;
-            proofs.swap(i, j);
-        }
-    }
-
     pub fn create(passwords: Vec<String>) -> Result<Self> {
         if passwords.is_empty() {
             return Err(anyhow!("no passwords specified"));
@@ -81,15 +70,15 @@ impl Wallet {
         for _ in keys.len()..MAX_PASSWORDS {
             keys.push(utils::get_random_scalar());
         }
-        let polynomial = Polynomial::from_roots(keys.as_slice())?;
-        let mut proofs = keys
+        let polynomial = Polynomial::from_roots(keys.as_slice(), utils::get_random_scalar())?;
+        let mut proofs: Vec<Proof> = keys
             .iter()
             .map(|key| {
                 let (proof, _) = Proof::new(&polynomial, *key);
                 proof
             })
             .collect();
-        Self::shuffle_proofs(&mut proofs);
+        utils::shuffle(proofs.as_mut_slice());
         Ok(Self {
             seed,
             commitment: polynomial.commitment().into(),

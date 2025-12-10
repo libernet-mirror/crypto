@@ -823,8 +823,10 @@ mod tests {
         let identity_signature =
             LibernetIdentityExtension::from_der(identity_signature.value).unwrap();
         let serial_number = {
+            let source = certificate.serial.to_bytes_le();
             let mut bytes = [0u8; 16];
-            bytes.copy_from_slice(certificate.serial.to_bytes_le().as_slice());
+            let length = std::cmp::min(source.len(), 16);
+            bytes[0..length].copy_from_slice(source.as_slice());
             i128::from_le_bytes(bytes)
         };
         assert_eq!(
@@ -915,8 +917,10 @@ mod tests {
         let identity_signature =
             LibernetIdentityExtension::from_der(identity_signature.value).unwrap();
         let serial_number = {
+            let source = certificate.serial.to_bytes_le();
             let mut bytes = [0u8; 16];
-            bytes.copy_from_slice(certificate.serial.to_bytes_le().as_slice());
+            let length = std::cmp::min(source.len(), 16);
+            bytes[0..length].copy_from_slice(source.as_slice());
             i128::from_le_bytes(bytes)
         };
         assert_eq!(

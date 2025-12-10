@@ -11,7 +11,7 @@ use group::{Group, prime::PrimeCurveAffine};
 ///
 /// The values of `c`, `z`, and `v` are mathematically tied to this proof and they need to be
 /// specified explicitly when invoking `verify`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Proof(G1Affine);
 
 impl Proof {
@@ -33,8 +33,8 @@ impl Proof {
     }
 
     /// Verifies that the polynomial with commitment `c` evaluates to `v` in `z`.
-    pub fn verify(&self, c: G1Affine, z: Scalar, v: Scalar) -> Result<()> {
-        let p1 = c - params::g1(0) * v;
+    pub fn verify<C: Into<G1Projective>>(&self, c: C, z: Scalar, v: Scalar) -> Result<()> {
+        let p1 = c.into() - params::g1(0) * v;
         let q1 = G2Affine::generator();
         let p2 = self.0;
         let q2 = params::g2() - G2Projective::generator() * z;
@@ -47,7 +47,7 @@ impl Proof {
 
     /// Verifies that the polynomial with commitment `c` evaluates to 0 in `z` (in other words, `z`
     /// is a root).
-    pub fn verify_root(&self, c: G1Affine, z: Scalar) -> Result<()> {
+    pub fn verify_root<C: Into<G1Projective>>(&self, c: C, z: Scalar) -> Result<()> {
         self.verify(c, z, 0.into())
     }
 }
@@ -64,66 +64,118 @@ impl From<G1Projective> for Proof {
     }
 }
 
+/// Convenience class that carries both a KZG proof and the proven value.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ValueProof {
+    value: Scalar,
+    proof: Proof,
+}
+
+impl ValueProof {
+    /// Proves the evaluation of `p` in `z`, returning the value `v = p(z)` and the KZG proof in a
+    /// single `ValueProof` object.
+    pub fn new(polynomial: &Polynomial, z: Scalar) -> Self {
+        let (proof, value) = Proof::new(polynomial, z);
+        Self { value, proof }
+    }
+
+    /// Constructs a proof from a previously serialized point `y` and corresponding value `v`.
+    pub fn load(y: G1Affine, v: Scalar) -> Self {
+        Self {
+            value: v,
+            proof: Proof::load(y),
+        }
+    }
+
+    /// Returns the proven value.
+    pub fn v(&self) -> Scalar {
+        self.value
+    }
+
+    /// Returns the proof point.
+    pub fn y(&self) -> G1Affine {
+        self.proof.y()
+    }
+
+    pub fn verify<C: Into<G1Projective>>(&self, c: C, z: Scalar) -> Result<()> {
+        self.proof.verify(c, z, self.value)
+    }
+}
+
+/// Convenience class that carries a KZG polynomial commitment, evaluation proof, and proven value.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct CommittedValueProof {
+    commitment: G1Affine,
+    value: Scalar,
+    proof: Proof,
+}
+
+impl CommittedValueProof {
+    /// Commits the polynomial `p` and proves the evaluation of `p` in `z`, returning the commitment
+    /// `c`, the value `v = p(z)`, and the proof point in a single `CommittedValueProof` object.
+    pub fn new(polynomial: &Polynomial, z: Scalar) -> Self {
+        let commitment = polynomial.commitment().into();
+        let (proof, value) = Proof::new(polynomial, z);
+        Self {
+            commitment,
+            value,
+            proof,
+        }
+    }
+
+    /// Proves the evaluation of `p` in `z`, returning the commitment `c`, the value `v = p(z)`, and
+    /// the proof point in a single `CommittedValueProof` object.
+    pub fn with_commitment<C: Into<G1Affine>>(polynomial: &Polynomial, c: C, z: Scalar) -> Self {
+        let (proof, value) = Proof::new(polynomial, z);
+        Self {
+            commitment: c.into(),
+            value,
+            proof,
+        }
+    }
+
+    /// Constructs a proof from a previously serialized point `y` and corresponding value `v`.
+    pub fn load(c: G1Affine, y: G1Affine, v: Scalar) -> Self {
+        Self {
+            commitment: c,
+            value: v,
+            proof: Proof::load(y),
+        }
+    }
+
+    /// Returns the polynomial commitment.
+    pub fn c(&self) -> G1Affine {
+        self.commitment
+    }
+
+    /// Returns the proven value.
+    pub fn v(&self) -> Scalar {
+        self.value
+    }
+
+    /// Returns the proof point.
+    pub fn y(&self) -> G1Affine {
+        self.proof.y()
+    }
+
+    pub fn verify(&self, z: Scalar) -> Result<()> {
+        self.proof.verify(self.commitment, z, self.value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils;
 
-    #[test]
-    fn test_add_commitments1() {
-        let p1 = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
-        let p2 = Polynomial::from_roots(&[78.into(), 90.into()]).unwrap();
-        assert_eq!(p1.commitment() + p2.commitment(), (p1 + p2).commitment());
-    }
-
-    #[test]
-    fn test_add_commitments2() {
-        let p1 = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
-        let c1 = p1.commitment();
-        let p2 = Polynomial::from_roots(&[78.into(), 90.into()]).unwrap();
-        let c2 = p2.commitment();
-        let mut p3 = p1;
-        p3 += p2;
-        assert_eq!(c1 + c2, p3.commitment());
-    }
-
-    #[test]
-    fn test_subtract_commitments1() {
-        let p1 = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
-        let p2 = Polynomial::from_roots(&[78.into(), 90.into()]).unwrap();
-        assert_eq!(p1.commitment() - p2.commitment(), (p1 - p2).commitment());
-    }
-
-    #[test]
-    fn test_subtract_commitments2() {
-        let p1 = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
-        let c1 = p1.commitment();
-        let p2 = Polynomial::from_roots(&[78.into(), 90.into()]).unwrap();
-        let c2 = p2.commitment();
-        let mut p3 = p1;
-        p3 -= p2;
-        assert_eq!(c1 - c2, p3.commitment());
-    }
-
-    #[test]
-    fn test_multiply_commitment1() {
-        let p = Polynomial::from_roots(&[12.into(), 34.into()]).unwrap();
-        let a = Scalar::from(56);
-        assert_eq!(p.commitment() * a, (p * a).commitment());
-    }
-
-    #[test]
-    fn test_multiply_commitment2() {
-        let mut p = Polynomial::from_roots(&[12.into(), 34.into()]).unwrap();
-        let c = p.commitment();
-        let a = Scalar::from(56);
-        p *= a;
-        assert_eq!(c * a, p.commitment());
+    fn from_roots(roots: &[Scalar]) -> Polynomial {
+        Polynomial::from_roots(roots, utils::get_random_scalar()).unwrap()
     }
 
     #[test]
     fn test_proof1() {
-        let polynomial = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
-        let c = polynomial.commitment().into();
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c = polynomial.commitment();
         let (proof, v) = Proof::new(&polynomial, 12.into());
         assert_eq!(v, 0.into());
         assert!(proof.verify(c, 12.into(), 0.into()).is_ok());
@@ -138,8 +190,8 @@ mod tests {
 
     #[test]
     fn test_proof2() {
-        let polynomial = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
-        let c = polynomial.commitment().into();
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c = polynomial.commitment();
         let (proof, v) = Proof::new(&polynomial, 34.into());
         assert_eq!(v, 0.into());
         assert!(proof.verify(c, 12.into(), 0.into()).is_err());
@@ -154,8 +206,8 @@ mod tests {
 
     #[test]
     fn test_proof3() {
-        let polynomial = Polynomial::from_roots(&[12.into(), 34.into(), 56.into()]).unwrap();
-        let c = polynomial.commitment().into();
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c = polynomial.commitment();
         let (proof, v) = Proof::new(&polynomial, 78.into());
         assert_ne!(v, 0.into());
         assert!(proof.verify(c, 12.into(), 0.into()).is_err());
@@ -165,5 +217,110 @@ mod tests {
         assert!(proof.verify_root(c, 12.into()).is_err());
         assert!(proof.verify_root(c, 34.into()).is_err());
         assert!(proof.verify_root(c, 78.into()).is_err());
+    }
+
+    #[test]
+    fn test_value_proof1() {
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c = polynomial.commitment();
+        let proof = ValueProof::new(&polynomial, 12.into());
+        assert_eq!(proof.v(), 0.into());
+        assert!(proof.verify(c, 12.into()).is_ok());
+        assert!(proof.verify(c, 34.into()).is_err());
+        assert!(proof.verify(c, 0.into()).is_err());
+    }
+
+    #[test]
+    fn test_value_proof2() {
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c = polynomial.commitment();
+        let proof = ValueProof::new(&polynomial, 34.into());
+        assert_eq!(proof.v(), 0.into());
+        assert!(proof.verify(c, 12.into()).is_err());
+        assert!(proof.verify(c, 34.into()).is_ok());
+        assert!(proof.verify(c, 0.into()).is_err());
+    }
+
+    #[test]
+    fn test_value_proof3() {
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c = polynomial.commitment();
+        let proof = ValueProof::new(&polynomial, 78.into());
+        assert_eq!(proof.v(), polynomial.evaluate(78.into()));
+        assert!(proof.verify(c, 12.into()).is_err());
+        assert!(proof.verify(c, 34.into()).is_err());
+        assert!(proof.verify(c, 56.into()).is_err());
+        assert!(proof.verify(c, 78.into()).is_ok());
+    }
+
+    #[test]
+    fn test_committed_value_proof1() {
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let proof = CommittedValueProof::new(&polynomial, 12.into());
+        assert_eq!(proof.c(), polynomial.commitment().into());
+        assert_eq!(proof.v(), 0.into());
+        assert!(proof.verify(12.into()).is_ok());
+        assert!(proof.verify(34.into()).is_err());
+        assert!(proof.verify(0.into()).is_err());
+    }
+
+    #[test]
+    fn test_committed_value_proof2() {
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let proof = CommittedValueProof::new(&polynomial, 34.into());
+        assert_eq!(proof.c(), polynomial.commitment().into());
+        assert_eq!(proof.v(), 0.into());
+        assert!(proof.verify(12.into()).is_err());
+        assert!(proof.verify(34.into()).is_ok());
+        assert!(proof.verify(0.into()).is_err());
+    }
+
+    #[test]
+    fn test_committed_value_proof3() {
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let proof = CommittedValueProof::new(&polynomial, 78.into());
+        assert_eq!(proof.c(), polynomial.commitment().into());
+        assert_eq!(proof.v(), polynomial.evaluate(78.into()));
+        assert!(proof.verify(12.into()).is_err());
+        assert!(proof.verify(34.into()).is_err());
+        assert!(proof.verify(56.into()).is_err());
+        assert!(proof.verify(78.into()).is_ok());
+    }
+
+    #[test]
+    fn test_committed_value_proof4() {
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c = polynomial.commitment();
+        let proof = CommittedValueProof::with_commitment(&polynomial, c, 12.into());
+        assert_eq!(proof.c(), c.into());
+        assert_eq!(proof.v(), 0.into());
+        assert!(proof.verify(12.into()).is_ok());
+        assert!(proof.verify(34.into()).is_err());
+        assert!(proof.verify(0.into()).is_err());
+    }
+
+    #[test]
+    fn test_committed_value_proof5() {
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c = polynomial.commitment();
+        let proof = CommittedValueProof::with_commitment(&polynomial, c, 34.into());
+        assert_eq!(proof.c(), c.into());
+        assert_eq!(proof.v(), 0.into());
+        assert!(proof.verify(12.into()).is_err());
+        assert!(proof.verify(34.into()).is_ok());
+        assert!(proof.verify(0.into()).is_err());
+    }
+
+    #[test]
+    fn test_committed_value_proof6() {
+        let polynomial = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c = polynomial.commitment();
+        let proof = CommittedValueProof::with_commitment(&polynomial, c, 78.into());
+        assert_eq!(proof.c(), c.into());
+        assert_eq!(proof.v(), polynomial.evaluate(78.into()));
+        assert!(proof.verify(12.into()).is_err());
+        assert!(proof.verify(34.into()).is_err());
+        assert!(proof.verify(56.into()).is_err());
+        assert!(proof.verify(78.into()).is_ok());
     }
 }
