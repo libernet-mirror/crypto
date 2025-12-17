@@ -248,7 +248,9 @@ impl Polynomial {
     ///
     /// Running time: O(N).
     pub fn horner(&self, z: Scalar) -> (Polynomial, Scalar) {
-        assert!(self.len() > 0);
+        if self.coefficients.is_empty() {
+            return (Polynomial::default(), Scalar::ZERO);
+        }
         let n = self.len() - 1;
         let mut coefficients = vec![Scalar::ZERO; n];
         if n < 1 {
@@ -275,11 +277,10 @@ impl Polynomial {
     ///
     /// Running time: O(N).
     pub fn divide_by_zero(&self, n: usize) -> Result<Polynomial> {
-        if self.coefficients.len() <= n {
-            return Err(anyhow!("degree too low"));
-        }
-
         let mut data = self.coefficients.clone();
+        if data.len() < n {
+            data.resize(n, Scalar::ZERO);
+        }
 
         let degree = data.len() - n;
         let mut quotient = vec![Scalar::ZERO; degree];

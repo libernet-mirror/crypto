@@ -167,17 +167,21 @@ impl CircuitBuilder {
     }
 
     pub fn add_bool_check(&mut self) -> u32 {
-        self.add_gate(-Scalar::from(1), 0.into(), 0.into(), 1.into(), 0.into())
+        let gate = self.add_gate(1.into(), 0.into(), 0.into(), -Scalar::from(1), 0.into());
+        self.connect(Wire::LeftIn(gate), Wire::RightIn(gate));
+        gate
     }
 
     pub fn add_not(&mut self) -> u32 {
-        self.add_gate(
+        let gate = self.add_gate(
             -Scalar::from(1),
             0.into(),
             -Scalar::from(1),
             0.into(),
             1.into(),
-        )
+        );
+        self.connect(Wire::LeftIn(gate), Wire::RightIn(gate));
+        gate
     }
 
     pub fn add_and(&mut self) -> u32 {
@@ -229,7 +233,7 @@ impl CircuitBuilder {
         for node in self.wires.iter_nodes() {
             let indices: Vec<usize> = node.iter().map(|wire| wire.sigma_index(n)).collect();
             let mut permuted: Vec<Scalar> = indices.iter().map(|i| x[*i]).collect();
-            utils::shuffle(permuted.as_mut_slice());
+            permuted.rotate_left(1);
             for i in 0..indices.len() {
                 x[indices[i]] = permuted[i];
             }
@@ -910,6 +914,112 @@ mod tests {
         let public_inputs = circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
         assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 73.into());
+    }
+
+    #[test]
+    fn test_compile_separately() {
+        let (prover_circuit, _) = build_test_circuit();
+        let proof = prover_circuit
+            .prove(
+                vec![3.into(), 9.into(), 3.into(), 30.into()],
+                vec![3.into(), 3.into(), 27.into(), 5.into()],
+                vec![9.into(), 27.into(), 30.into(), 35.into()],
+            )
+            .unwrap();
+        let (verifier_circuit, gate) = build_test_circuit();
+        let public_inputs = verifier_circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 35.into());
+    }
+
+    #[test]
+    fn test_compile_and_compress_separately() {
+        let (prover_circuit, _) = build_test_circuit();
+        let proof = prover_circuit
+            .prove(
+                vec![3.into(), 9.into(), 3.into(), 30.into()],
+                vec![3.into(), 3.into(), 27.into(), 5.into()],
+                vec![9.into(), 27.into(), 30.into(), 35.into()],
+            )
+            .unwrap();
+        let (verifier_circuit, gate) = build_test_circuit();
+        let verifier_circuit = verifier_circuit.to_compressed();
+        let public_inputs = verifier_circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 35.into());
+    }
+
+    fn test_gate(circuit: &Circuit, l: u64, r: u64, o: u64) -> Result<()> {
+        let proof = circuit.prove(vec![l.into()], vec![r.into()], vec![o.into()])?;
+        // circuit.verify(&proof).unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn test_sum_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_sum();
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 12, 34, 46).is_ok());
+        assert!(test_gate(&circuit, 34, 12, 46).is_ok());
+        assert!(test_gate(&circuit, 56, 78, 134).is_ok());
+        assert!(test_gate(&circuit, 56, 34, 45).is_err());
+        assert!(test_gate(&circuit, 12, 56, 46).is_err());
+        assert!(test_gate(&circuit, 12, 34, 56).is_err());
+    }
+
+    #[test]
+    fn test_sub_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_sub();
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 34, 12, 22).is_ok());
+        assert!(test_gate(&circuit, 56, 12, 44).is_ok());
+        assert!(test_gate(&circuit, 56, 12, 22).is_err());
+        assert!(test_gate(&circuit, 34, 56, 22).is_err());
+        assert!(test_gate(&circuit, 34, 12, 56).is_err());
+    }
+
+    #[test]
+    fn test_mul_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_mul();
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 12, 34, 408).is_ok());
+        assert!(test_gate(&circuit, 34, 12, 408).is_ok());
+        assert!(test_gate(&circuit, 56, 78, 4368).is_ok());
+        assert!(test_gate(&circuit, 56, 34, 408).is_err());
+        assert!(test_gate(&circuit, 12, 56, 408).is_err());
+        assert!(test_gate(&circuit, 12, 34, 56).is_err());
+    }
+
+    #[test]
+    fn test_bool_check_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_bool_check();
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 0, 1, 0).is_err());
+        assert!(test_gate(&circuit, 1, 0, 0).is_err());
+        assert!(test_gate(&circuit, 1, 1, 0).is_ok());
+        assert!(test_gate(&circuit, 2, 2, 0).is_err());
+        assert!(test_gate(&circuit, 3, 3, 0).is_err());
+        assert!(test_gate(&circuit, 123, 123, 0).is_err());
+    }
+
+    #[test]
+    fn test_not_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_not();
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 0).is_err());
+        assert!(test_gate(&circuit, 0, 0, 1).is_ok());
+        assert!(test_gate(&circuit, 0, 1, 0).is_err());
+        assert!(test_gate(&circuit, 0, 1, 1).is_err());
+        assert!(test_gate(&circuit, 1, 0, 0).is_err());
+        assert!(test_gate(&circuit, 1, 0, 1).is_err());
+        assert!(test_gate(&circuit, 1, 1, 0).is_ok());
+        assert!(test_gate(&circuit, 1, 1, 1).is_err());
     }
 
     // TODO
