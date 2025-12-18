@@ -2,6 +2,7 @@ use crate::params;
 use crate::poly::Polynomial;
 use anyhow::{Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
+use ff::Field;
 use group::{Group, prime::PrimeCurveAffine};
 
 /// A KZG evaluation proof.
@@ -37,12 +38,11 @@ impl Proof {
         let p1 = c.into() - params::g1(0) * v;
         let q1 = G2Affine::generator();
         let p2 = self.0;
-        let q2 = params::g2() - G2Projective::generator() * z;
-        if pairing(&p1.into(), &q1) == pairing(&p2, &q2.into()) {
-            Ok(())
-        } else {
-            Err(anyhow!("invalid proof"))
+        let q2 = params::g2(1) - G2Projective::generator() * z;
+        if pairing(&p1.into(), &q1) != pairing(&p2, &q2.into()) {
+            return Err(anyhow!("invalid proof"));
         }
+        Ok(())
     }
 
     /// Verifies that the polynomial with commitment `c` evaluates to 0 in `z` (in other words, `z`
@@ -99,6 +99,68 @@ impl ValueProof {
 
     pub fn verify<C: Into<G1Projective>>(&self, c: C, z: Scalar) -> Result<()> {
         self.proof.verify(c, z, self.value)
+    }
+}
+
+/// A KZG proof that proves multiple values.
+///
+/// NOTE: this struct embeds the proof point and the proven values, but doesn't provide the
+/// coordinates at which the source polynomial evaluates to those values. Such coordinates need to
+/// be provided separately when calling the `verify` method.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct MultiValueProof<const N: usize> {
+    values: [Scalar; N],
+    proof: G1Affine,
+}
+
+impl<const N: usize> MultiValueProof<N> {
+    /// Proves the evaluation of `p` in each of the coordinates `z`, returning a KZG multiproof for
+    /// all the evaluations.
+    pub fn new(polynomial: &Polynomial, z: &[Scalar; N]) -> Result<Self> {
+        let points = z.map(|z| (z, polynomial.evaluate(z)));
+        let mut quotient = polynomial.clone() - Polynomial::interpolate(&points)?;
+        for z in z {
+            let remainder;
+            (quotient, remainder) = quotient.horner(*z);
+            assert_eq!(remainder, Scalar::ZERO);
+        }
+        Ok(Self {
+            values: points.map(|(_, v)| v),
+            proof: quotient.commitment().into(),
+        })
+    }
+
+    /// Constructs a proof from a previously serialized point `y` and corresponding value `v`.
+    pub fn load(y: G1Affine, values: [Scalar; N]) -> Self {
+        Self { values, proof: y }
+    }
+
+    /// Returns the slice of proven values.
+    pub fn values(&self) -> &[Scalar; N] {
+        &self.values
+    }
+
+    /// Returns the proof point.
+    pub fn y(&self) -> G1Affine {
+        self.proof
+    }
+
+    pub fn verify<C: Into<G1Projective>>(&self, c: C, z: &[Scalar; N]) -> Result<()> {
+        let points: [_; N] = std::array::from_fn(|i| (z[i], self.values[i]));
+        let p1 = {
+            let remainder = Polynomial::interpolate(&points)?;
+            (c.into() - remainder.commitment()).into()
+        };
+        let q1 = G2Affine::generator();
+        let p2 = self.proof;
+        let q2 = {
+            let zero = Polynomial::from_roots(z, 1.into()).unwrap();
+            zero.commitment2().into()
+        };
+        if pairing(&p1, &q1) != pairing(&p2, &q2) {
+            return Err(anyhow!("invalid proof"));
+        }
+        Ok(())
     }
 }
 
@@ -251,6 +313,34 @@ mod tests {
         assert!(proof.verify(c, 34.into()).is_err());
         assert!(proof.verify(c, 56.into()).is_err());
         assert!(proof.verify(c, 78.into()).is_ok());
+    }
+
+    #[test]
+    fn test_multi_value_proof() {
+        let polynomial = Polynomial::interpolate(&[
+            (12.into(), 34.into()),
+            (56.into(), 78.into()),
+            (90.into(), 12.into()),
+        ])
+        .unwrap();
+        let c = polynomial.commitment();
+        let proof = MultiValueProof::new(&polynomial, &[12.into(), 56.into()]).unwrap();
+        assert_eq!(*proof.values(), [34.into(), 78.into()]);
+        assert!(proof.verify(c, &[12.into(), 56.into()]).is_ok());
+        assert!(proof.verify(c, &[56.into(), 12.into()]).is_err());
+        assert!(proof.verify(c, &[12.into(), 34.into()]).is_err());
+        assert!(proof.verify(c, &[34.into(), 56.into()]).is_err());
+    }
+
+    #[test]
+    fn test_duplicate_coordinates_in_multi_proof() {
+        let polynomial = Polynomial::interpolate(&[
+            (12.into(), 34.into()),
+            (56.into(), 78.into()),
+            (90.into(), 12.into()),
+        ])
+        .unwrap();
+        assert!(MultiValueProof::new(&polynomial, &[12.into(), 12.into()]).is_err());
     }
 
     #[test]

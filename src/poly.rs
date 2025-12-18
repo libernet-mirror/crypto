@@ -1,9 +1,10 @@
 use crate::params;
-use anyhow::{Result, anyhow};
-use blstrs::{G1Affine, G1Projective, Scalar};
+use anyhow::{Context, Result, anyhow};
+use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use ff::{Field, PrimeField};
 use group::Group;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+use std::sync::LazyLock;
 
 /// Computes the dot product of two vectors. The vectors must have the same length.
 fn dot<L, R, O>(u: &[L], v: &[R]) -> O
@@ -17,6 +18,19 @@ where
         .map(|(u, v)| *v * *u)
         .reduce(|a, b| a + b)
         .unwrap()
+}
+
+/// Builds the Lagrange basis polynomials returned by `Polynomial::lagrange0()`.
+///
+/// Running time: O(N).
+fn make_lagrange0(n: usize) -> Polynomial {
+    let mut coefficients = vec![Scalar::ZERO; n + 1];
+    coefficients[0] = -Scalar::from(1);
+    coefficients[n] = 1.into();
+    let zero = Polynomial { coefficients };
+    let (quotient, remainder) = zero.horner(1.into());
+    assert_eq!(remainder, Scalar::ZERO);
+    quotient * Scalar::from(n as u64).invert().into_option().unwrap()
 }
 
 /// A polynomial expressed as an array of scalar coefficients in ascending degree order (i.e. the
@@ -33,7 +47,58 @@ impl Polynomial {
         Self { coefficients }
     }
 
+    /// Returns a zero-degree polynomial that evaluates to `y` everywhere.
+    pub fn constant(y: Scalar) -> Self {
+        Self {
+            coefficients: vec![y],
+        }
+    }
+
+    /// Constructs a polynomial that interpolates the given points using Lagrange interpolation.
+    ///
+    /// The points are specified as (x, y) pairs.
+    ///
+    /// Running time: O(N^2).
+    pub fn interpolate(points: &[(Scalar, Scalar)]) -> Result<Self> {
+        let k = points.len();
+        let x = points.iter().map(|(x, _)| *x).collect::<Vec<Scalar>>();
+        let l =
+            Polynomial::from_roots(x.as_slice(), 1.into()).context("duplicate X-coordinates")?;
+        let w = {
+            let one = Scalar::from(1);
+            let mut weights = vec![one; k];
+            for i in 0..k {
+                for j in 0..k {
+                    if i != j {
+                        weights[i] *= x[i] - x[j];
+                    }
+                }
+                weights[i] = weights[i]
+                    .invert()
+                    .into_option()
+                    .context("duplicate X-coordinates")?;
+            }
+            weights
+        };
+        let mut result = Polynomial {
+            coefficients: Vec::with_capacity(points.len()),
+        };
+        for i in 0..k {
+            let (basis, remainder) = l.horner(x[i]);
+            assert_eq!(remainder, Scalar::ZERO);
+            let (_, y) = points[i];
+            result += basis * w[i] * y;
+        }
+        Ok(result)
+    }
+
     /// Interpolates a polynomial that has the given roots.
+    ///
+    /// This algorithm is roughly twice as fast as simply calling `interpolate` with 0 as the y
+    /// coordinate of all points.
+    ///
+    /// NOTE: if the caller's protocol doesn't require a blinding factor it can be set to 1. Do NOT
+    /// set it to 0, as that would nullify the whole polynomial.
     ///
     /// Running time: O(N^2).
     pub fn from_roots(roots: &[Scalar], blinding_factor: Scalar) -> Result<Self> {
@@ -165,6 +230,24 @@ impl Polynomial {
             _ => {
                 let g: Vec<G1Affine> = (0..self.coefficients.len())
                     .map(|i| params::g1(i))
+                    .collect();
+                dot(self.coefficients.as_slice(), g.as_slice())
+            }
+        }
+    }
+
+    /// Same as `commitment()`.
+    pub fn commitment1(&self) -> G1Projective {
+        self.commitment()
+    }
+
+    /// Commits this polynomial to G2.
+    pub fn commitment2(&self) -> G2Projective {
+        match self.coefficients.len() {
+            0 => G2Projective::generator() * Scalar::ZERO,
+            _ => {
+                let g: Vec<G2Affine> = (0..self.coefficients.len())
+                    .map(|i| params::g2(i))
                     .collect();
                 dot(self.coefficients.as_slice(), g.as_slice())
             }
@@ -341,6 +424,62 @@ impl Polynomial {
     pub fn evaluate_domain_element(&self, index: usize, domain_size: usize) -> Scalar {
         self.evaluate(Self::domain_element(index, domain_size))
     }
+
+    /// Returns the Lagrange basis polynomial L0 that activates on the first point of the evaluation
+    /// domain of size `n` and evaluates to 0 over the rest.
+    ///
+    /// In other words:
+    ///
+    ///   L0(1) = 1
+    ///   L0(w^i) = 0 for all i != 0, i < n
+    ///
+    /// where `w` is an n-th root of unity.
+    ///
+    /// REQUIRES: `n` must be a power of 2 less than or equal to 2^32.
+    ///
+    /// These polynomials are used in the PLONK proving scheme. Since there are only 32 of them (or
+    /// 33 if we include n=1) we cache them in a static data structure so that retrieval takes O(1).
+    pub fn lagrange0(n: usize) -> &'static Polynomial {
+        assert!(n.is_power_of_two());
+        let k = n.trailing_zeros();
+        assert!(k <= Scalar::S);
+        static POLYS: [LazyLock<Polynomial>; (Scalar::S + 1) as usize] = [
+            LazyLock::new(|| make_lagrange0(1 << 0)),
+            LazyLock::new(|| make_lagrange0(1 << 1)),
+            LazyLock::new(|| make_lagrange0(1 << 2)),
+            LazyLock::new(|| make_lagrange0(1 << 3)),
+            LazyLock::new(|| make_lagrange0(1 << 4)),
+            LazyLock::new(|| make_lagrange0(1 << 5)),
+            LazyLock::new(|| make_lagrange0(1 << 6)),
+            LazyLock::new(|| make_lagrange0(1 << 7)),
+            LazyLock::new(|| make_lagrange0(1 << 8)),
+            LazyLock::new(|| make_lagrange0(1 << 9)),
+            LazyLock::new(|| make_lagrange0(1 << 10)),
+            LazyLock::new(|| make_lagrange0(1 << 11)),
+            LazyLock::new(|| make_lagrange0(1 << 12)),
+            LazyLock::new(|| make_lagrange0(1 << 13)),
+            LazyLock::new(|| make_lagrange0(1 << 14)),
+            LazyLock::new(|| make_lagrange0(1 << 15)),
+            LazyLock::new(|| make_lagrange0(1 << 16)),
+            LazyLock::new(|| make_lagrange0(1 << 17)),
+            LazyLock::new(|| make_lagrange0(1 << 18)),
+            LazyLock::new(|| make_lagrange0(1 << 19)),
+            LazyLock::new(|| make_lagrange0(1 << 20)),
+            LazyLock::new(|| make_lagrange0(1 << 21)),
+            LazyLock::new(|| make_lagrange0(1 << 22)),
+            LazyLock::new(|| make_lagrange0(1 << 23)),
+            LazyLock::new(|| make_lagrange0(1 << 24)),
+            LazyLock::new(|| make_lagrange0(1 << 25)),
+            LazyLock::new(|| make_lagrange0(1 << 26)),
+            LazyLock::new(|| make_lagrange0(1 << 27)),
+            LazyLock::new(|| make_lagrange0(1 << 28)),
+            LazyLock::new(|| make_lagrange0(1 << 29)),
+            LazyLock::new(|| make_lagrange0(1 << 30)),
+            LazyLock::new(|| make_lagrange0(1 << 31)),
+            LazyLock::new(|| make_lagrange0(1 << 32)),
+        ];
+        &*POLYS[k as usize]
+    }
 }
 
 impl Add<Polynomial> for Polynomial {
@@ -473,6 +612,14 @@ mod tests {
 
     fn from_roots(roots: &[Scalar]) -> Polynomial {
         Polynomial::from_roots(roots, utils::get_random_scalar()).unwrap()
+    }
+
+    #[test]
+    fn test_constant() {
+        let p = Polynomial::constant(42.into());
+        assert_eq!(p.evaluate(12.into()), 42.into());
+        assert_eq!(p.evaluate(34.into()), 42.into());
+        assert_eq!(p.evaluate(42.into()), 42.into());
     }
 
     #[test]
@@ -653,6 +800,82 @@ mod tests {
                 ],
                 utils::get_random_scalar()
             )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_interpolate_zero_points() {
+        let p = Polynomial::interpolate(&[]).unwrap();
+        assert_eq!(p, Polynomial::default());
+    }
+
+    #[test]
+    fn test_interpolate_one_point1() {
+        let p = Polynomial::interpolate(&[(12.into(), 34.into())]).unwrap();
+        assert_eq!(p.len(), 1);
+        assert_eq!(p.evaluate(12.into()), 34.into());
+    }
+
+    #[test]
+    fn test_interpolate_one_point2() {
+        let p = Polynomial::interpolate(&[(34.into(), 56.into())]).unwrap();
+        assert_eq!(p.len(), 1);
+        assert_eq!(p.evaluate(34.into()), 56.into());
+    }
+
+    #[test]
+    fn test_interpolate_two_points1() {
+        let p = Polynomial::interpolate(&[(12.into(), 34.into()), (56.into(), 78.into())]).unwrap();
+        assert_eq!(p.len(), 2);
+        assert_eq!(p.evaluate(12.into()), 34.into());
+        assert_eq!(p.evaluate(56.into()), 78.into());
+    }
+
+    #[test]
+    fn test_interpolate_two_points2() {
+        let p = Polynomial::interpolate(&[(34.into(), 12.into()), (78.into(), 56.into())]).unwrap();
+        assert_eq!(p.len(), 2);
+        assert_eq!(p.evaluate(34.into()), 12.into());
+        assert_eq!(p.evaluate(78.into()), 56.into());
+    }
+
+    #[test]
+    fn test_interpolate_three_points1() {
+        let p = Polynomial::interpolate(&[
+            (12.into(), 34.into()),
+            (56.into(), 78.into()),
+            (90.into(), 12.into()),
+        ])
+        .unwrap();
+        assert_eq!(p.len(), 3);
+        assert_eq!(p.evaluate(12.into()), 34.into());
+        assert_eq!(p.evaluate(56.into()), 78.into());
+        assert_eq!(p.evaluate(90.into()), 12.into());
+    }
+
+    #[test]
+    fn test_interpolate_three_points2() {
+        let p = Polynomial::interpolate(&[
+            (34.into(), 12.into()),
+            (78.into(), 56.into()),
+            (12.into(), 90.into()),
+        ])
+        .unwrap();
+        assert_eq!(p.len(), 3);
+        assert_eq!(p.evaluate(34.into()), 12.into());
+        assert_eq!(p.evaluate(78.into()), 56.into());
+        assert_eq!(p.evaluate(12.into()), 90.into());
+    }
+
+    #[test]
+    fn test_duplicate_coordinates() {
+        assert!(
+            Polynomial::interpolate(&[
+                (12.into(), 34.into()),
+                (56.into(), 78.into()),
+                (12.into(), 90.into()),
+            ])
             .is_err()
         );
     }
@@ -1074,5 +1297,47 @@ mod tests {
             + qc;
         let q = p.divide_by_zero(4).unwrap();
         assert_eq!(q.len(), 6);
+    }
+
+    #[test]
+    fn test_lagrange0_1() {
+        let n = 1;
+        let l0 = Polynomial::lagrange0(n);
+        assert_eq!(l0.evaluate(1.into()), 1.into());
+    }
+
+    #[test]
+    fn test_lagrange0_2() {
+        let n = 2;
+        let omega = Polynomial::domain_element(1, n);
+        let l0 = Polynomial::lagrange0(n);
+        assert_eq!(l0.evaluate(1.into()), 1.into());
+        assert_eq!(l0.evaluate(omega), 0.into());
+    }
+
+    #[test]
+    fn test_lagrange0_4() {
+        let n = 4;
+        let omega = Polynomial::domain_element(1, n);
+        let l0 = Polynomial::lagrange0(n);
+        assert_eq!(l0.evaluate(1.into()), 1.into());
+        assert_eq!(l0.evaluate(omega), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([2, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([3, 0, 0, 0])), 0.into());
+    }
+
+    #[test]
+    fn test_lagrange0_8() {
+        let n = 8;
+        let omega = Polynomial::domain_element(1, n);
+        let l0 = Polynomial::lagrange0(n);
+        assert_eq!(l0.evaluate(1.into()), 1.into());
+        assert_eq!(l0.evaluate(omega), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([2, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([3, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([4, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([5, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([6, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([7, 0, 0, 0])), 0.into());
     }
 }

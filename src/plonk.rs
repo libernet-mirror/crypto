@@ -13,6 +13,12 @@ fn witness_hash_dst() -> Scalar {
     *TAG
 }
 
+fn alpha_challenge_dst() -> Scalar {
+    static TAG: LazyLock<Scalar> =
+        LazyLock::new(|| utils::hash_to_scalar(b"libernet/plonk/alpha_challenge"));
+    *TAG
+}
+
 fn beta_challenge_dst() -> Scalar {
     static TAG: LazyLock<Scalar> =
         LazyLock::new(|| utils::hash_to_scalar(b"libernet/plonk/beta_challenge"));
@@ -217,7 +223,7 @@ impl CircuitBuilder {
     }
 
     fn build_identity_permutation(&self) -> (Vec<Scalar>, Vec<Scalar>, Vec<Scalar>) {
-        let n = self.gates.len().next_power_of_two();
+        let n = std::cmp::max(2, self.gates.len().next_power_of_two());
         let mut x = vec![Scalar::ZERO; n * 3];
         if n > 0 {
             x[0] = 1.into();
@@ -246,7 +252,7 @@ impl CircuitBuilder {
     }
 
     pub fn build(self) -> Circuit {
-        let n = self.gates.len().next_power_of_two();
+        let n = std::cmp::max(2, self.gates.len().next_power_of_two());
         let pad = n - self.gates.len();
         let ql = Polynomial::encode_list(
             self.gates
@@ -388,9 +394,7 @@ pub struct Proof {
     gate_constraint_coefficient_proofs: [kzg::ValueProof; 5],
     gate_constraint_quotient_proof: kzg::CommittedValueProof,
     permutation_accumulator_commitment: G1Affine,
-    permutation_accumulator_fixpoint_proof: kzg::Proof,
-    permutation_accumulator_proof: kzg::ValueProof,
-    permutation_accumulator_next_proof: kzg::ValueProof,
+    permutation_accumulator_proof: kzg::MultiValueProof<2>,
     permutation_sigma_proofs: [kzg::ValueProof; 3],
     permutation_quotient_proof: kzg::CommittedValueProof,
 }
@@ -453,16 +457,17 @@ impl Circuit {
         }
     }
 
-    fn get_challenges(witness_commitments: &[G1Affine]) -> (Scalar, Scalar, Scalar) {
+    fn get_challenges(witness_commitments: &[G1Affine]) -> (Scalar, Scalar, Scalar, Scalar) {
         let witness_hash = utils::poseidon_hash(&[
             witness_hash_dst(),
             utils::hash_g1_to_scalar(witness_commitments[0]),
             utils::hash_g1_to_scalar(witness_commitments[1]),
             utils::hash_g1_to_scalar(witness_commitments[2]),
         ]);
-        let beta = utils::poseidon_hash(&[beta_challenge_dst(), witness_hash, 1.into()]);
-        let gamma = utils::poseidon_hash(&[gamma_challenge_dst(), witness_hash, 2.into()]);
-        (witness_hash, beta, gamma)
+        let alpha = utils::poseidon_hash(&[alpha_challenge_dst(), witness_hash, 1.into()]);
+        let beta = utils::poseidon_hash(&[beta_challenge_dst(), witness_hash, 2.into()]);
+        let gamma = utils::poseidon_hash(&[gamma_challenge_dst(), witness_hash, 3.into()]);
+        (witness_hash, alpha, beta, gamma)
     }
 
     /// Builds the two polynomials used in the permutation argument. The components of the returned
@@ -472,10 +477,11 @@ impl Circuit {
         l: &[Scalar],
         r: &[Scalar],
         o: &[Scalar],
+        alpha: Scalar,
         beta: Scalar,
         gamma: Scalar,
     ) -> Result<(Polynomial, Polynomial)> {
-        let n = self.size.next_power_of_two();
+        let n = std::cmp::max(2, self.size.next_power_of_two());
         let k1 = k1();
         let k2 = k2();
 
@@ -542,7 +548,11 @@ impl Circuit {
                     numerator3,
                 ])?;
 
-        Ok((accumulator, recurrence_constraint))
+        let permutation_constraint = recurrence_constraint * alpha
+            + (accumulator.clone() - Scalar::from(1)).multiply(Polynomial::lagrange0(n).clone())?
+                * alpha.square();
+
+        Ok((accumulator, permutation_constraint))
     }
 
     pub fn prove(
@@ -573,7 +583,7 @@ impl Circuit {
             ));
         }
 
-        let n = self.size.next_power_of_two();
+        let n = std::cmp::max(2, self.size.next_power_of_two());
         left_in.resize(n, Scalar::ZERO);
         right_in.resize(n, Scalar::ZERO);
         out.resize(n, Scalar::ZERO);
@@ -600,7 +610,7 @@ impl Circuit {
             )
         }));
 
-        let (witness_hash, beta, gamma) = Self::get_challenges(&witness_commitments);
+        let (witness_hash, alpha, beta, gamma) = Self::get_challenges(&witness_commitments);
 
         let witness_proofs = [
             kzg::CommittedValueProof::with_commitment(&l, witness_commitments[0], witness_hash),
@@ -627,28 +637,22 @@ impl Circuit {
         let gate_constraint_quotient_proof =
             kzg::CommittedValueProof::new(&gate_constraint_quotient, witness_hash);
 
-        let (permutation_accumulator, recurrence_constraint) = self.build_permutation_argument(
+        let (permutation_accumulator, permutation_constraint) = self.build_permutation_argument(
             left_in.as_slice(),
             right_in.as_slice(),
             out.as_slice(),
+            alpha,
             beta,
             gamma,
         )?;
 
         let permutation_accumulator_commitment = permutation_accumulator.commitment().into();
 
-        let (permutation_accumulator_fixpoint_proof, permutation_accumulator_start_value) =
-            kzg::Proof::new(&permutation_accumulator, 1.into());
-        if permutation_accumulator_start_value != 1.into() {
-            return Err(anyhow!("bad permutation accumulator start point"));
-        }
-
-        let permutation_accumulator_proof =
-            kzg::ValueProof::new(&permutation_accumulator, witness_hash);
-
         let omega = Polynomial::domain_element(1, n);
-        let permutation_accumulator_next_proof =
-            kzg::ValueProof::new(&permutation_accumulator, witness_hash * omega);
+        let permutation_accumulator_proof = kzg::MultiValueProof::new(
+            &permutation_accumulator,
+            &[witness_hash, witness_hash * omega],
+        )?;
 
         let permutation_sigma_proofs = [
             kzg::ValueProof::new(&self.sl, witness_hash),
@@ -657,7 +661,7 @@ impl Circuit {
         ];
 
         let permutation_quotient_proof = {
-            let permutation_quotient = recurrence_constraint.divide_by_zero(n)?;
+            let permutation_quotient = permutation_constraint.divide_by_zero(n)?;
             kzg::CommittedValueProof::new(&permutation_quotient, witness_hash)
         };
 
@@ -667,9 +671,7 @@ impl Circuit {
             gate_constraint_coefficient_proofs,
             gate_constraint_quotient_proof,
             permutation_accumulator_commitment,
-            permutation_accumulator_fixpoint_proof,
             permutation_accumulator_proof,
-            permutation_accumulator_next_proof,
             permutation_sigma_proofs,
             permutation_quotient_proof,
         })
@@ -698,10 +700,19 @@ impl CompressedCircuit {
         self.original_size
     }
 
-    pub fn verify(&self, proof: &Proof) -> Result<BTreeMap<Wire, Scalar>> {
-        let n = self.original_size.next_power_of_two();
+    fn lagrange0(x: Scalar, n: usize) -> Scalar {
+        let one = Scalar::from(1);
+        (x.pow_vartime([n as u64, 0, 0, 0]) - one)
+            * (Scalar::from(n as u64) * (x - one))
+                .invert()
+                .into_option()
+                .unwrap()
+    }
 
-        let (witness_hash, beta, gamma) =
+    pub fn verify(&self, proof: &Proof) -> Result<BTreeMap<Wire, Scalar>> {
+        let n = std::cmp::max(2, self.original_size.next_power_of_two());
+
+        let (witness_hash, alpha, beta, gamma) =
             Circuit::get_challenges(&proof.witness_proofs.map(|proof| proof.c()));
 
         proof.witness_proofs[0].verify(witness_hash)?;
@@ -741,20 +752,10 @@ impl CompressedCircuit {
             return Err(anyhow!("gate constraint violation"));
         }
 
-        proof.permutation_accumulator_fixpoint_proof.verify(
-            proof.permutation_accumulator_commitment,
-            1.into(),
-            1.into(),
-        )?;
-
-        proof
-            .permutation_accumulator_proof
-            .verify(proof.permutation_accumulator_commitment, witness_hash)?;
-
         let omega = Polynomial::domain_element(1, n);
-        proof.permutation_accumulator_next_proof.verify(
+        proof.permutation_accumulator_proof.verify(
             proof.permutation_accumulator_commitment,
-            witness_hash * omega,
+            &[witness_hash, witness_hash * omega],
         )?;
 
         proof.permutation_sigma_proofs[0].verify(self.sl, witness_hash)?;
@@ -765,8 +766,8 @@ impl CompressedCircuit {
 
         let k1 = k1();
         let k2 = k2();
-        let permutation_accumulator = proof.permutation_accumulator_proof.v();
-        let shifted_permutation_accumulator = proof.permutation_accumulator_next_proof.v();
+        let permutation_accumulator = proof.permutation_accumulator_proof.values()[0];
+        let shifted_permutation_accumulator = proof.permutation_accumulator_proof.values()[1];
         let permutation_numerator = (l + beta * witness_hash + gamma)
             * (r + beta * k1 * witness_hash + gamma)
             * (o + beta * k2 * witness_hash + gamma);
@@ -777,8 +778,12 @@ impl CompressedCircuit {
             (l + beta * sl + gamma) * (r + beta * sr + gamma) * (o + beta * so + gamma)
         };
         let permutation_quotient = proof.permutation_quotient_proof.v();
-        if shifted_permutation_accumulator * permutation_denominator
-            - permutation_accumulator * permutation_numerator
+        if (shifted_permutation_accumulator * permutation_denominator
+            - permutation_accumulator * permutation_numerator)
+            * alpha
+            + (permutation_accumulator - Scalar::from(1))
+                * Self::lagrange0(witness_hash, n)
+                * alpha.square()
             != zero_value * permutation_quotient
         {
             return Err(anyhow!("copy constraint violation"));
@@ -829,7 +834,7 @@ mod tests {
     }
 
     #[test]
-    fn test_helpers() {
+    fn test_circuit1_with_helpers() {
         let mut builder = CircuitBuilder::default();
         let gate1 = builder.add_mul();
         builder.connect(Wire::LeftIn(gate1), Wire::RightIn(gate1));
@@ -951,7 +956,7 @@ mod tests {
 
     fn test_gate(circuit: &Circuit, l: u64, r: u64, o: u64) -> Result<()> {
         let proof = circuit.prove(vec![l.into()], vec![r.into()], vec![o.into()])?;
-        // circuit.verify(&proof).unwrap();
+        circuit.verify(&proof).unwrap();
         Ok(())
     }
 
@@ -1022,5 +1027,48 @@ mod tests {
         assert!(test_gate(&circuit, 1, 1, 1).is_err());
     }
 
-    // TODO
+    #[test]
+    fn test_and_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_and();
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 0, 0, 1).is_err());
+        assert!(test_gate(&circuit, 0, 1, 0).is_ok());
+        assert!(test_gate(&circuit, 0, 1, 1).is_err());
+        assert!(test_gate(&circuit, 1, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 1, 0, 1).is_err());
+        assert!(test_gate(&circuit, 1, 1, 0).is_err());
+        assert!(test_gate(&circuit, 1, 1, 1).is_ok());
+    }
+
+    #[test]
+    fn test_or_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_or();
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 0, 0, 1).is_err());
+        assert!(test_gate(&circuit, 0, 1, 0).is_err());
+        assert!(test_gate(&circuit, 0, 1, 1).is_ok());
+        assert!(test_gate(&circuit, 1, 0, 0).is_err());
+        assert!(test_gate(&circuit, 1, 0, 1).is_ok());
+        assert!(test_gate(&circuit, 1, 1, 0).is_err());
+        assert!(test_gate(&circuit, 1, 1, 1).is_ok());
+    }
+
+    #[test]
+    fn test_xor_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_xor();
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 0, 0, 1).is_err());
+        assert!(test_gate(&circuit, 0, 1, 0).is_err());
+        assert!(test_gate(&circuit, 0, 1, 1).is_ok());
+        assert!(test_gate(&circuit, 1, 0, 0).is_err());
+        assert!(test_gate(&circuit, 1, 0, 1).is_ok());
+        assert!(test_gate(&circuit, 1, 1, 0).is_ok());
+        assert!(test_gate(&circuit, 1, 1, 1).is_err());
+    }
 }
