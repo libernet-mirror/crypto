@@ -158,6 +158,10 @@ impl CircuitBuilder {
         index
     }
 
+    pub fn add_const(&mut self, value: Scalar) -> u32 {
+        self.add_gate(0.into(), 0.into(), 1.into(), 0.into(), -value)
+    }
+
     pub fn add_sum(&mut self) -> u32 {
         self.add_gate(1.into(), 1.into(), -Scalar::from(1), 0.into(), 0.into())
     }
@@ -435,28 +439,28 @@ impl Circuit {
     pub fn compress(&self) -> CompressedCircuit {
         CompressedCircuit {
             original_size: self.size,
-            ql: self.ql_c,
-            qr: self.qr_c,
-            qo: self.qo_c,
-            qm: self.qm_c,
-            qc: self.qc_c,
-            sl: self.sl_c,
-            sr: self.sr_c,
-            so: self.so_c,
+            ql: self.ql_c.into(),
+            qr: self.qr_c.into(),
+            qo: self.qo_c.into(),
+            qm: self.qm_c.into(),
+            qc: self.qc_c.into(),
+            sl: self.sl_c.into(),
+            sr: self.sr_c.into(),
+            so: self.so_c.into(),
         }
     }
 
     pub fn to_compressed(self) -> CompressedCircuit {
         CompressedCircuit {
             original_size: self.size,
-            ql: self.ql_c,
-            qr: self.qr_c,
-            qo: self.qo_c,
-            qm: self.qm_c,
-            qc: self.qc_c,
-            sl: self.sl_c,
-            sr: self.sr_c,
-            so: self.so_c,
+            ql: self.ql_c.into(),
+            qr: self.qr_c.into(),
+            qo: self.qo_c.into(),
+            qm: self.qm_c.into(),
+            qc: self.qc_c.into(),
+            sl: self.sl_c.into(),
+            sr: self.sr_c.into(),
+            so: self.so_c.into(),
         }
     }
 
@@ -683,14 +687,14 @@ impl Circuit {
 #[derive(Debug, Clone)]
 pub struct CompressedCircuit {
     original_size: usize,
-    ql: G1Projective,
-    qr: G1Projective,
-    qo: G1Projective,
-    qm: G1Projective,
-    qc: G1Projective,
-    sl: G1Projective,
-    sr: G1Projective,
-    so: G1Projective,
+    ql: G1Affine,
+    qr: G1Affine,
+    qo: G1Affine,
+    qm: G1Affine,
+    qc: G1Affine,
+    sl: G1Affine,
+    sr: G1Affine,
+    so: G1Affine,
 }
 
 impl CompressedCircuit {
@@ -757,8 +761,12 @@ impl CompressedCircuit {
         let gate_constraint = ql * l + qr * r + qo * o + qm * l * r + qc;
         let k1 = k1();
         let k2 = k2();
-        let permutation_accumulator = proof.permutation_accumulator_proof.values()[0];
-        let shifted_permutation_accumulator = proof.permutation_accumulator_proof.values()[1];
+        let (permutation_accumulator, shifted_permutation_accumulator) =
+            match proof.permutation_accumulator_proof.values() {
+                [permutation_accumulator, shifted_permutation_accumulator] => {
+                    (*permutation_accumulator, *shifted_permutation_accumulator)
+                }
+            };
         let permutation_numerator = (l + beta * witness_hash + gamma)
             * (r + beta * k1 * witness_hash + gamma)
             * (o + beta * k2 * witness_hash + gamma);
@@ -954,6 +962,16 @@ mod tests {
     }
 
     #[test]
+    fn test_const_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_const(42.into());
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 41).is_err());
+        assert!(test_gate(&circuit, 0, 0, 42).is_ok());
+        assert!(test_gate(&circuit, 0, 0, 43).is_err());
+    }
+
+    #[test]
     fn test_sum_gate() {
         let mut builder = CircuitBuilder::default();
         builder.add_sum();
@@ -1063,5 +1081,90 @@ mod tests {
         assert!(test_gate(&circuit, 1, 0, 1).is_ok());
         assert!(test_gate(&circuit, 1, 1, 0).is_ok());
         assert!(test_gate(&circuit, 1, 1, 1).is_err());
+    }
+
+    /// A slight variation of Vitalik's circuit. This one proves knowledge of three numbers x, y,
+    /// and z such that x^3 + xy + 5 = z. Valid combinations are (3, 4, 44) and (4, 3, 81). This
+    /// test circuit is meaningful because its size is not a power of 2 (it's 5), so it tests
+    /// padding.
+    fn build_uneven_size_circuit() -> (Circuit, u32) {
+        let mut builder = CircuitBuilder::default();
+        let gate1 = builder.add_mul();
+        builder.connect(Wire::LeftIn(gate1), Wire::RightIn(gate1));
+        let gate2 = builder.add_mul();
+        builder.connect(Wire::LeftIn(gate2), Wire::Out(gate1));
+        builder.connect(Wire::RightIn(gate2), Wire::LeftIn(gate1));
+        let gate3 = builder.add_mul();
+        builder.connect(Wire::LeftIn(gate3), Wire::LeftIn(gate1));
+        let gate4 = builder.add_sum();
+        builder.connect(Wire::LeftIn(gate4), Wire::Out(gate3));
+        builder.connect(Wire::RightIn(gate4), Wire::Out(gate2));
+        let gate5 = builder.add_sum();
+        builder.connect(Wire::RightIn(gate5), Wire::Out(gate4));
+        builder.declare_public_inputs([Wire::LeftIn(gate5), Wire::Out(gate5)]);
+        (builder.build(), gate5)
+    }
+
+    #[test]
+    fn test_uneven_size_circuit1() {
+        let (circuit, gate) = build_uneven_size_circuit();
+        let proof = circuit
+            .prove(
+                vec![3.into(), 9.into(), 3.into(), 12.into(), 5.into()],
+                vec![3.into(), 3.into(), 4.into(), 27.into(), 39.into()],
+                vec![9.into(), 27.into(), 12.into(), 39.into(), 44.into()],
+            )
+            .unwrap();
+        let public_inputs = circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::LeftIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 44.into());
+    }
+
+    #[test]
+    fn test_uneven_size_circuit2() {
+        let (circuit, gate) = build_uneven_size_circuit();
+        let proof = circuit
+            .prove(
+                vec![4.into(), 16.into(), 4.into(), 12.into(), 5.into()],
+                vec![4.into(), 4.into(), 3.into(), 64.into(), 76.into()],
+                vec![16.into(), 64.into(), 12.into(), 76.into(), 81.into()],
+            )
+            .unwrap();
+        let public_inputs = circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::LeftIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 81.into());
+    }
+
+    #[test]
+    fn test_compile_uneven_size_circuit_separately() {
+        let (prover_circuit, _) = build_uneven_size_circuit();
+        let proof = prover_circuit
+            .prove(
+                vec![3.into(), 9.into(), 3.into(), 12.into(), 5.into()],
+                vec![3.into(), 3.into(), 4.into(), 27.into(), 39.into()],
+                vec![9.into(), 27.into(), 12.into(), 39.into(), 44.into()],
+            )
+            .unwrap();
+        let (verifier_circuit, gate) = build_uneven_size_circuit();
+        let public_inputs = verifier_circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::LeftIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 44.into());
+    }
+
+    #[test]
+    fn test_compile_and_compress_uneven_size_circuit_separately() {
+        let (prover_circuit, _) = build_uneven_size_circuit();
+        let proof = prover_circuit
+            .prove(
+                vec![4.into(), 16.into(), 4.into(), 12.into(), 5.into()],
+                vec![4.into(), 4.into(), 3.into(), 64.into(), 76.into()],
+                vec![16.into(), 64.into(), 12.into(), 76.into(), 81.into()],
+            )
+            .unwrap();
+        let (verifier_circuit, gate) = build_uneven_size_circuit();
+        let verifier_circuit = verifier_circuit.to_compressed();
+        let public_inputs = verifier_circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::LeftIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 81.into());
     }
 }
