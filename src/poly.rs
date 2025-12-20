@@ -3,7 +3,7 @@ use anyhow::{Context, Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use ff::{Field, PrimeField};
 use group::Group;
-use std::ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::sync::LazyLock;
 
 /// Computes the dot product of two vectors. The vectors must have the same length.
@@ -479,6 +479,17 @@ impl Polynomial {
             LazyLock::new(|| make_lagrange0(1 << 32)),
         ];
         &*POLYS[k as usize]
+    }
+}
+
+impl Neg for Polynomial {
+    type Output = Polynomial;
+
+    fn neg(mut self) -> Self::Output {
+        for coefficient in &mut self.coefficients {
+            *coefficient = -*coefficient;
+        }
+        self
     }
 }
 
