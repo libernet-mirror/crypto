@@ -39,6 +39,10 @@ fn k2() -> Scalar {
     104.into()
 }
 
+fn padded_size(n: usize) -> usize {
+    std::cmp::max(2, n.next_power_of_two())
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct GateConstraint {
     ql: Scalar,
@@ -223,7 +227,7 @@ impl CircuitBuilder {
     }
 
     fn build_identity_permutation(&self) -> (Vec<Scalar>, Vec<Scalar>, Vec<Scalar>) {
-        let n = std::cmp::max(2, self.gates.len().next_power_of_two());
+        let n = padded_size(self.gates.len());
         let mut x = vec![Scalar::ZERO; n * 3];
         if n > 0 {
             x[0] = 1.into();
@@ -252,7 +256,7 @@ impl CircuitBuilder {
     }
 
     pub fn build(self) -> Circuit {
-        let n = std::cmp::max(2, self.gates.len().next_power_of_two());
+        let n = padded_size(self.gates.len());
         let pad = n - self.gates.len();
         let ql = Polynomial::encode_list(
             self.gates
@@ -480,7 +484,7 @@ impl Circuit {
         beta: Scalar,
         gamma: Scalar,
     ) -> Result<(Polynomial, Polynomial)> {
-        let n = std::cmp::max(2, self.size.next_power_of_two());
+        let n = padded_size(self.size);
         let k1 = k1();
         let k2 = k2();
 
@@ -582,7 +586,7 @@ impl Circuit {
             ));
         }
 
-        let n = std::cmp::max(2, self.size.next_power_of_two());
+        let n = padded_size(self.size);
         left_in.resize(n, Scalar::ZERO);
         right_in.resize(n, Scalar::ZERO);
         out.resize(n, Scalar::ZERO);
@@ -704,7 +708,7 @@ impl CompressedCircuit {
     }
 
     pub fn verify(&self, proof: &Proof) -> Result<BTreeMap<Wire, Scalar>> {
-        let n = std::cmp::max(2, self.original_size.next_power_of_two());
+        let n = padded_size(self.original_size);
 
         let (witness_hash, alpha, beta, gamma) =
             Circuit::get_challenges(&proof.witness_proofs.map(|proof| proof.c()));
