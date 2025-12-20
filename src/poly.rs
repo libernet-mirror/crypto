@@ -130,8 +130,9 @@ impl Polynomial {
     fn fft(data: &mut [Scalar], omega: Scalar) {
         let n = data.len();
         assert!(n.is_power_of_two());
-        assert!(n.trailing_zeros() <= Scalar::S);
+
         let log_n = n.trailing_zeros();
+        assert!(log_n <= Scalar::S);
 
         for i in 0..n {
             let (j, _) = i.reverse_bits().overflowing_shr(usize::BITS - log_n);
@@ -144,7 +145,7 @@ impl Polynomial {
         for _ in 0..log_n {
             let step = m * 2;
             let wm = omega.pow_vartime([(n / step) as u64, 0, 0, 0]);
-            let mut w: Scalar = 1.into();
+            let mut w = Scalar::from(1);
             for k in 0..m {
                 for j in (k..n).step_by(step) {
                     let t = w * data[j + m];
@@ -476,7 +477,12 @@ impl Polynomial {
             LazyLock::new(|| make_lagrange0(1 << 29)),
             LazyLock::new(|| make_lagrange0(1 << 30)),
             LazyLock::new(|| make_lagrange0(1 << 31)),
-            LazyLock::new(|| make_lagrange0(1 << 32)),
+            // NOTE: this last one is unrepresentable on WASM32 targets. The way it's currently
+            // written, this code will attempt calling `make_lagrange0(0)` because `1 << 32` will
+            // become zero in the cast to `usize`. That would cause an assertion to crash inside
+            // `make_lagrange0`, but it's not a problem because `n = 2^32` is also unrepresentable,
+            // so a 32-bit caller will never be able to query this.
+            LazyLock::new(|| make_lagrange0((1u64 << 32) as usize)),
         ];
         &*POLYS[k as usize]
     }
