@@ -392,11 +392,10 @@ pub struct Proof {
     witness_proofs: [kzg::CommittedValueProof; 3],
     public_inputs: BTreeMap<Wire, kzg::ValueProof>,
     gate_constraint_coefficient_proofs: [kzg::ValueProof; 5],
-    gate_constraint_quotient_proof: kzg::CommittedValueProof,
     permutation_accumulator_commitment: G1Affine,
     permutation_accumulator_proof: kzg::MultiValueProof<2>,
     permutation_sigma_proofs: [kzg::ValueProof; 3],
-    permutation_quotient_proof: kzg::CommittedValueProof,
+    constraint_quotient_proof: kzg::CommittedValueProof,
 }
 
 #[derive(Debug, Clone)]
@@ -625,17 +624,6 @@ impl Circuit {
             kzg::ValueProof::new(&self.qm, witness_hash),
             kzg::ValueProof::new(&self.qc, witness_hash),
         ];
-        let gate_constraint_quotient = {
-            let lr = l.clone().multiply(r.clone())?;
-            let gate_constraint = self.ql.clone().multiply(l)?
-                + self.qr.clone().multiply(r)?
-                + self.qo.clone().multiply(o)?
-                + self.qm.clone().multiply(lr)?
-                + self.qc.clone();
-            gate_constraint.divide_by_zero(n)?
-        };
-        let gate_constraint_quotient_proof =
-            kzg::CommittedValueProof::new(&gate_constraint_quotient, witness_hash);
 
         let (permutation_accumulator, permutation_constraint) = self.build_permutation_argument(
             left_in.as_slice(),
@@ -660,20 +648,26 @@ impl Circuit {
             kzg::ValueProof::new(&self.so, witness_hash),
         ];
 
-        let permutation_quotient_proof = {
-            let permutation_quotient = permutation_constraint.divide_by_zero(n)?;
-            kzg::CommittedValueProof::new(&permutation_quotient, witness_hash)
+        let constraint_quotient_proof = {
+            let lr = l.clone().multiply(r.clone())?;
+            let constraint = self.ql.clone().multiply(l)?
+                + self.qr.clone().multiply(r)?
+                + self.qo.clone().multiply(o)?
+                + self.qm.clone().multiply(lr)?
+                + self.qc.clone()
+                + permutation_constraint;
+            let quotient = constraint.divide_by_zero(n)?;
+            kzg::CommittedValueProof::new(&quotient, witness_hash)
         };
 
         Ok(Proof {
             witness_proofs,
             public_inputs,
             gate_constraint_coefficient_proofs,
-            gate_constraint_quotient_proof,
             permutation_accumulator_commitment,
             permutation_accumulator_proof,
             permutation_sigma_proofs,
-            permutation_quotient_proof,
+            constraint_quotient_proof,
         })
     }
 
@@ -732,25 +726,12 @@ impl CompressedCircuit {
         let l = proof.witness_proofs[0].v();
         let r = proof.witness_proofs[1].v();
         let o = proof.witness_proofs[2].v();
-        let zero_value = witness_hash.pow_vartime([n as u64, 0, 0, 0]) - Scalar::from(1);
 
         proof.gate_constraint_coefficient_proofs[0].verify(self.ql, witness_hash)?;
         proof.gate_constraint_coefficient_proofs[1].verify(self.qr, witness_hash)?;
         proof.gate_constraint_coefficient_proofs[2].verify(self.qo, witness_hash)?;
         proof.gate_constraint_coefficient_proofs[3].verify(self.qm, witness_hash)?;
         proof.gate_constraint_coefficient_proofs[4].verify(self.qc, witness_hash)?;
-
-        proof.gate_constraint_quotient_proof.verify(witness_hash)?;
-
-        let ql = proof.gate_constraint_coefficient_proofs[0].v();
-        let qr = proof.gate_constraint_coefficient_proofs[1].v();
-        let qo = proof.gate_constraint_coefficient_proofs[2].v();
-        let qm = proof.gate_constraint_coefficient_proofs[3].v();
-        let qc = proof.gate_constraint_coefficient_proofs[4].v();
-        let gate_constraint_value = ql * l + qr * r + qo * o + qm * l * r + qc;
-        if gate_constraint_value != zero_value * proof.gate_constraint_quotient_proof.v() {
-            return Err(anyhow!("gate constraint violation"));
-        }
 
         let omega = Polynomial::domain_element(1, n);
         proof.permutation_accumulator_proof.verify(
@@ -762,8 +743,14 @@ impl CompressedCircuit {
         proof.permutation_sigma_proofs[1].verify(self.sr, witness_hash)?;
         proof.permutation_sigma_proofs[2].verify(self.so, witness_hash)?;
 
-        proof.permutation_quotient_proof.verify(witness_hash)?;
+        proof.constraint_quotient_proof.verify(witness_hash)?;
 
+        let ql = proof.gate_constraint_coefficient_proofs[0].v();
+        let qr = proof.gate_constraint_coefficient_proofs[1].v();
+        let qo = proof.gate_constraint_coefficient_proofs[2].v();
+        let qm = proof.gate_constraint_coefficient_proofs[3].v();
+        let qc = proof.gate_constraint_coefficient_proofs[4].v();
+        let gate_constraint = ql * l + qr * r + qo * o + qm * l * r + qc;
         let k1 = k1();
         let k2 = k2();
         let permutation_accumulator = proof.permutation_accumulator_proof.values()[0];
@@ -777,16 +764,18 @@ impl CompressedCircuit {
             let so = proof.permutation_sigma_proofs[2].v();
             (l + beta * sl + gamma) * (r + beta * sr + gamma) * (o + beta * so + gamma)
         };
-        let permutation_quotient = proof.permutation_quotient_proof.v();
-        if (shifted_permutation_accumulator * permutation_denominator
-            - permutation_accumulator * permutation_numerator)
-            * alpha
-            + (permutation_accumulator - Scalar::from(1))
-                * Self::lagrange0(witness_hash, n)
-                * alpha.square()
-            != zero_value * permutation_quotient
-        {
-            return Err(anyhow!("copy constraint violation"));
+        let permutation_constraint = shifted_permutation_accumulator * permutation_denominator
+            - permutation_accumulator * permutation_numerator;
+        let permutation_fixpoint =
+            (permutation_accumulator - Scalar::from(1)) * Self::lagrange0(witness_hash, n);
+
+        let constraint = gate_constraint
+            + alpha * permutation_constraint
+            + alpha.square() * permutation_fixpoint;
+        let zero_value = witness_hash.pow_vartime([n as u64, 0, 0, 0]) - Scalar::from(1);
+        let quotient = proof.constraint_quotient_proof.v();
+        if constraint != zero_value * quotient {
+            return Err(anyhow!("constraint violation"));
         }
 
         Ok(proof
