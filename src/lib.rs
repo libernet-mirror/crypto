@@ -60,7 +60,7 @@ impl BinaryMerkleProof32 {
     ) -> Result<Self, JsValue> {
         if hashes.len() != 32 {
             return Err(JsValue::from_str(
-                format!("incorrect number of hashes: got {}, want 32", hashes.len(),).as_str(),
+                format!("incorrect number of hashes: got {}, want 32", hashes.len()).as_str(),
             ));
         }
         let hashes = hashes
