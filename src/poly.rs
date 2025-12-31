@@ -94,7 +94,7 @@ impl Polynomial {
 
     /// Interpolates a polynomial that has the given roots.
     ///
-    /// This algorithm is roughly twice as fast as simply calling `interpolate` with 0 as the y
+    /// This algorithm is roughly twice faster than simply calling `interpolate` with 0 as the y
     /// coordinate of all points.
     ///
     /// NOTE: if the caller's protocol doesn't require a blinding factor it can be set to 1. Do NOT
