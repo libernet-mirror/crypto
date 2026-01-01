@@ -59,6 +59,10 @@ pub fn format_scalar(value: Scalar) -> String {
     format!("{:#x}", scalar_to_u256(value))
 }
 
+pub fn format_canonical_scalar(value: Scalar) -> String {
+    format!("{:#066x}", scalar_to_u256(value))
+}
+
 pub fn parse_scalar(s: &str) -> Result<Scalar> {
     u256_to_scalar(s.parse()?)
 }
@@ -327,6 +331,17 @@ mod tests {
                     .unwrap()
             ),
             "0x6852853d54d552eddd0eb793944dd4512bdff54d27bfd688f4e45bc48e31c687"
+        );
+    }
+
+    #[test]
+    fn test_format_canonical_scalar() {
+        assert_eq!(
+            format_canonical_scalar(
+                parse_scalar("0x53d54d552eddd0eb793944dd4512bdff54d27bfd688f4e45bc48e31c687")
+                    .unwrap()
+            ),
+            "0x0000053d54d552eddd0eb793944dd4512bdff54d27bfd688f4e45bc48e31c687"
         );
     }
 
