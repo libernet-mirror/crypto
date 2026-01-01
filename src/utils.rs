@@ -56,10 +56,6 @@ pub fn u256_to_c25519(value: U256) -> Result<Scalar25519> {
 }
 
 pub fn format_scalar(value: Scalar) -> String {
-    format!("{:#x}", scalar_to_u256(value))
-}
-
-pub fn format_canonical_scalar(value: Scalar) -> String {
     format!("{:#066x}", scalar_to_u256(value))
 }
 
@@ -335,9 +331,9 @@ mod tests {
     }
 
     #[test]
-    fn test_format_canonical_scalar() {
+    fn test_format_scalar_with_leading_zeroes() {
         assert_eq!(
-            format_canonical_scalar(
+            format_scalar(
                 parse_scalar("0x53d54d552eddd0eb793944dd4512bdff54d27bfd688f4e45bc48e31c687")
                     .unwrap()
             ),

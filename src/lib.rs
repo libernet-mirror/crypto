@@ -34,7 +34,7 @@ fn map_err<E: Into<anyhow::Error>>(error: E) -> JsValue {
 
 #[wasm_bindgen]
 pub fn poseidon_hash(inputs: Vec<String>) -> Result<String, JsValue> {
-    Ok(utils::format_canonical_scalar(utils::poseidon_hash(
+    Ok(utils::format_scalar(utils::poseidon_hash(
         inputs
             .iter()
             .map(|input| utils::parse_scalar(input.as_str()))
@@ -81,17 +81,17 @@ impl BinaryMerkleProof32 {
 
     #[wasm_bindgen]
     pub fn key(&self) -> String {
-        utils::format_canonical_scalar(self.inner.key().as_scalar())
+        utils::format_scalar(self.inner.key().as_scalar())
     }
 
     #[wasm_bindgen]
     pub fn value(&self) -> String {
-        utils::format_canonical_scalar(self.inner.value().as_scalar())
+        utils::format_scalar(self.inner.value().as_scalar())
     }
 
     #[wasm_bindgen]
     pub fn root_hash(&self) -> String {
-        utils::format_canonical_scalar(self.inner.root_hash().as_scalar())
+        utils::format_scalar(self.inner.root_hash().as_scalar())
     }
 
     #[wasm_bindgen]
@@ -100,7 +100,7 @@ impl BinaryMerkleProof32 {
             .path()
             .as_flattened()
             .iter()
-            .map(|v| utils::format_canonical_scalar(*v))
+            .map(|v| utils::format_scalar(*v))
             .collect()
     }
 
@@ -109,7 +109,7 @@ impl BinaryMerkleProof32 {
         self.inner
             .compressed_path()
             .iter()
-            .map(|v| utils::format_canonical_scalar(*v))
+            .map(|v| utils::format_scalar(*v))
             .collect()
     }
 
@@ -162,17 +162,17 @@ impl TernaryMerkleProof {
 
     #[wasm_bindgen]
     pub fn key(&self) -> String {
-        utils::format_canonical_scalar(self.inner.key().as_scalar())
+        utils::format_scalar(self.inner.key().as_scalar())
     }
 
     #[wasm_bindgen]
     pub fn value(&self) -> String {
-        utils::format_canonical_scalar(self.inner.value().as_scalar())
+        utils::format_scalar(self.inner.value().as_scalar())
     }
 
     #[wasm_bindgen]
     pub fn root_hash(&self) -> String {
-        utils::format_canonical_scalar(self.inner.root_hash().as_scalar())
+        utils::format_scalar(self.inner.root_hash().as_scalar())
     }
 
     #[wasm_bindgen]
@@ -181,7 +181,7 @@ impl TernaryMerkleProof {
             .path()
             .as_flattened()
             .iter()
-            .map(|v| utils::format_canonical_scalar(*v))
+            .map(|v| utils::format_scalar(*v))
             .collect()
     }
 
@@ -191,7 +191,7 @@ impl TernaryMerkleProof {
             .compressed_path()
             .as_flattened()
             .iter()
-            .map(|v| utils::format_canonical_scalar(*v))
+            .map(|v| utils::format_scalar(*v))
             .collect()
     }
 
@@ -210,7 +210,7 @@ pub struct RemoteAccount {
 impl RemoteAccount {
     #[wasm_bindgen]
     pub fn address(&self) -> String {
-        utils::format_canonical_scalar(self.inner.address())
+        utils::format_scalar(self.inner.address())
     }
 
     #[wasm_bindgen]
@@ -260,7 +260,7 @@ impl Account {
 
     #[wasm_bindgen]
     pub fn address(&self) -> String {
-        utils::format_canonical_scalar(self.inner.address())
+        utils::format_scalar(self.inner.address())
     }
 
     #[wasm_bindgen]
@@ -529,9 +529,9 @@ mod tests {
             path.iter().map(|v| utils::format_scalar(*v)).collect(),
         )
         .unwrap();
-        assert_eq!(proof.key(), utils::format_canonical_scalar(key));
-        assert_eq!(proof.value(), utils::format_canonical_scalar(value));
-        assert_eq!(proof.root_hash(), utils::format_canonical_scalar(root_hash));
+        assert_eq!(proof.key(), utils::format_scalar(key));
+        assert_eq!(proof.value(), utils::format_scalar(value));
+        assert_eq!(proof.root_hash(), utils::format_scalar(root_hash));
         assert!(proof.verify().is_ok());
     }
 
@@ -571,9 +571,9 @@ mod tests {
                 .collect(),
         )
         .unwrap();
-        assert_eq!(proof.key(), utils::format_canonical_scalar(key));
-        assert_eq!(proof.value(), utils::format_canonical_scalar(value));
-        assert_eq!(proof.root_hash(), utils::format_canonical_scalar(root_hash));
+        assert_eq!(proof.key(), utils::format_scalar(key));
+        assert_eq!(proof.value(), utils::format_scalar(value));
+        assert_eq!(proof.root_hash(), utils::format_scalar(root_hash));
         assert!(proof.verify().is_ok());
     }
 
