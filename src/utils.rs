@@ -64,7 +64,7 @@ pub fn parse_scalar(s: &str) -> Result<Scalar> {
 }
 
 pub fn format_scalar_25519(value: Scalar25519) -> String {
-    format!("{:#x}", c25519_to_u256(value))
+    format!("{:#066x}", c25519_to_u256(value))
 }
 
 pub fn parse_scalar_25519(s: &str) -> Result<Scalar25519> {
@@ -82,7 +82,7 @@ pub fn decompress_g1(hex: H384) -> Result<G1Affine> {
 }
 
 pub fn format_g1(point: G1Affine) -> String {
-    format!("{:#x}", compress_g1(point))
+    format!("{:#098x}", compress_g1(point))
 }
 
 pub fn parse_g1(s: &str) -> Result<G1Affine> {
@@ -100,7 +100,7 @@ pub fn decompress_g2(hex: H768) -> Result<G2Affine> {
 }
 
 pub fn format_g2(point: G2Affine) -> String {
-    format!("{:#x}", compress_g2(point))
+    format!("{:#0194x}", compress_g2(point))
 }
 
 pub fn parse_g2(s: &str) -> Result<G2Affine> {
@@ -134,7 +134,7 @@ pub fn decompress_p256(hex: H264) -> Result<PointP256> {
 }
 
 pub fn format_p256(point: PointP256) -> String {
-    format!("{:#x}", compress_p256(point))
+    format!("{:#066x}", compress_p256(point))
 }
 
 pub fn parse_p256(s: &str) -> Result<PointP256> {
@@ -156,7 +156,7 @@ pub fn decompress_point_25519(hex: H256) -> Result<Point25519> {
 }
 
 pub fn format_point_25519(point: Point25519) -> String {
-    format!("{:#x}", compress_point_25519(point))
+    format!("{:#066x}", compress_point_25519(point))
 }
 
 pub fn parse_point_25519(s: &str) -> Result<Point25519> {
@@ -350,7 +350,7 @@ mod tests {
                 )
                 .unwrap()
             ),
-            "0x61d10d6dc788950a6998bea2a3013e3b5e3062e32225b9ec049f4a367b70135"
+            "0x061d10d6dc788950a6998bea2a3013e3b5e3062e32225b9ec049f4a367b70135"
         );
     }
 
