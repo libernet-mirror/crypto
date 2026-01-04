@@ -1,4 +1,5 @@
 use crate::params;
+use crate::utils;
 use anyhow::{Context, Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 use ff::{Field, PrimeField};
@@ -196,14 +197,30 @@ impl Polynomial {
     /// Additionally, since the scalar field of BLS12-381 has 2^32 roots of unity, the provided list
     /// is required to have no more than 2^32 elements (roughly 4.3 billions).
     ///
+    /// If the `blind` flag is set the algorithm will add a blinding factor. The degree of the
+    /// resulting polynomial will be increased by 1 and every call will return a different
+    /// polynomial even though all of them still evaluate to the provided values on all the
+    /// evaluation domain.
+    ///
+    /// NOTE: the extra degree caused by the blinding factor does not count against the FFT
+    /// capacity, so the length of `values` must still be exactly a power of 2 regardless of whether
+    /// blinding is enabled.
+    ///
     /// Running time: O(N*logN).
-    pub fn encode_list(mut values: Vec<Scalar>) -> Self {
+    pub fn encode_list(mut values: Vec<Scalar>, blind: bool) -> Self {
         let n = values.len();
+        assert!(n > 0);
         assert!(n as u64 <= 1u64 << Scalar::S);
-        values.resize(n.next_power_of_two(), 0.into());
+        let n = n.next_power_of_two();
+        values.reserve(n + if blind { 1 } else { 0 });
+        values.resize(n, 0.into());
         let omega = Self::root_of_unity_for_domain(values.len());
         Self::ifft(values.as_mut_slice(), omega);
-        if let Some(i) = values.iter().rposition(|value| *value != Scalar::ZERO) {
+        if blind {
+            let blind_factor = utils::get_random_scalar();
+            values[0] -= blind_factor;
+            values.push(blind_factor);
+        } else if let Some(i) = values.iter().rposition(|value| *value != Scalar::ZERO) {
             values.truncate(i + 1);
         }
         Polynomial {
@@ -956,83 +973,187 @@ mod tests {
 
     #[test]
     fn test_encode_one_value1() {
-        let p = Polynomial::encode_list(vec![42.into()]);
-        assert_eq!(p.len(), 1);
-        assert_eq!(p.evaluate(domain_element(0, 1)), 42.into());
-        assert_eq!(p.evaluate_domain_element(0, 1), 42.into());
+        let p1 = Polynomial::encode_list(vec![42.into()], false);
+        let p2 = Polynomial::encode_list(vec![42.into()], false);
+        assert_eq!(p1.len(), 1);
+        assert_eq!(p2.len(), 1);
+        assert_eq!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 1)), 42.into());
+        assert_eq!(p1.evaluate_domain_element(0, 1), 42.into());
+        assert_eq!(p2.evaluate(domain_element(0, 1)), 42.into());
+        assert_eq!(p2.evaluate_domain_element(0, 1), 42.into());
     }
 
     #[test]
     fn test_encode_one_value2() {
-        let p = Polynomial::encode_list(vec![123.into()]);
-        assert_eq!(p.len(), 1);
-        assert_eq!(p.evaluate(domain_element(0, 1)), 123.into());
-        assert_eq!(p.evaluate_domain_element(0, 1), 123.into());
+        let p1 = Polynomial::encode_list(vec![42.into()], false);
+        let p2 = Polynomial::encode_list(vec![123.into()], false);
+        assert_eq!(p2.len(), 1);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p2.evaluate(domain_element(0, 1)), 123.into());
+        assert_eq!(p2.evaluate_domain_element(0, 1), 123.into());
+    }
+
+    #[test]
+    fn test_encode_one_value_blinded() {
+        let p1 = Polynomial::encode_list(vec![123.into()], true);
+        let p2 = Polynomial::encode_list(vec![123.into()], true);
+        assert_eq!(p1.len(), 2);
+        assert_eq!(p2.len(), 2);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 1)), 123.into());
+        assert_eq!(p1.evaluate_domain_element(0, 1), 123.into());
+        assert_eq!(p2.evaluate(domain_element(0, 1)), 123.into());
+        assert_eq!(p2.evaluate_domain_element(0, 1), 123.into());
     }
 
     #[test]
     fn test_encode_two_values1() {
-        let p = Polynomial::encode_list(vec![12.into(), 34.into()]);
-        assert_eq!(p.len(), 2);
-        assert_eq!(p.evaluate(domain_element(0, 2)), 12.into());
-        assert_eq!(p.evaluate_domain_element(0, 2), 12.into());
-        assert_eq!(p.evaluate(domain_element(1, 2)), 34.into());
-        assert_eq!(p.evaluate_domain_element(1, 2), 34.into());
+        let p1 = Polynomial::encode_list(vec![12.into(), 34.into()], false);
+        let p2 = Polynomial::encode_list(vec![12.into(), 34.into()], false);
+        assert_eq!(p1.len(), 2);
+        assert_eq!(p2.len(), 2);
+        assert_eq!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 2)), 12.into());
+        assert_eq!(p1.evaluate_domain_element(0, 2), 12.into());
+        assert_eq!(p1.evaluate(domain_element(1, 2)), 34.into());
+        assert_eq!(p1.evaluate_domain_element(1, 2), 34.into());
+        assert_eq!(p2.evaluate(domain_element(0, 2)), 12.into());
+        assert_eq!(p2.evaluate_domain_element(0, 2), 12.into());
+        assert_eq!(p2.evaluate(domain_element(1, 2)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(1, 2), 34.into());
     }
 
     #[test]
     fn test_encode_two_values2() {
-        let p = Polynomial::encode_list(vec![78.into(), 56.into()]);
-        assert_eq!(p.len(), 2);
-        assert_eq!(p.evaluate(domain_element(0, 2)), 78.into());
-        assert_eq!(p.evaluate_domain_element(0, 2), 78.into());
-        assert_eq!(p.evaluate(domain_element(1, 2)), 56.into());
-        assert_eq!(p.evaluate_domain_element(1, 2), 56.into());
+        let p1 = Polynomial::encode_list(vec![12.into(), 34.into()], false);
+        let p2 = Polynomial::encode_list(vec![78.into(), 56.into()], false);
+        assert_eq!(p1.len(), 2);
+        assert_eq!(p2.len(), 2);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p2.evaluate(domain_element(0, 2)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(0, 2), 78.into());
+        assert_eq!(p2.evaluate(domain_element(1, 2)), 56.into());
+        assert_eq!(p2.evaluate_domain_element(1, 2), 56.into());
+    }
+
+    #[test]
+    fn test_encode_two_values_blinded() {
+        let p1 = Polynomial::encode_list(vec![78.into(), 56.into()], true);
+        let p2 = Polynomial::encode_list(vec![78.into(), 56.into()], true);
+        assert_eq!(p1.len(), 3);
+        assert_eq!(p2.len(), 3);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 2)), 78.into());
+        assert_eq!(p1.evaluate_domain_element(0, 2), 78.into());
+        assert_eq!(p1.evaluate(domain_element(1, 2)), 56.into());
+        assert_eq!(p1.evaluate_domain_element(1, 2), 56.into());
+        assert_eq!(p2.evaluate(domain_element(0, 2)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(0, 2), 78.into());
+        assert_eq!(p2.evaluate(domain_element(1, 2)), 56.into());
+        assert_eq!(p2.evaluate_domain_element(1, 2), 56.into());
     }
 
     #[test]
     fn test_encode_three_values1() {
-        let p = Polynomial::encode_list(vec![12.into(), 34.into(), 56.into()]);
-        assert_eq!(p.len(), 4);
-        assert_eq!(p.evaluate(domain_element(0, 3)), 12.into());
-        assert_eq!(p.evaluate_domain_element(0, 3), 12.into());
-        assert_eq!(p.evaluate(domain_element(0, 4)), 12.into());
-        assert_eq!(p.evaluate_domain_element(0, 4), 12.into());
-        assert_eq!(p.evaluate(domain_element(1, 3)), 34.into());
-        assert_eq!(p.evaluate_domain_element(1, 3), 34.into());
-        assert_eq!(p.evaluate(domain_element(1, 4)), 34.into());
-        assert_eq!(p.evaluate_domain_element(1, 4), 34.into());
-        assert_eq!(p.evaluate(domain_element(2, 3)), 56.into());
-        assert_eq!(p.evaluate_domain_element(2, 3), 56.into());
-        assert_eq!(p.evaluate(domain_element(2, 4)), 56.into());
-        assert_eq!(p.evaluate_domain_element(2, 4), 56.into());
-        assert_eq!(p.evaluate(domain_element(3, 4)), 0.into());
-        assert_eq!(p.evaluate_domain_element(3, 4), 0.into());
+        let p1 = Polynomial::encode_list(vec![12.into(), 34.into(), 56.into()], false);
+        let p2 = Polynomial::encode_list(vec![12.into(), 34.into(), 56.into()], false);
+        assert_eq!(p1.len(), 4);
+        assert_eq!(p2.len(), 4);
+        assert_eq!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 3)), 12.into());
+        assert_eq!(p1.evaluate_domain_element(0, 3), 12.into());
+        assert_eq!(p1.evaluate(domain_element(0, 4)), 12.into());
+        assert_eq!(p1.evaluate_domain_element(0, 4), 12.into());
+        assert_eq!(p1.evaluate(domain_element(1, 3)), 34.into());
+        assert_eq!(p1.evaluate_domain_element(1, 3), 34.into());
+        assert_eq!(p1.evaluate(domain_element(1, 4)), 34.into());
+        assert_eq!(p1.evaluate_domain_element(1, 4), 34.into());
+        assert_eq!(p1.evaluate(domain_element(2, 3)), 56.into());
+        assert_eq!(p1.evaluate_domain_element(2, 3), 56.into());
+        assert_eq!(p1.evaluate(domain_element(2, 4)), 56.into());
+        assert_eq!(p1.evaluate_domain_element(2, 4), 56.into());
+        assert_eq!(p1.evaluate(domain_element(3, 4)), 0.into());
+        assert_eq!(p1.evaluate_domain_element(3, 4), 0.into());
+        assert_eq!(p2.evaluate(domain_element(0, 3)), 12.into());
+        assert_eq!(p2.evaluate_domain_element(0, 3), 12.into());
+        assert_eq!(p2.evaluate(domain_element(0, 4)), 12.into());
+        assert_eq!(p2.evaluate_domain_element(0, 4), 12.into());
+        assert_eq!(p2.evaluate(domain_element(1, 3)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(1, 3), 34.into());
+        assert_eq!(p2.evaluate(domain_element(1, 4)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(1, 4), 34.into());
+        assert_eq!(p2.evaluate(domain_element(2, 3)), 56.into());
+        assert_eq!(p2.evaluate_domain_element(2, 3), 56.into());
+        assert_eq!(p2.evaluate(domain_element(2, 4)), 56.into());
+        assert_eq!(p2.evaluate_domain_element(2, 4), 56.into());
+        assert_eq!(p2.evaluate(domain_element(3, 4)), 0.into());
+        assert_eq!(p2.evaluate_domain_element(3, 4), 0.into());
     }
 
     #[test]
     fn test_encode_three_values2() {
-        let p = Polynomial::encode_list(vec![90.into(), 78.into(), 34.into()]);
-        assert_eq!(p.len(), 4);
-        assert_eq!(p.evaluate(domain_element(0, 3)), 90.into());
-        assert_eq!(p.evaluate_domain_element(0, 3), 90.into());
-        assert_eq!(p.evaluate(domain_element(0, 4)), 90.into());
-        assert_eq!(p.evaluate_domain_element(0, 4), 90.into());
-        assert_eq!(p.evaluate(domain_element(1, 3)), 78.into());
-        assert_eq!(p.evaluate_domain_element(1, 3), 78.into());
-        assert_eq!(p.evaluate(domain_element(1, 4)), 78.into());
-        assert_eq!(p.evaluate_domain_element(1, 4), 78.into());
-        assert_eq!(p.evaluate(domain_element(2, 3)), 34.into());
-        assert_eq!(p.evaluate_domain_element(2, 3), 34.into());
-        assert_eq!(p.evaluate(domain_element(2, 4)), 34.into());
-        assert_eq!(p.evaluate_domain_element(2, 4), 34.into());
-        assert_eq!(p.evaluate(domain_element(3, 4)), 0.into());
-        assert_eq!(p.evaluate_domain_element(3, 4), 0.into());
+        let p1 = Polynomial::encode_list(vec![12.into(), 34.into(), 56.into()], false);
+        let p2 = Polynomial::encode_list(vec![90.into(), 78.into(), 34.into()], false);
+        assert_eq!(p1.len(), 4);
+        assert_eq!(p2.len(), 4);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p2.evaluate(domain_element(0, 3)), 90.into());
+        assert_eq!(p2.evaluate_domain_element(0, 3), 90.into());
+        assert_eq!(p2.evaluate(domain_element(0, 4)), 90.into());
+        assert_eq!(p2.evaluate_domain_element(0, 4), 90.into());
+        assert_eq!(p2.evaluate(domain_element(1, 3)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(1, 3), 78.into());
+        assert_eq!(p2.evaluate(domain_element(1, 4)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(1, 4), 78.into());
+        assert_eq!(p2.evaluate(domain_element(2, 3)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(2, 3), 34.into());
+        assert_eq!(p2.evaluate(domain_element(2, 4)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(2, 4), 34.into());
+        assert_eq!(p2.evaluate(domain_element(3, 4)), 0.into());
+        assert_eq!(p2.evaluate_domain_element(3, 4), 0.into());
+    }
+
+    #[test]
+    fn test_encode_three_values_blinded() {
+        let p1 = Polynomial::encode_list(vec![90.into(), 78.into(), 34.into()], true);
+        let p2 = Polynomial::encode_list(vec![90.into(), 78.into(), 34.into()], true);
+        assert_eq!(p1.len(), 5);
+        assert_eq!(p2.len(), 5);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 3)), 90.into());
+        assert_eq!(p1.evaluate_domain_element(0, 3), 90.into());
+        assert_eq!(p1.evaluate(domain_element(0, 4)), 90.into());
+        assert_eq!(p1.evaluate_domain_element(0, 4), 90.into());
+        assert_eq!(p1.evaluate(domain_element(1, 3)), 78.into());
+        assert_eq!(p1.evaluate_domain_element(1, 3), 78.into());
+        assert_eq!(p1.evaluate(domain_element(1, 4)), 78.into());
+        assert_eq!(p1.evaluate_domain_element(1, 4), 78.into());
+        assert_eq!(p1.evaluate(domain_element(2, 3)), 34.into());
+        assert_eq!(p1.evaluate_domain_element(2, 3), 34.into());
+        assert_eq!(p1.evaluate(domain_element(2, 4)), 34.into());
+        assert_eq!(p1.evaluate_domain_element(2, 4), 34.into());
+        assert_eq!(p1.evaluate(domain_element(3, 4)), 0.into());
+        assert_eq!(p1.evaluate_domain_element(3, 4), 0.into());
+        assert_eq!(p2.evaluate(domain_element(0, 3)), 90.into());
+        assert_eq!(p2.evaluate_domain_element(0, 3), 90.into());
+        assert_eq!(p2.evaluate(domain_element(0, 4)), 90.into());
+        assert_eq!(p2.evaluate_domain_element(0, 4), 90.into());
+        assert_eq!(p2.evaluate(domain_element(1, 3)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(1, 3), 78.into());
+        assert_eq!(p2.evaluate(domain_element(1, 4)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(1, 4), 78.into());
+        assert_eq!(p2.evaluate(domain_element(2, 3)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(2, 3), 34.into());
+        assert_eq!(p2.evaluate(domain_element(2, 4)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(2, 4), 34.into());
+        assert_eq!(p2.evaluate(domain_element(3, 4)), 0.into());
+        assert_eq!(p2.evaluate_domain_element(3, 4), 0.into());
     }
 
     #[test]
     fn test_encode_four_values() {
-        let p = Polynomial::encode_list(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let p = Polynomial::encode_list(vec![12.into(), 34.into(), 56.into(), 78.into()], false);
         assert_eq!(p.len(), 4);
         assert_eq!(p.evaluate(domain_element(0, 4)), 12.into());
         assert_eq!(p.evaluate_domain_element(0, 4), 12.into());
@@ -1278,14 +1399,14 @@ mod tests {
 
     #[test]
     fn test_non_trivial_quotient1() {
-        let ql = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()]);
-        let qr = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()]);
-        let qo = Polynomial::encode_list(vec![-Scalar::from(1); 4]);
-        let qm = Polynomial::encode_list(vec![1.into(), 1.into(), 0.into(), 0.into()]);
-        let qc = Polynomial::encode_list(vec![Scalar::ZERO; 4]);
-        let l = Polynomial::encode_list(vec![3.into(), 9.into(), 3.into(), 30.into()]);
-        let r = Polynomial::encode_list(vec![3.into(), 3.into(), 27.into(), 5.into()]);
-        let o = Polynomial::encode_list(vec![9.into(), 27.into(), 30.into(), 35.into()]);
+        let ql = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()], false);
+        let qr = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()], false);
+        let qo = Polynomial::encode_list(vec![-Scalar::from(1); 4], false);
+        let qm = Polynomial::encode_list(vec![1.into(), 1.into(), 0.into(), 0.into()], false);
+        let qc = Polynomial::encode_list(vec![Scalar::ZERO; 4], false);
+        let l = Polynomial::encode_list(vec![3.into(), 9.into(), 3.into(), 30.into()], false);
+        let r = Polynomial::encode_list(vec![3.into(), 3.into(), 27.into(), 5.into()], false);
+        let o = Polynomial::encode_list(vec![9.into(), 27.into(), 30.into(), 35.into()], false);
         let lr = l.clone().multiply(r.clone()).unwrap();
         let p = ql.multiply(l).unwrap()
             + qr.multiply(r).unwrap()
@@ -1298,14 +1419,14 @@ mod tests {
 
     #[test]
     fn test_non_trivial_quotient2() {
-        let ql = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()]);
-        let qr = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 5.into()]);
-        let qo = Polynomial::encode_list(vec![-Scalar::from(1); 4]);
-        let qm = Polynomial::encode_list(vec![1.into(), 1.into(), 0.into(), 0.into()]);
-        let qc = Polynomial::encode_list(vec![Scalar::ZERO; 4]);
-        let l = Polynomial::encode_list(vec![3.into(), 9.into(), 3.into(), 30.into()]);
-        let r = Polynomial::encode_list(vec![3.into(), 3.into(), 27.into(), 1.into()]);
-        let o = Polynomial::encode_list(vec![9.into(), 27.into(), 30.into(), 35.into()]);
+        let ql = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()], false);
+        let qr = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 5.into()], false);
+        let qo = Polynomial::encode_list(vec![-Scalar::from(1); 4], false);
+        let qm = Polynomial::encode_list(vec![1.into(), 1.into(), 0.into(), 0.into()], false);
+        let qc = Polynomial::encode_list(vec![Scalar::ZERO; 4], false);
+        let l = Polynomial::encode_list(vec![3.into(), 9.into(), 3.into(), 30.into()], false);
+        let r = Polynomial::encode_list(vec![3.into(), 3.into(), 27.into(), 1.into()], false);
+        let o = Polynomial::encode_list(vec![9.into(), 27.into(), 30.into(), 35.into()], false);
         let lr = l.clone().multiply(r.clone()).unwrap();
         let p = ql.multiply(l).unwrap()
             + qr.multiply(r).unwrap()

@@ -268,6 +268,7 @@ impl CircuitBuilder {
                 .map(|gate| gate.ql)
                 .chain(std::iter::repeat_n(Scalar::ZERO, pad))
                 .collect(),
+            false,
         );
         let qr = Polynomial::encode_list(
             self.gates
@@ -275,6 +276,7 @@ impl CircuitBuilder {
                 .map(|gate| gate.qr)
                 .chain(std::iter::repeat_n(Scalar::ZERO, pad))
                 .collect(),
+            false,
         );
         let qo = Polynomial::encode_list(
             self.gates
@@ -282,6 +284,7 @@ impl CircuitBuilder {
                 .map(|gate| gate.qo)
                 .chain(std::iter::repeat_n(Scalar::ZERO, pad))
                 .collect(),
+            false,
         );
         let qm = Polynomial::encode_list(
             self.gates
@@ -289,6 +292,7 @@ impl CircuitBuilder {
                 .map(|gate| gate.qm)
                 .chain(std::iter::repeat_n(Scalar::ZERO, pad))
                 .collect(),
+            false,
         );
         let qc = Polynomial::encode_list(
             self.gates
@@ -296,6 +300,7 @@ impl CircuitBuilder {
                 .map(|gate| gate.qc)
                 .chain(std::iter::repeat_n(Scalar::ZERO, pad))
                 .collect(),
+            false,
         );
         let ql_c = ql.commitment();
         let qr_c = qr.commitment();
@@ -303,9 +308,9 @@ impl CircuitBuilder {
         let qm_c = qm.commitment();
         let qc_c = qc.commitment();
         let (sl_values, sr_values, so_values) = self.build_identity_permutation();
-        let sl = Polynomial::encode_list(sl_values.clone());
-        let sr = Polynomial::encode_list(sr_values.clone());
-        let so = Polynomial::encode_list(so_values.clone());
+        let sl = Polynomial::encode_list(sl_values.clone(), false);
+        let sr = Polynomial::encode_list(sr_values.clone(), false);
+        let so = Polynomial::encode_list(so_values.clone(), false);
         let sl_c = sl.commitment();
         let sr_c = sr.commitment();
         let so_c = so.commitment();
@@ -481,9 +486,12 @@ impl Circuit {
     /// tuple are the coordinate pair accumulator and the recurrence constraint, respectively.
     fn build_permutation_argument(
         &self,
-        l: &[Scalar],
-        r: &[Scalar],
-        o: &[Scalar],
+        l: &Polynomial,
+        l_values: &[Scalar],
+        r: &Polynomial,
+        r_values: &[Scalar],
+        o: &Polynomial,
+        o_values: &[Scalar],
         alpha: Scalar,
         beta: Scalar,
         gamma: Scalar,
@@ -497,27 +505,17 @@ impl Circuit {
         let so = self.so_values.as_slice();
 
         let mut accumulator = vec![Scalar::ZERO; n + 1];
-        let mut numerator1 = vec![Scalar::ZERO; n];
-        let mut numerator2 = vec![Scalar::ZERO; n];
-        let mut numerator3 = vec![Scalar::ZERO; n];
-        let mut denominator1 = vec![Scalar::ZERO; n];
-        let mut denominator2 = vec![Scalar::ZERO; n];
-        let mut denominator3 = vec![Scalar::ZERO; n];
 
         accumulator[0] = 1.into();
         for i in 0..n {
             let x = Polynomial::domain_element(i, n);
-            numerator1[i] = l[i] + beta * x + gamma;
-            numerator2[i] = r[i] + beta * k1 * x + gamma;
-            numerator3[i] = o[i] + beta * k2 * x + gamma;
-            denominator1[i] = l[i] + beta * sl[i] + gamma;
-            denominator2[i] = r[i] + beta * sr[i] + gamma;
-            denominator3[i] = o[i] + beta * so[i] + gamma;
             accumulator[i + 1] = accumulator[i]
-                * numerator1[i]
-                * numerator2[i]
-                * numerator3[i]
-                * (denominator1[i] * denominator2[i] * denominator3[i])
+                * (l_values[i] + beta * x + gamma)
+                * (r_values[i] + beta * k1 * x + gamma)
+                * (o_values[i] + beta * k2 * x + gamma)
+                * ((l_values[i] + beta * sl[i] + gamma)
+                    * (r_values[i] + beta * sr[i] + gamma)
+                    * (o_values[i] + beta * so[i] + gamma))
                     .invert()
                     .into_option()
                     .context("division by zero in permutation accumulator")?;
@@ -527,13 +525,7 @@ impl Circuit {
             return Err(anyhow!("permutation accumulator wraparound check failed"));
         }
 
-        let accumulator = Polynomial::encode_list(accumulator);
-        let numerator1 = Polynomial::encode_list(numerator1);
-        let numerator2 = Polynomial::encode_list(numerator2);
-        let numerator3 = Polynomial::encode_list(numerator3);
-        let denominator1 = Polynomial::encode_list(denominator1);
-        let denominator2 = Polynomial::encode_list(denominator2);
-        let denominator3 = Polynomial::encode_list(denominator3);
+        let accumulator = Polynomial::encode_list(accumulator, true);
 
         let shifted = {
             let mut coefficients = accumulator.clone().take();
@@ -546,14 +538,17 @@ impl Circuit {
             Polynomial::with_coefficients(coefficients)
         };
 
-        let recurrence_constraint =
-            Polynomial::multiply_many([shifted, denominator1, denominator2, denominator3])?
-                - Polynomial::multiply_many([
-                    accumulator.clone(),
-                    numerator1,
-                    numerator2,
-                    numerator3,
-                ])?;
+        let recurrence_constraint = Polynomial::multiply_many([
+            shifted,
+            l.clone() + self.sl.clone() * beta + gamma,
+            r.clone() + self.sr.clone() * beta + gamma,
+            o.clone() + self.so.clone() * beta + gamma,
+        ])? - Polynomial::multiply_many([
+            accumulator.clone(),
+            l.clone() + Polynomial::with_coefficients(vec![gamma, beta]),
+            r.clone() + Polynomial::with_coefficients(vec![gamma, beta * k1]),
+            o.clone() + Polynomial::with_coefficients(vec![gamma, beta * k2]),
+        ])?;
 
         let permutation_constraint = recurrence_constraint * alpha
             + (accumulator.clone() - Scalar::from(1)).multiply(Polynomial::lagrange0(n).clone())?
@@ -595,9 +590,9 @@ impl Circuit {
         right_in.resize(n, Scalar::ZERO);
         out.resize(n, Scalar::ZERO);
 
-        let l = Polynomial::encode_list(left_in.clone());
-        let r = Polynomial::encode_list(right_in.clone());
-        let o = Polynomial::encode_list(out.clone());
+        let l = Polynomial::encode_list(left_in.clone(), true);
+        let r = Polynomial::encode_list(right_in.clone(), true);
+        let o = Polynomial::encode_list(out.clone(), true);
 
         let witness_commitments = [
             l.commitment().into(),
@@ -634,8 +629,11 @@ impl Circuit {
         ];
 
         let (permutation_accumulator, permutation_constraint) = self.build_permutation_argument(
+            &l,
             left_in.as_slice(),
+            &r,
             right_in.as_slice(),
+            &o,
             out.as_slice(),
             alpha,
             beta,
@@ -657,13 +655,12 @@ impl Circuit {
         ];
 
         let constraint_quotient_proof = {
-            let lr = l.clone().multiply(r.clone())?;
-            let constraint = self.ql.clone().multiply(l)?
-                + self.qr.clone().multiply(r)?
+            let gate_constraint = self.ql.clone().multiply(l.clone())?
+                + self.qr.clone().multiply(r.clone())?
                 + self.qo.clone().multiply(o)?
-                + self.qm.clone().multiply(lr)?
-                + self.qc.clone()
-                + permutation_constraint;
+                + Polynomial::multiply_many([self.qm.clone(), l, r])?
+                + self.qc.clone();
+            let constraint = gate_constraint + permutation_constraint;
             let quotient = constraint.divide_by_zero(n)?;
             kzg::CommittedValueProof::new(&quotient, witness_hash)
         };
