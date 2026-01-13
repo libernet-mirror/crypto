@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::merkle::AsScalar;
-use crate::signer::{BlsVerifier, EcDsaVerifier, Ed25519Verifier, Signer};
+use crate::signer::{BlsVerifier, BlsVerifierConstructor, EcDsaVerifier, Ed25519Verifier, Signer};
 use anyhow::Context;
 use blstrs::{G1Affine, Scalar};
 use primitive_types::H512;
@@ -208,6 +208,15 @@ pub struct RemoteAccount {
 
 #[wasm_bindgen]
 impl RemoteAccount {
+    #[wasm_bindgen(constructor)]
+    pub fn new(bls_public_key: &str) -> Result<Self, JsValue> {
+        Ok(Self {
+            inner: remote::PartialRemoteAccount::new(
+                utils::parse_g1(bls_public_key).map_err(map_err)?,
+            ),
+        })
+    }
+
     #[wasm_bindgen]
     pub fn address(&self) -> String {
         utils::format_scalar(self.inner.address())
@@ -597,6 +606,25 @@ mod tests {
     #[test]
     fn test_remote_account() {
         let account = test_account().to_remote();
+        assert_eq!(
+            account.address(),
+            "0x6563a40ba6be6653ec41760b41f9acaba89989fa1fa1e90dc57d41fb811b7a45",
+        );
+        assert_eq!(
+            account.public_key(),
+            "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
+        );
+        assert_eq!(
+            account.bls_public_key(),
+            "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
+        );
+    }
+
+    #[test]
+    fn test_remote_account_from_bls_public_key() {
+        let account = RemoteAccount::new(
+            "0x94638ab220e71c60fd4544d7af61aac18c675c23d545084f4aff0f5072e26e228c2d248a6393d51e877461c7d9d11d13",
+        ).unwrap();
         assert_eq!(
             account.address(),
             "0x6563a40ba6be6653ec41760b41f9acaba89989fa1fa1e90dc57d41fb811b7a45",
