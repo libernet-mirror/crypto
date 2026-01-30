@@ -19,6 +19,7 @@ pub mod pem;
 pub mod pkcs8;
 pub mod plonk;
 pub mod poly;
+pub mod poseidon;
 pub mod remote;
 pub mod signer;
 pub mod ssl;
