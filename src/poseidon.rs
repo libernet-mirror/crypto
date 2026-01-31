@@ -399,4 +399,12 @@ mod tests {
             parse_scalar("0x1a9f84b2d90c7ec4efb7e8c38efddad5983245c1132434bb94c74d19eb04cb3a")
         );
     }
+
+    #[test]
+    fn test_hash4() {
+        assert_eq!(
+            hash(&[6.into(), 7.into(), 8.into(), 9.into()]),
+            parse_scalar("0x5497afdc8bc505782b08a63601eec9fa0e4037e61d06f453edff9a8ca1991b76")
+        );
+    }
 }
