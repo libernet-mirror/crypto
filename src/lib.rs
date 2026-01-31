@@ -19,6 +19,7 @@ pub mod pem;
 pub mod pkcs8;
 pub mod plonk;
 pub mod poly;
+pub mod poseidon;
 pub mod remote;
 pub mod signer;
 pub mod ssl;
@@ -504,7 +505,7 @@ mod tests {
                 "0x638a49ba49c18944c21827cbab35b970ef3763a4639ec2d30eaf1fc8ee6da2ec".to_string()
             ])
             .unwrap(),
-            "0x4338d3c3d5b9b5c526ad0d4ccaf364a7f32ddede0c898f46ec72e16ba4d9766c"
+            "0x18d92c165c5ac66fd15cca664daa75670e502703c93b04497c5ef2ee45e76718"
         );
     }
 
