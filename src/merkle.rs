@@ -324,6 +324,11 @@ impl<
             hash = utils::poseidon_hash(&children);
         }
         if hash != self.root_hash {
+            println!(
+                "final hash mismatch: got {}, want {}",
+                utils::format_scalar(self.root_hash),
+                utils::format_scalar(hash),
+            );
             return Err(anyhow!(
                 "final hash mismatch: got {}, want {}",
                 utils::format_scalar(self.root_hash),
@@ -515,7 +520,7 @@ mod tests {
     #[test]
     fn test_proof_3_1_0() {
         let root_hash =
-            parse_scalar("0x69eac82309f9d539b3387c6f2b0b4556d28c0ce50b21986eab98216b12b12bdd");
+            parse_scalar("0x3db5ce454026f5b82a3dd113f9732d6ad34fa0e7ccebe02caf007d93118bb3e9");
         let value =
             parse_scalar("0x71f09f7f8c126f0fad998f73ef79a489f91b09ed820681a5dc8a88882d912d6b");
         let sister1 =
@@ -535,7 +540,7 @@ mod tests {
     #[test]
     fn test_proof_3_1_1() {
         let root_hash =
-            parse_scalar("0x13c63ea4758034403aa8a8a31fd29c526ebebe779a2770488b7e3dddb51d632f");
+            parse_scalar("0x6d423993bd754346346a46c057dd0c36950aa5759975719c802e4c3417f0510b");
         let value =
             parse_scalar("0x71f09f7f8c126f0fad998f73ef79a489f91b09ed820681a5dc8a88882d912d6b");
         let sister1 =
@@ -555,7 +560,7 @@ mod tests {
     #[test]
     fn test_proof_3_1_2() {
         let root_hash =
-            parse_scalar("0x52d0f9cb9411af2424fadcf731aab2cf1607f0353f64bd1e9999091563498dd8");
+            parse_scalar("0x09812ece4e0743bab3b72da0df9a1c2aba2e7923e406d713061d719e8635d339");
         let value =
             parse_scalar("0x71f09f7f8c126f0fad998f73ef79a489f91b09ed820681a5dc8a88882d912d6b");
         let sister1 =
@@ -575,7 +580,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_00() {
         let root_hash =
-            parse_scalar("0x13d5ae0532ea3d3cb580d018d5b34032ae2f5ae0fcb65a5be52fa1571b850bf1");
+            parse_scalar("0x3436ad7d0b7c8d99348e2c43296694575ce3f19793fec9ca8dd9bb82ff2a4a5c");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -599,7 +604,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_01() {
         let root_hash =
-            parse_scalar("0x48a95b164672c05499318ccf8460866dcaf93239d9c2b59a17d61d2ce8a7961f");
+            parse_scalar("0x13ab7daad7f19c70a918b81a2349c79320be6f9d028d1687249f081134a4e416");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -623,7 +628,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_02() {
         let root_hash =
-            parse_scalar("0x5f6e149be84c53ce56a462dd1e68bff5207427934c1958a0b934a4881299d61c");
+            parse_scalar("0x1263d54213c5907c81ec0590180913e06d54b40c43771e67f6e6b51c24bb0a68");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -647,7 +652,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_10() {
         let root_hash =
-            parse_scalar("0x576a8cde458637a1cbb2c84d2ab63ac2ab35da71748652d7fbf2e9ab501fc73c");
+            parse_scalar("0x62e18e49f564dc9b07d9804428b10be6c58b41f6381885611f57874ce4e0130f");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -671,7 +676,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_11() {
         let root_hash =
-            parse_scalar("0x5ab5ab2b98fde21a9e580e336d27139060fce4c22af332331877006dadc1ff02");
+            parse_scalar("0x6c8ccd34d8d80f823087bf3d52a2fe98d54252709d6ed895dbc26101ccdc20b9");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -695,7 +700,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_12() {
         let root_hash =
-            parse_scalar("0x21324a4adf0d81c33c962194a46a8e96a91d779756e7410f6b6175b60c92349e");
+            parse_scalar("0x4a6f725adc006b8fb95a60051fcadf142cd5e8ba0dcf0fc47ec5e2488b809b78");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -719,7 +724,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_20() {
         let root_hash =
-            parse_scalar("0x4f648fd87500ce5dd1d952f7cc59cb22051d055247addc4dc8c5895297a1b9ad");
+            parse_scalar("0x15135b9c3d546fb4b9ff39043d885d027f12e0695cf489bce65ae045481eb6a7");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -743,7 +748,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_21() {
         let root_hash =
-            parse_scalar("0x416afa3d0ce5b1e6ee5b87878a191bffda083f79072cc5bf812e407d741e5449");
+            parse_scalar("0x6391cfad1b5e7c678f11d2920c0c63d867c7b83c27c03fba301b833efe70894e");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -767,7 +772,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_22() {
         let root_hash =
-            parse_scalar("0x593492c2a4c92e9088809dcd7604b1080343f61cd68b9c85fe6bd76bd1403f80");
+            parse_scalar("0x253f43a45777ed346db8607ca88f1884a0528506c2beac32857c1a8443218a95");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -802,7 +807,7 @@ mod tests {
     #[test]
     fn test_map_value() {
         let root_hash =
-            parse_scalar("0x593492c2a4c92e9088809dcd7604b1080343f61cd68b9c85fe6bd76bd1403f80");
+            parse_scalar("0x253f43a45777ed346db8607ca88f1884a0528506c2beac32857c1a8443218a95");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =

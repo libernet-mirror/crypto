@@ -21,7 +21,7 @@ const NUM_ROUNDS: usize = NUM_FULL_ROUNDS + NUM_PARTIAL_ROUNDS;
 //
 // The command line used was:
 //
-//   sage generate_parameters_grain.sage 1 0 255 3 8 57 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
+//   sage generate_parameters_grain.sage 1 0 255 4 8 56 0x73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000001
 
 fn make_const() -> [Scalar; NUM_ROUNDS * T] {
     [
@@ -352,10 +352,13 @@ fn round(state: &mut [Scalar; T], i: usize, full: bool) {
 pub fn hash(inputs: &[Scalar]) -> Scalar {
     assert!(!inputs.is_empty());
     let mut state = [Scalar::ZERO; T];
-    for chunk in inputs.chunks(2) {
+    for chunk in inputs.chunks(3) {
         state[0] += chunk[0];
         if chunk.len() > 1 {
             state[1] += chunk[1];
+        }
+        if chunk.len() > 2 {
+            state[2] += chunk[2];
         }
         for i in 0..NUM_ROUNDS {
             round(
@@ -393,7 +396,7 @@ mod tests {
     fn test_hash3() {
         assert_eq!(
             hash(&[3.into(), 4.into(), 5.into()]),
-            parse_scalar("0x19eb331d722e72eaf5d066f7346cab7912722f88be2adc5272e45988dc30e33d")
+            parse_scalar("0x1a9f84b2d90c7ec4efb7e8c38efddad5983245c1132434bb94c74d19eb04cb3a")
         );
     }
 }
