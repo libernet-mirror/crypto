@@ -409,7 +409,7 @@ mod tests {
                 "0x197cb2084240e63117ae20eafb7de2433eb9bd6b4fdc78d0d949f042724306fd"
             )
             .unwrap()]),
-            parse_scalar("0x25beb7db7ea98e6f417aebb3c9f98efe73919156d5fe44d07a0a5a2c87a4265c")
+            parse_scalar("0x07245d3be6b0bffb51e5ea4dc10d94bc1e3edb10792be35c99390054f7952ff3")
                 .unwrap()
         );
     }

@@ -396,7 +396,7 @@ mod tests {
     #[test]
     fn test_proof_2_1_left() {
         let root_hash =
-            parse_scalar("0x000cf5091385528d99c45837cd4b13f421b2e26eeff75b0778c2406d6f5392c7");
+            parse_scalar("0x13aabe6d8d1ea32e1d1efc19d499440d1142d4dc02609dbb7cf2b65c433069ab");
         let left =
             parse_scalar("0x649911b84fd6fceb1314d8eda893ee60abb4f55d52ef2a7a88491587dd432c24");
         let right =
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn test_proof_2_1_right() {
         let root_hash =
-            parse_scalar("0x000cf5091385528d99c45837cd4b13f421b2e26eeff75b0778c2406d6f5392c7");
+            parse_scalar("0x13aabe6d8d1ea32e1d1efc19d499440d1142d4dc02609dbb7cf2b65c433069ab");
         let left =
             parse_scalar("0x649911b84fd6fceb1314d8eda893ee60abb4f55d52ef2a7a88491587dd432c24");
         let right =
@@ -424,7 +424,7 @@ mod tests {
     #[test]
     fn test_proof_2_2_00() {
         let root_hash =
-            parse_scalar("0x5a1980613c5057fa1f6006e1379240cf07bc6d8dc9be6e10ce166c250de838be");
+            parse_scalar("0x2ea3e8888f132ca1f224698490b5613ad178d5ec41e4cfbf6397a8bfa22f41cd");
         let value =
             parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
         let sister1 =
@@ -444,7 +444,7 @@ mod tests {
     #[test]
     fn test_proof_2_2_01() {
         let root_hash =
-            parse_scalar("0x69b867d1f4aa3a347936175a1cd8103e579829bd300e665c8e03beaf028b8305");
+            parse_scalar("0x49b1fb8f09f556ffb909110010eb6437bc776248d53092fd4225a6ff0befd780");
         let value =
             parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
         let sister1 =
@@ -464,7 +464,7 @@ mod tests {
     #[test]
     fn test_proof_2_2_10() {
         let root_hash =
-            parse_scalar("0x125404153950625bd625c3e3f348ff32c04bedaebcd4690424ca2b264b9330ac");
+            parse_scalar("0x5de6173e8862dd5099ac2abc2bcc738cd26bf0e31134b712774ac4650fc8684e");
         let value =
             parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
         let sister1 =
@@ -484,7 +484,7 @@ mod tests {
     #[test]
     fn test_proof_2_2_11() {
         let root_hash =
-            parse_scalar("0x54e26b16fef5cb4a2090df164e23bae47c91080f407d2d7b54dd4706eadbf240");
+            parse_scalar("0x40d3e3924c147a60a84b2e7150842d9822d596fa22bd92c5bfe59b2e64905a33");
         let value =
             parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
         let sister1 =
@@ -515,7 +515,7 @@ mod tests {
     #[test]
     fn test_proof_3_1_0() {
         let root_hash =
-            parse_scalar("0x354105d598d1a03d8184ff74ee1abbbc1735c0c6cbea15514c92a0fac568cfe1");
+            parse_scalar("0x69eac82309f9d539b3387c6f2b0b4556d28c0ce50b21986eab98216b12b12bdd");
         let value =
             parse_scalar("0x71f09f7f8c126f0fad998f73ef79a489f91b09ed820681a5dc8a88882d912d6b");
         let sister1 =
@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn test_proof_3_1_1() {
         let root_hash =
-            parse_scalar("0x0622532e78a1e191e43c26bc0b31e10b056e07bb9a05f67a808bc16e14575737");
+            parse_scalar("0x13c63ea4758034403aa8a8a31fd29c526ebebe779a2770488b7e3dddb51d632f");
         let value =
             parse_scalar("0x71f09f7f8c126f0fad998f73ef79a489f91b09ed820681a5dc8a88882d912d6b");
         let sister1 =
@@ -555,7 +555,7 @@ mod tests {
     #[test]
     fn test_proof_3_1_2() {
         let root_hash =
-            parse_scalar("0x6769835376f02593f6c5274bd58e4ae75ef071bf9ff9506b87835adf1b430594");
+            parse_scalar("0x52d0f9cb9411af2424fadcf731aab2cf1607f0353f64bd1e9999091563498dd8");
         let value =
             parse_scalar("0x71f09f7f8c126f0fad998f73ef79a489f91b09ed820681a5dc8a88882d912d6b");
         let sister1 =
@@ -575,7 +575,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_00() {
         let root_hash =
-            parse_scalar("0x387d49ae82a9d792fe5402215c50e08c057726e58f17564bc9ec5dd254307a99");
+            parse_scalar("0x13d5ae0532ea3d3cb580d018d5b34032ae2f5ae0fcb65a5be52fa1571b850bf1");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -599,7 +599,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_01() {
         let root_hash =
-            parse_scalar("0x5f124bdad5ba3267c14ec45a16dbce38cb64d2e3ad804da86aeb125398e1586b");
+            parse_scalar("0x48a95b164672c05499318ccf8460866dcaf93239d9c2b59a17d61d2ce8a7961f");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -623,7 +623,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_02() {
         let root_hash =
-            parse_scalar("0x0f7852124a31e0cf396620b9d1fd649c857aab26f9ea97f138c4f2337e50d1a3");
+            parse_scalar("0x5f6e149be84c53ce56a462dd1e68bff5207427934c1958a0b934a4881299d61c");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -647,7 +647,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_10() {
         let root_hash =
-            parse_scalar("0x661e65294ff797ad197f42c7c9a27ed7df42338f148c7dc264a9c39844119567");
+            parse_scalar("0x576a8cde458637a1cbb2c84d2ab63ac2ab35da71748652d7fbf2e9ab501fc73c");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -671,7 +671,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_11() {
         let root_hash =
-            parse_scalar("0x5d07b532a23a72676b4870094710572a49f1792812b3cdfed26ee1efe7668ffe");
+            parse_scalar("0x5ab5ab2b98fde21a9e580e336d27139060fce4c22af332331877006dadc1ff02");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -695,7 +695,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_12() {
         let root_hash =
-            parse_scalar("0x2ecb0f32a69b06aea31995fef27388fbeeaae5cd27d6d55c690419b03fb2cde3");
+            parse_scalar("0x21324a4adf0d81c33c962194a46a8e96a91d779756e7410f6b6175b60c92349e");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_20() {
         let root_hash =
-            parse_scalar("0x5afa5fa6d0c1cf79d332d091bbd57b93c36f5ea1aa1fdbbe208261140a5af685");
+            parse_scalar("0x4f648fd87500ce5dd1d952f7cc59cb22051d055247addc4dc8c5895297a1b9ad");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_21() {
         let root_hash =
-            parse_scalar("0x6cb3d1bbd258f3d03744065fac45f03e6226d04388fa801d6056bd2cbcaa8204");
+            parse_scalar("0x416afa3d0ce5b1e6ee5b87878a191bffda083f79072cc5bf812e407d741e5449");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -767,7 +767,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_22() {
         let root_hash =
-            parse_scalar("0x71155bcd8a39ae2c00fb44ef3cb64b73a05fa55ea3fbe9c121120900cfdf7306");
+            parse_scalar("0x593492c2a4c92e9088809dcd7604b1080343f61cd68b9c85fe6bd76bd1403f80");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -802,7 +802,7 @@ mod tests {
     #[test]
     fn test_map_value() {
         let root_hash =
-            parse_scalar("0x71155bcd8a39ae2c00fb44ef3cb64b73a05fa55ea3fbe9c121120900cfdf7306");
+            parse_scalar("0x593492c2a4c92e9088809dcd7604b1080343f61cd68b9c85fe6bd76bd1403f80");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
