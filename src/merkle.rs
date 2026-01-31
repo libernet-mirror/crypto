@@ -324,11 +324,6 @@ impl<
             hash = utils::poseidon_hash(&children);
         }
         if hash != self.root_hash {
-            println!(
-                "final hash mismatch: got {}, want {}",
-                utils::format_scalar(self.root_hash),
-                utils::format_scalar(hash),
-            );
             return Err(anyhow!(
                 "final hash mismatch: got {}, want {}",
                 utils::format_scalar(self.root_hash),
