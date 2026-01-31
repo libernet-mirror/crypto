@@ -1,10 +1,10 @@
+use crate::poseidon;
 use anyhow::{Context, Result, anyhow};
 use blstrs::{G1Affine, G2Affine, Scalar};
 use curve25519_dalek::{
     Scalar as Scalar25519, edwards::CompressedEdwardsY, edwards::EdwardsPoint as Point25519,
 };
 use dusk_bls12_381::BlsScalar as DuskScalar;
-use dusk_poseidon as poseidon;
 use ecdsa::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
 use fixed_hash::construct_fixed_hash;
 use group::GroupEncoding;
@@ -175,21 +175,13 @@ pub fn shuffle<T>(elements: &mut [T]) {
 }
 
 pub fn poseidon_hash<'a, I: IntoIterator<Item = &'a Scalar>>(values: I) -> Scalar {
-    let dusk_scalar = poseidon::Hash::digest(
-        poseidon::Domain::Other,
+    poseidon::hash(
         values
             .into_iter()
-            .map(|value| {
-                DuskScalar::from_bytes(&value.to_bytes_le())
-                    .into_option()
-                    .unwrap()
-            })
-            .collect::<Vec<DuskScalar>>()
+            .map(|value| *value)
+            .collect::<Vec<Scalar>>()
             .as_slice(),
-    )[0];
-    Scalar::from_bytes_le(&dusk_scalar.to_bytes())
-        .into_option()
-        .unwrap()
+    )
 }
 
 /// Makes a type hashable with Poseidon (using `P128Pow5T3`).
@@ -417,7 +409,7 @@ mod tests {
                 "0x197cb2084240e63117ae20eafb7de2433eb9bd6b4fdc78d0d949f042724306fd"
             )
             .unwrap()]),
-            parse_scalar("0x3c860e061a662db636f6061515deaf6f4ea94946265c2b3952910c6bbf8253fc")
+            parse_scalar("0x25beb7db7ea98e6f417aebb3c9f98efe73919156d5fe44d07a0a5a2c87a4265c")
                 .unwrap()
         );
     }
