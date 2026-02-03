@@ -16,21 +16,21 @@ use p256::AffinePoint as PointP256;
 use primitive_types::{H256, H384, H768};
 use std::time::SystemTime;
 
-const OID_SIG_ED25519: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
-const OID_SIG_ECDSA_WITH_SHA256: ObjectIdentifier =
+static OID_SIG_ED25519: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
+static OID_SIG_ECDSA_WITH_SHA256: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2");
 
-const OID_KEY_TYPE_EC_PUBLIC_KEY: ObjectIdentifier =
+static OID_KEY_TYPE_EC_PUBLIC_KEY: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
 
-const OID_EC_P256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+static OID_EC_P256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 
-const OID_X509_COMMON_NAME: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.4.3");
+static OID_X509_COMMON_NAME: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.4.3");
 
-const OID_LIBERNET_BLS_PUBLIC_KEY: ObjectIdentifier =
+static OID_LIBERNET_BLS_PUBLIC_KEY: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.3.6.1.4.1.71104.1");
 
-const OID_LIBERNET_IDENTITY_SIGNATURE_V1: ObjectIdentifier =
+static OID_LIBERNET_IDENTITY_SIGNATURE_V1: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.3.6.1.4.1.71104.2");
 
 const ECDSA_SIGNATURE_LENGTH: usize = 64;
@@ -607,25 +607,23 @@ pub fn recover_public_keys(certificate_der: &[u8]) -> Result<(G1Affine, SslPubli
     let certificate = Certificate::from_der(certificate_der)?;
     let tbs = &certificate.tbs_certificate;
     let bls_public_key = recover_bls_public_key_impl(&certificate.tbs_certificate)?;
-    match certificate.signature_algorithm.algorithm {
-        OID_SIG_ECDSA_WITH_SHA256 => {
-            tbs.subject_public_key_info
-                .algorithm
-                .validate_for_ecdsa_public_key()?;
-            let ecdsa_public_key =
-                utils::decode_p256(tbs.subject_public_key_info.subject_public_key.raw_bytes())?;
-            Ok((bls_public_key, SslPublicKey::EcDsa(ecdsa_public_key)))
-        }
-        OID_SIG_ED25519 => {
-            tbs.subject_public_key_info.algorithm.validate_ed25519()?;
-            let ed25519_public_key = utils::decompress_point_25519(H256::from_slice(
-                tbs.subject_public_key_info.subject_public_key.raw_bytes(),
-            ))?;
-            Ok((bls_public_key, SslPublicKey::Ed25519(ed25519_public_key)))
-        }
-        _ => Err(anyhow!(
+    if certificate.signature_algorithm.algorithm == OID_SIG_ECDSA_WITH_SHA256 {
+        tbs.subject_public_key_info
+            .algorithm
+            .validate_for_ecdsa_public_key()?;
+        let ecdsa_public_key =
+            utils::decode_p256(tbs.subject_public_key_info.subject_public_key.raw_bytes())?;
+        Ok((bls_public_key, SslPublicKey::EcDsa(ecdsa_public_key)))
+    } else if certificate.signature_algorithm.algorithm == OID_SIG_ED25519 {
+        tbs.subject_public_key_info.algorithm.validate_ed25519()?;
+        let ed25519_public_key = utils::decompress_point_25519(H256::from_slice(
+            tbs.subject_public_key_info.subject_public_key.raw_bytes(),
+        ))?;
+        Ok((bls_public_key, SslPublicKey::Ed25519(ed25519_public_key)))
+    } else {
+        Err(anyhow!(
             "unexpected signature algorithm -- need ECDSA or Ed25519"
-        )),
+        ))
     }
 }
 

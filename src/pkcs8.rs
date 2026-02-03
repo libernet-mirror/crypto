@@ -7,12 +7,12 @@ use der::{
 };
 use primitive_types::H256;
 
-const OID_SIG_ED25519: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
+static OID_SIG_ED25519: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.101.112");
 
-const OID_KEY_TYPE_EC_PUBLIC_KEY: ObjectIdentifier =
+static OID_KEY_TYPE_EC_PUBLIC_KEY: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
 
-const OID_EC_P256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+static OID_EC_P256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 
 #[derive(Debug, Sequence, ValueOrd, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct AlgorithmIdentifier {
