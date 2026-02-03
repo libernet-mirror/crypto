@@ -212,8 +212,8 @@ pub mod testing {
     use super::*;
     use x509_parser::asn1_rs::{Oid, oid};
 
-    pub const OID_LIBERNET_BLS_PUBLIC_KEY: Oid<'static> = oid!(1.3.6.1.4.1.71104.1);
-    pub const OID_LIBERNET_IDENTITY_SIGNATURE_V1: Oid<'static> = oid!(1.3.6.1.4.1.71104.2);
+    pub static OID_LIBERNET_BLS_PUBLIC_KEY: Oid<'static> = oid!(1.3.6.1.4.1.71104.1);
+    pub static OID_LIBERNET_IDENTITY_SIGNATURE_V1: Oid<'static> = oid!(1.3.6.1.4.1.71104.2);
 
     pub fn parse_scalar(s: &str) -> Scalar {
         super::parse_scalar(s).unwrap()

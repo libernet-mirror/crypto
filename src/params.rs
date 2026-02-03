@@ -3,8 +3,8 @@ use group::prime::PrimeCurveAffine;
 use primitive_types::{H384, H768};
 use std::sync::LazyLock;
 
-const G1_BYTES: &[u8] = include_bytes!("../params/g1.bin");
-const G2_BYTES: &[u8] = include_bytes!("../params/g2.bin");
+static G1_BYTES: &[u8] = include_bytes!("../params/g1.bin");
+static G2_BYTES: &[u8] = include_bytes!("../params/g2.bin");
 
 static G1: LazyLock<Vec<H384>> = LazyLock::new(|| {
     let (params, _) =
