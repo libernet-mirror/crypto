@@ -313,12 +313,11 @@ fn make_mds() -> [[Scalar; T]; T] {
     ]
 }
 
-const ROUND_CONSTANTS: LazyLock<[Scalar; NUM_ROUNDS * T]> = LazyLock::new(|| make_const());
-const MDS_MATRIX: LazyLock<[[Scalar; T]; T]> = LazyLock::new(|| make_mds());
+static ROUND_CONSTANTS: LazyLock<[Scalar; NUM_ROUNDS * T]> = LazyLock::new(|| make_const());
+static MDS_MATRIX: LazyLock<[[Scalar; T]; T]> = LazyLock::new(|| make_mds());
 
 fn pow5(x: Scalar) -> Scalar {
-    let x2 = x.square();
-    x2.square() * x
+    x.square().square() * x
 }
 
 fn round(state: &mut [Scalar; T], i: usize, full: bool) {
