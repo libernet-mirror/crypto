@@ -225,7 +225,7 @@ impl CircuitBuilder {
         )
     }
 
-    pub fn add_sub_by_const(&mut self, c: Scalar) -> u32 {
+    pub fn add_sub_const(&mut self, c: Scalar) -> u32 {
         self.add_gate(1.into(), 0.into(), -Scalar::from(1), 0.into(), -c)
     }
 
@@ -1065,6 +1065,28 @@ mod tests {
     }
 
     #[test]
+    fn test_sum_with_const_gate1() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_sum_with_const(12.into());
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 34, 0, 46).is_ok());
+        assert!(test_gate(&circuit, 56, 0, 68).is_ok());
+        assert!(test_gate(&circuit, 78, 0, 45).is_err());
+        assert!(test_gate(&circuit, 90, 0, 45).is_err());
+    }
+
+    #[test]
+    fn test_sum_with_const_gate2() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_sum_with_const(34.into());
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 34, 0, 68).is_ok());
+        assert!(test_gate(&circuit, 56, 0, 90).is_ok());
+        assert!(test_gate(&circuit, 78, 0, 45).is_err());
+        assert!(test_gate(&circuit, 90, 0, 46).is_err());
+    }
+
+    #[test]
     fn test_sub_gate() {
         let mut builder = CircuitBuilder::default();
         builder.add_sub();
@@ -1074,6 +1096,28 @@ mod tests {
         assert!(test_gate(&circuit, 56, 12, 22).is_err());
         assert!(test_gate(&circuit, 34, 56, 22).is_err());
         assert!(test_gate(&circuit, 34, 12, 56).is_err());
+    }
+
+    #[test]
+    fn test_sub_const_gate1() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_sub_const(12.into());
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 34, 0, 22).is_ok());
+        assert!(test_gate(&circuit, 56, 0, 44).is_ok());
+        assert!(test_gate(&circuit, 78, 0, 45).is_err());
+        assert!(test_gate(&circuit, 90, 0, 46).is_err());
+    }
+
+    #[test]
+    fn test_sub_const_gate2() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_sub_const(34.into());
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 34, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 56, 0, 22).is_ok());
+        assert!(test_gate(&circuit, 78, 0, 45).is_err());
+        assert!(test_gate(&circuit, 90, 0, 46).is_err());
     }
 
     #[test]
@@ -1087,6 +1131,28 @@ mod tests {
         assert!(test_gate(&circuit, 56, 34, 408).is_err());
         assert!(test_gate(&circuit, 12, 56, 408).is_err());
         assert!(test_gate(&circuit, 12, 34, 56).is_err());
+    }
+
+    #[test]
+    fn test_mul_by_const_gate1() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_mul_by_const(12.into());
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 12, 1, 144).is_ok());
+        assert!(test_gate(&circuit, 34, 1, 408).is_ok());
+        assert!(test_gate(&circuit, 56, 1, 409).is_err());
+        assert!(test_gate(&circuit, 78, 1, 410).is_err());
+    }
+
+    #[test]
+    fn test_mul_by_const_gate2() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_mul_by_const(34.into());
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 12, 1, 408).is_ok());
+        assert!(test_gate(&circuit, 34, 1, 1156).is_ok());
+        assert!(test_gate(&circuit, 56, 1, 1157).is_err());
+        assert!(test_gate(&circuit, 78, 1, 1158).is_err());
     }
 
     #[test]
