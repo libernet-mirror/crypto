@@ -139,6 +139,51 @@ impl WirePartitioning {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Witness {
+    left: Vec<Scalar>,
+    right: Vec<Scalar>,
+    out: Vec<Scalar>,
+}
+
+impl Witness {
+    fn new(size: usize) -> Self {
+        Self {
+            left: vec![Scalar::ZERO; size],
+            right: vec![Scalar::ZERO; size],
+            out: vec![Scalar::ZERO; size],
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        self.left.len()
+    }
+
+    fn pad(&mut self) -> usize {
+        let new_size = padded_size(self.size());
+        self.left.resize(new_size, Scalar::ZERO);
+        self.right.resize(new_size, Scalar::ZERO);
+        self.out.resize(new_size, Scalar::ZERO);
+        new_size
+    }
+
+    pub fn get(&self, wire: Wire) -> Scalar {
+        match wire {
+            Wire::LeftIn(index) => self.left[index as usize],
+            Wire::RightIn(index) => self.right[index as usize],
+            Wire::Out(index) => self.out[index as usize],
+        }
+    }
+
+    pub fn set(&mut self, wire: Wire, value: Scalar) {
+        match wire {
+            Wire::LeftIn(index) => self.left[index as usize] = value,
+            Wire::RightIn(index) => self.right[index as usize] = value,
+            Wire::Out(index) => self.out[index as usize] = value,
+        };
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct CircuitBuilder {
     gates: Vec<GateConstraint>,
@@ -166,6 +211,10 @@ impl CircuitBuilder {
         self.add_gate(1.into(), 1.into(), -Scalar::from(1), 0.into(), 0.into())
     }
 
+    pub fn add_sum_with_const(&mut self, c: Scalar) -> u32 {
+        self.add_gate(1.into(), 0.into(), -Scalar::from(1), 0.into(), c)
+    }
+
     pub fn add_sub(&mut self) -> u32 {
         self.add_gate(
             1.into(),
@@ -176,8 +225,20 @@ impl CircuitBuilder {
         )
     }
 
+    pub fn add_sub_by_const(&mut self, c: Scalar) -> u32 {
+        self.add_gate(1.into(), 0.into(), -Scalar::from(1), 0.into(), -c)
+    }
+
+    pub fn add_sub_from_const(&mut self, c: Scalar) -> u32 {
+        self.add_gate(0.into(), -Scalar::from(1), -Scalar::from(1), 0.into(), c)
+    }
+
     pub fn add_mul(&mut self) -> u32 {
         self.add_gate(0.into(), 0.into(), -Scalar::from(1), 1.into(), 0.into())
+    }
+
+    pub fn add_mul_by_const(&mut self, c: Scalar) -> u32 {
+        self.add_gate(0.into(), 0.into(), -Scalar::from(1), c, 0.into())
     }
 
     pub fn add_bool_check(&mut self) -> u32 {
@@ -339,38 +400,19 @@ impl CircuitBuilder {
         }
     }
 
-    pub fn check_witness(
-        &self,
-        left_in: &[Scalar],
-        right_in: &[Scalar],
-        out: &[Scalar],
-    ) -> Result<()> {
+    pub fn check_witness(&self, witness: &Witness) -> Result<()> {
         let size = self.gates.len();
-        if left_in.len() != size {
+        if witness.size() != size {
             return Err(anyhow!(
-                "the LHS input witness column has incorrect length (got {}, want {})",
-                left_in.len(),
-                size
-            ));
-        }
-        if right_in.len() != size {
-            return Err(anyhow!(
-                "the RHS input witness column has incorrect length (got {}, want {})",
-                right_in.len(),
-                size
-            ));
-        }
-        if out.len() != size {
-            return Err(anyhow!(
-                "the output witness column has incorrect length (got {}, want {})",
-                out.len(),
+                "incorrect witness size (got {}, want {})",
+                witness.size(),
                 size
             ));
         }
         for i in 0..size {
-            let lhs = left_in[i];
-            let rhs = right_in[i];
-            let out = out[i];
+            let lhs = witness.left[i];
+            let rhs = witness.right[i];
+            let out = witness.out[i];
             let (ql, qr, qo, qm, qc) = match &self.gates[i] {
                 GateConstraint { ql, qr, qo, qm, qc } => (ql, qr, qo, qm, qc),
             };
@@ -381,15 +423,15 @@ impl CircuitBuilder {
         for node in self.wires.iter_nodes() {
             let mut iter = node.iter();
             let value = match *iter.next().unwrap() {
-                Wire::LeftIn(index) => left_in[index as usize],
-                Wire::RightIn(index) => right_in[index as usize],
-                Wire::Out(index) => out[index as usize],
+                Wire::LeftIn(index) => witness.left[index as usize],
+                Wire::RightIn(index) => witness.right[index as usize],
+                Wire::Out(index) => witness.out[index as usize],
             };
             while let Some(wire) = iter.next() {
                 let next = match *wire {
-                    Wire::LeftIn(index) => left_in[index as usize],
-                    Wire::RightIn(index) => right_in[index as usize],
-                    Wire::Out(index) => out[index as usize],
+                    Wire::LeftIn(index) => witness.left[index as usize],
+                    Wire::RightIn(index) => witness.right[index as usize],
+                    Wire::Out(index) => witness.out[index as usize],
                 };
                 if next != value {
                     return Err(anyhow!("wire constraint violated"));
@@ -486,12 +528,10 @@ impl Circuit {
     /// tuple are the coordinate pair accumulator and the recurrence constraint, respectively.
     fn build_permutation_argument(
         &self,
+        witness: &Witness,
         l: &Polynomial,
-        l_values: &[Scalar],
         r: &Polynomial,
-        r_values: &[Scalar],
         o: &Polynomial,
-        o_values: &[Scalar],
         alpha: Scalar,
         beta: Scalar,
         gamma: Scalar,
@@ -510,12 +550,12 @@ impl Circuit {
         for i in 0..n {
             let x = Polynomial::domain_element(i, n);
             accumulator[i + 1] = accumulator[i]
-                * (l_values[i] + beta * x + gamma)
-                * (r_values[i] + beta * k1 * x + gamma)
-                * (o_values[i] + beta * k2 * x + gamma)
-                * ((l_values[i] + beta * sl[i] + gamma)
-                    * (r_values[i] + beta * sr[i] + gamma)
-                    * (o_values[i] + beta * so[i] + gamma))
+                * (witness.left[i] + beta * x + gamma)
+                * (witness.right[i] + beta * k1 * x + gamma)
+                * (witness.out[i] + beta * k2 * x + gamma)
+                * ((witness.left[i] + beta * sl[i] + gamma)
+                    * (witness.right[i] + beta * sr[i] + gamma)
+                    * (witness.out[i] + beta * so[i] + gamma))
                     .invert()
                     .into_option()
                     .context("division by zero in permutation accumulator")?;
@@ -557,42 +597,20 @@ impl Circuit {
         Ok((accumulator, permutation_constraint))
     }
 
-    pub fn prove(
-        &self,
-        mut left_in: Vec<Scalar>,
-        mut right_in: Vec<Scalar>,
-        mut out: Vec<Scalar>,
-    ) -> Result<Proof> {
-        if left_in.len() != self.size {
+    pub fn prove(&self, mut witness: Witness) -> Result<Proof> {
+        if witness.size() != self.size {
             return Err(anyhow!(
-                "the LHS input witness column has incorrect length (got {}, want {})",
-                left_in.len(),
-                self.size
-            ));
-        }
-        if right_in.len() != self.size {
-            return Err(anyhow!(
-                "the RHS input witness column has incorrect length (got {}, want {})",
-                right_in.len(),
-                self.size
-            ));
-        }
-        if out.len() != self.size {
-            return Err(anyhow!(
-                "the output witness column has incorrect length (got {}, want {})",
-                out.len(),
+                "incorrect witness size (got {}, want {})",
+                witness.size(),
                 self.size
             ));
         }
 
-        let n = padded_size(self.size);
-        left_in.resize(n, Scalar::ZERO);
-        right_in.resize(n, Scalar::ZERO);
-        out.resize(n, Scalar::ZERO);
+        let n = witness.pad();
 
-        let l = Polynomial::encode_list(left_in.clone(), true);
-        let r = Polynomial::encode_list(right_in.clone(), true);
-        let o = Polynomial::encode_list(out.clone(), true);
+        let l = Polynomial::encode_list(witness.left.clone(), true);
+        let r = Polynomial::encode_list(witness.right.clone(), true);
+        let o = Polynomial::encode_list(witness.out.clone(), true);
 
         let witness_commitments = [
             l.commitment().into(),
@@ -628,17 +646,8 @@ impl Circuit {
             kzg::ValueProof::new(&self.qc, witness_hash),
         ];
 
-        let (permutation_accumulator, permutation_constraint) = self.build_permutation_argument(
-            &l,
-            left_in.as_slice(),
-            &r,
-            right_in.as_slice(),
-            &o,
-            out.as_slice(),
-            alpha,
-            beta,
-            gamma,
-        )?;
+        let (permutation_accumulator, permutation_constraint) =
+            self.build_permutation_argument(&witness, &l, &r, &o, alpha, beta, gamma)?;
 
         let permutation_accumulator_commitment = permutation_accumulator.commitment().into();
 
@@ -795,9 +804,79 @@ impl CompressedCircuit {
     }
 }
 
+pub trait Chip<const I: usize, const O: usize> {
+    fn build(&self, builder: &mut CircuitBuilder, inputs: [Wire; I]) -> Result<[Wire; O]>;
+    fn witness(&self, witness: &mut Witness, inputs: [Wire; I], outputs: [Wire; O]) -> Result<()>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_witness_one_row_initial_state() {
+        let witness = Witness::new(1);
+        assert_eq!(witness.size(), 1);
+        assert_eq!(witness.get(Wire::LeftIn(0)), 0.into());
+        assert_eq!(witness.get(Wire::RightIn(0)), 0.into());
+        assert_eq!(witness.get(Wire::Out(0)), 0.into());
+    }
+
+    #[test]
+    fn test_witness_two_rows_initial_state() {
+        let witness = Witness::new(2);
+        assert_eq!(witness.size(), 2);
+        assert_eq!(witness.get(Wire::LeftIn(0)), 0.into());
+        assert_eq!(witness.get(Wire::RightIn(0)), 0.into());
+        assert_eq!(witness.get(Wire::Out(0)), 0.into());
+        assert_eq!(witness.get(Wire::LeftIn(1)), 0.into());
+        assert_eq!(witness.get(Wire::RightIn(1)), 0.into());
+        assert_eq!(witness.get(Wire::Out(1)), 0.into());
+    }
+
+    #[test]
+    fn test_witness_one_row_update() {
+        let mut witness = Witness::new(1);
+        witness.set(Wire::LeftIn(0), 12.into());
+        witness.set(Wire::RightIn(0), 34.into());
+        witness.set(Wire::Out(0), 56.into());
+        assert_eq!(witness.size(), 1);
+        assert_eq!(witness.get(Wire::LeftIn(0)), 12.into());
+        assert_eq!(witness.get(Wire::RightIn(0)), 34.into());
+        assert_eq!(witness.get(Wire::Out(0)), 56.into());
+    }
+
+    #[test]
+    fn test_witness_two_rows_update() {
+        let mut witness = Witness::new(2);
+        witness.set(Wire::LeftIn(0), 65.into());
+        witness.set(Wire::RightIn(0), 43.into());
+        witness.set(Wire::Out(0), 21.into());
+        witness.set(Wire::LeftIn(1), 12.into());
+        witness.set(Wire::RightIn(1), 34.into());
+        witness.set(Wire::Out(1), 56.into());
+        assert_eq!(witness.size(), 2);
+        assert_eq!(witness.get(Wire::LeftIn(0)), 65.into());
+        assert_eq!(witness.get(Wire::RightIn(0)), 43.into());
+        assert_eq!(witness.get(Wire::Out(0)), 21.into());
+        assert_eq!(witness.get(Wire::LeftIn(1)), 12.into());
+        assert_eq!(witness.get(Wire::RightIn(1)), 34.into());
+        assert_eq!(witness.get(Wire::Out(1)), 56.into());
+    }
+
+    #[test]
+    fn test_witness_pad_even() {
+        let mut witness = Witness::new(4);
+        assert_eq!(witness.pad(), 4);
+        assert_eq!(witness.size(), 4);
+    }
+
+    #[test]
+    fn test_witness_pad_uneven() {
+        let mut witness = Witness::new(5);
+        assert_eq!(witness.pad(), 8);
+        assert_eq!(witness.size(), 8);
+    }
 
     /// Builds the circuit at https://vitalik.eth.limo/general/2019/09/22/plonk.html.
     fn build_test_circuit() -> (Circuit, u32) {
@@ -820,11 +899,11 @@ mod tests {
     fn test_circuit1() {
         let (circuit, gate) = build_test_circuit();
         let proof = circuit
-            .prove(
-                vec![3.into(), 9.into(), 3.into(), 30.into()],
-                vec![3.into(), 3.into(), 27.into(), 5.into()],
-                vec![9.into(), 27.into(), 30.into(), 35.into()],
-            )
+            .prove(Witness {
+                left: vec![3.into(), 9.into(), 3.into(), 30.into()],
+                right: vec![3.into(), 3.into(), 27.into(), 5.into()],
+                out: vec![9.into(), 27.into(), 30.into(), 35.into()],
+            })
             .unwrap();
         let public_inputs = circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
@@ -847,11 +926,11 @@ mod tests {
         builder.declare_public_inputs([Wire::RightIn(gate4), Wire::Out(gate4)]);
         let circuit = builder.build();
         let proof = circuit
-            .prove(
-                vec![3.into(), 9.into(), 3.into(), 30.into()],
-                vec![3.into(), 3.into(), 27.into(), 5.into()],
-                vec![9.into(), 27.into(), 30.into(), 35.into()],
-            )
+            .prove(Witness {
+                left: vec![3.into(), 9.into(), 3.into(), 30.into()],
+                right: vec![3.into(), 3.into(), 27.into(), 5.into()],
+                out: vec![9.into(), 27.into(), 30.into(), 35.into()],
+            })
             .unwrap();
         let public_inputs = circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&Wire::RightIn(gate4)).unwrap(), 5.into());
@@ -862,11 +941,11 @@ mod tests {
     fn test_circuit2() {
         let (circuit, gate) = build_test_circuit();
         let proof = circuit
-            .prove(
-                vec![4.into(), 16.into(), 4.into(), 68.into()],
-                vec![4.into(), 4.into(), 64.into(), 5.into()],
-                vec![16.into(), 64.into(), 68.into(), 73.into()],
-            )
+            .prove(Witness {
+                left: vec![4.into(), 16.into(), 4.into(), 68.into()],
+                right: vec![4.into(), 4.into(), 64.into(), 5.into()],
+                out: vec![16.into(), 64.into(), 68.into(), 73.into()],
+            })
             .unwrap();
         let public_inputs = circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
@@ -878,11 +957,11 @@ mod tests {
         let (circuit, _) = build_test_circuit();
         assert!(
             circuit
-                .prove(
-                    vec![4.into(), 16.into(), 4.into(), 68.into()],
-                    vec![4.into(), 4.into(), 64.into(), 5.into()],
-                    vec![16.into(), 64.into(), 68.into(), 35.into()],
-                )
+                .prove(Witness {
+                    left: vec![4.into(), 16.into(), 4.into(), 68.into()],
+                    right: vec![4.into(), 4.into(), 64.into(), 5.into()],
+                    out: vec![16.into(), 64.into(), 68.into(), 35.into()],
+                })
                 .is_err()
         );
     }
@@ -891,11 +970,11 @@ mod tests {
     fn test_compressed_circuit1() {
         let (circuit, gate) = build_test_circuit();
         let proof = circuit
-            .prove(
-                vec![3.into(), 9.into(), 3.into(), 30.into()],
-                vec![3.into(), 3.into(), 27.into(), 5.into()],
-                vec![9.into(), 27.into(), 30.into(), 35.into()],
-            )
+            .prove(Witness {
+                left: vec![3.into(), 9.into(), 3.into(), 30.into()],
+                right: vec![3.into(), 3.into(), 27.into(), 5.into()],
+                out: vec![9.into(), 27.into(), 30.into(), 35.into()],
+            })
             .unwrap();
         let circuit = circuit.to_compressed();
         let public_inputs = circuit.verify(&proof).unwrap();
@@ -907,11 +986,11 @@ mod tests {
     fn test_compressed_circuit2() {
         let (circuit, gate) = build_test_circuit();
         let proof = circuit
-            .prove(
-                vec![4.into(), 16.into(), 4.into(), 68.into()],
-                vec![4.into(), 4.into(), 64.into(), 5.into()],
-                vec![16.into(), 64.into(), 68.into(), 73.into()],
-            )
+            .prove(Witness {
+                left: vec![4.into(), 16.into(), 4.into(), 68.into()],
+                right: vec![4.into(), 4.into(), 64.into(), 5.into()],
+                out: vec![16.into(), 64.into(), 68.into(), 73.into()],
+            })
             .unwrap();
         let circuit = circuit.to_compressed();
         let public_inputs = circuit.verify(&proof).unwrap();
@@ -923,11 +1002,11 @@ mod tests {
     fn test_compile_separately() {
         let (prover_circuit, _) = build_test_circuit();
         let proof = prover_circuit
-            .prove(
-                vec![3.into(), 9.into(), 3.into(), 30.into()],
-                vec![3.into(), 3.into(), 27.into(), 5.into()],
-                vec![9.into(), 27.into(), 30.into(), 35.into()],
-            )
+            .prove(Witness {
+                left: vec![3.into(), 9.into(), 3.into(), 30.into()],
+                right: vec![3.into(), 3.into(), 27.into(), 5.into()],
+                out: vec![9.into(), 27.into(), 30.into(), 35.into()],
+            })
             .unwrap();
         let (verifier_circuit, gate) = build_test_circuit();
         let public_inputs = verifier_circuit.verify(&proof).unwrap();
@@ -939,11 +1018,11 @@ mod tests {
     fn test_compile_and_compress_separately() {
         let (prover_circuit, _) = build_test_circuit();
         let proof = prover_circuit
-            .prove(
-                vec![3.into(), 9.into(), 3.into(), 30.into()],
-                vec![3.into(), 3.into(), 27.into(), 5.into()],
-                vec![9.into(), 27.into(), 30.into(), 35.into()],
-            )
+            .prove(Witness {
+                left: vec![3.into(), 9.into(), 3.into(), 30.into()],
+                right: vec![3.into(), 3.into(), 27.into(), 5.into()],
+                out: vec![9.into(), 27.into(), 30.into(), 35.into()],
+            })
             .unwrap();
         let (verifier_circuit, gate) = build_test_circuit();
         let verifier_circuit = verifier_circuit.to_compressed();
@@ -952,8 +1031,12 @@ mod tests {
         assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 35.into());
     }
 
-    fn test_gate(circuit: &Circuit, l: u64, r: u64, o: u64) -> Result<()> {
-        let proof = circuit.prove(vec![l.into()], vec![r.into()], vec![o.into()])?;
+    fn test_gate(circuit: &Circuit, left: u64, right: u64, out: u64) -> Result<()> {
+        let proof = circuit.prove(Witness {
+            left: vec![left.into()],
+            right: vec![right.into()],
+            out: vec![out.into()],
+        })?;
         circuit.verify(&proof).unwrap();
         Ok(())
     }
@@ -1106,11 +1189,11 @@ mod tests {
     fn test_uneven_size_circuit1() {
         let (circuit, gate) = build_uneven_size_circuit();
         let proof = circuit
-            .prove(
-                vec![3.into(), 9.into(), 3.into(), 12.into(), 5.into()],
-                vec![3.into(), 3.into(), 4.into(), 27.into(), 39.into()],
-                vec![9.into(), 27.into(), 12.into(), 39.into(), 44.into()],
-            )
+            .prove(Witness {
+                left: vec![3.into(), 9.into(), 3.into(), 12.into(), 5.into()],
+                right: vec![3.into(), 3.into(), 4.into(), 27.into(), 39.into()],
+                out: vec![9.into(), 27.into(), 12.into(), 39.into(), 44.into()],
+            })
             .unwrap();
         let public_inputs = circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&Wire::LeftIn(gate)).unwrap(), 5.into());
@@ -1121,11 +1204,11 @@ mod tests {
     fn test_uneven_size_circuit2() {
         let (circuit, gate) = build_uneven_size_circuit();
         let proof = circuit
-            .prove(
-                vec![4.into(), 16.into(), 4.into(), 12.into(), 5.into()],
-                vec![4.into(), 4.into(), 3.into(), 64.into(), 76.into()],
-                vec![16.into(), 64.into(), 12.into(), 76.into(), 81.into()],
-            )
+            .prove(Witness {
+                left: vec![4.into(), 16.into(), 4.into(), 12.into(), 5.into()],
+                right: vec![4.into(), 4.into(), 3.into(), 64.into(), 76.into()],
+                out: vec![16.into(), 64.into(), 12.into(), 76.into(), 81.into()],
+            })
             .unwrap();
         let public_inputs = circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&Wire::LeftIn(gate)).unwrap(), 5.into());
@@ -1136,11 +1219,11 @@ mod tests {
     fn test_compile_uneven_size_circuit_separately() {
         let (prover_circuit, _) = build_uneven_size_circuit();
         let proof = prover_circuit
-            .prove(
-                vec![3.into(), 9.into(), 3.into(), 12.into(), 5.into()],
-                vec![3.into(), 3.into(), 4.into(), 27.into(), 39.into()],
-                vec![9.into(), 27.into(), 12.into(), 39.into(), 44.into()],
-            )
+            .prove(Witness {
+                left: vec![3.into(), 9.into(), 3.into(), 12.into(), 5.into()],
+                right: vec![3.into(), 3.into(), 4.into(), 27.into(), 39.into()],
+                out: vec![9.into(), 27.into(), 12.into(), 39.into(), 44.into()],
+            })
             .unwrap();
         let (verifier_circuit, gate) = build_uneven_size_circuit();
         let public_inputs = verifier_circuit.verify(&proof).unwrap();
@@ -1152,11 +1235,11 @@ mod tests {
     fn test_compile_and_compress_uneven_size_circuit_separately() {
         let (prover_circuit, _) = build_uneven_size_circuit();
         let proof = prover_circuit
-            .prove(
-                vec![4.into(), 16.into(), 4.into(), 12.into(), 5.into()],
-                vec![4.into(), 4.into(), 3.into(), 64.into(), 76.into()],
-                vec![16.into(), 64.into(), 12.into(), 76.into(), 81.into()],
-            )
+            .prove(Witness {
+                left: vec![4.into(), 16.into(), 4.into(), 12.into(), 5.into()],
+                right: vec![4.into(), 4.into(), 3.into(), 64.into(), 76.into()],
+                out: vec![16.into(), 64.into(), 12.into(), 76.into(), 81.into()],
+            })
             .unwrap();
         let (verifier_circuit, gate) = build_uneven_size_circuit();
         let verifier_circuit = verifier_circuit.to_compressed();
