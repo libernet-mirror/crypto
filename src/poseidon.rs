@@ -36,48 +36,41 @@ static MDS_MATRIX: LazyLock<[[Scalar; T]; T]> = LazyLock::new(|| {
     mds
 });
 
-fn pow5(x: Scalar) -> Scalar {
+fn sbox(x: Scalar) -> Scalar {
     x.square().square() * x
 }
 
-fn round(state: &mut [Scalar; T], i: usize, full: bool) {
-    let c = &ROUND_CONSTANTS;
+fn round(state: &mut [Scalar; T], r: usize, full: bool) {
+    let c = &*ROUND_CONSTANTS;
     let mds = &*MDS_MATRIX;
 
-    state[0] += c[i * T + 0];
-    state[1] += c[i * T + 1];
-    state[2] += c[i * T + 2];
-    state[3] += c[i * T + 3];
+    for i in 0..T {
+        state[i] += c[r * T + i];
+    }
 
-    state[0] = pow5(state[0]);
+    state[0] = sbox(state[0]);
     if full {
-        state[1] = pow5(state[1]);
-        state[2] = pow5(state[2]);
-        state[3] = pow5(state[3]);
+        for i in 1..T {
+            state[i] = sbox(state[i]);
+        }
     }
 
     let mut new_state = [Scalar::ZERO; T];
-    new_state[0] =
-        mds[0][0] * state[0] + mds[0][1] * state[1] + mds[0][2] * state[2] + mds[0][3] * state[3];
-    new_state[1] =
-        mds[1][0] * state[0] + mds[1][1] * state[1] + mds[1][2] * state[2] + mds[1][3] * state[3];
-    new_state[2] =
-        mds[2][0] * state[0] + mds[2][1] * state[1] + mds[2][2] * state[2] + mds[2][3] * state[3];
-    new_state[3] =
-        mds[3][0] * state[0] + mds[3][1] * state[1] + mds[3][2] * state[2] + mds[3][3] * state[3];
+    for i in 0..T {
+        for j in 0..T {
+            new_state[i] += mds[i][j] * state[j];
+        }
+    }
     *state = new_state;
 }
 
 pub fn hash(inputs: &[Scalar]) -> Scalar {
+    assert!(T > 0);
     assert!(!inputs.is_empty());
     let mut state = [Scalar::ZERO; T];
-    for chunk in inputs.chunks(3) {
-        state[0] += chunk[0];
-        if chunk.len() > 1 {
-            state[1] += chunk[1];
-        }
-        if chunk.len() > 2 {
-            state[2] += chunk[2];
+    for chunk in inputs.chunks(T - 1) {
+        for i in 0..chunk.len() {
+            state[i] += chunk[i];
         }
         for i in 0..NUM_ROUNDS {
             round(
