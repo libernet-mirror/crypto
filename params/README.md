@@ -55,7 +55,7 @@ fn write_constants() -> Result<()> {
 }
 
 fn write_mds() -> Result<()> {
-    let mut bytes = vec![0u8; 32 * NUM_ROUNDS * T];
+    let mut bytes = vec![0u8; 32 * T * T];
     let mut offset = 0;
     let mds = make_mds();
     for i in 0..T {
