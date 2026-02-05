@@ -375,34 +375,69 @@ mod tests {
         );
     }
 
-    fn test_hash_chip(input: Scalar, result: Scalar) {
+    fn test_hash_chip<const I: usize>(inputs: [Scalar; I], result: Scalar) {
         let mut builder = CircuitBuilder::default();
-        let mut chip = Chip::<T, 1>::default();
-        let input_wire = Wire::Out(builder.add_const(input));
-        let result_wire = chip.build(&mut builder, [input_wire]).unwrap();
-        builder.declare_public_inputs([input_wire, result_wire[0]]);
+        let mut chip = Chip::<T, I>::default();
+        let input_wires = inputs.map(|input| Wire::Out(builder.add_const(input)));
+        let result_wire = chip.build(&mut builder, input_wires).unwrap();
+        builder.declare_public_inputs(input_wires.into_iter().chain(result_wire.into_iter()));
         let circuit = builder.clone().build();
         let mut witness = Witness::new(circuit.size());
-        witness.set(input_wire, input);
-        assert!(
-            chip.witness(&mut witness, [input_wire], result_wire)
-                .is_ok()
-        );
+        for i in 0..I {
+            witness.set(input_wires[i], inputs[i]);
+        }
+        assert!(chip.witness(&mut witness, input_wires, result_wire).is_ok());
         assert_eq!(witness.get(result_wire[0]), result);
         assert!(builder.check_witness(&witness).is_ok());
         let proof = circuit.prove(witness).unwrap();
-        let inputs = circuit.verify(&proof).unwrap();
         assert_eq!(
-            inputs,
-            BTreeMap::from([(input_wire, input), (result_wire[0], result),])
+            circuit.verify(&proof).unwrap(),
+            BTreeMap::from_iter(
+                input_wires
+                    .into_iter()
+                    .zip(inputs.into_iter())
+                    .chain(std::iter::once((result_wire[0], result)))
+            )
         );
     }
 
     #[test]
     fn test_hash_chip1() {
         test_hash_chip(
-            42.into(),
+            [42.into()],
             parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c"),
+        );
+    }
+
+    #[test]
+    fn test_hash_chip2() {
+        test_hash_chip(
+            [1.into(), 2.into()],
+            parse_scalar("0x520651bc5804254d3306d30c7e3242e00f527bb7f39aedb7f828e346299bd91c"),
+        );
+    }
+
+    #[test]
+    fn test_hash_chip3() {
+        test_hash_chip(
+            [3.into(), 4.into(), 5.into()],
+            parse_scalar("0x1a9f84b2d90c7ec4efb7e8c38efddad5983245c1132434bb94c74d19eb04cb3a"),
+        );
+    }
+
+    #[test]
+    fn test_hash_chip4() {
+        test_hash_chip(
+            [6.into(), 7.into(), 8.into(), 9.into()],
+            parse_scalar("0x5497afdc8bc505782b08a63601eec9fa0e4037e61d06f453edff9a8ca1991b76"),
+        );
+    }
+
+    #[test]
+    fn test_hash_chip5() {
+        test_hash_chip(
+            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+            parse_scalar("0x0c8f1b5e59a0120bda56f3e28b2558f3541f2fc0a421418081b071dd30e89a3f"),
         );
     }
 }
