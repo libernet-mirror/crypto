@@ -906,6 +906,51 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_gate_set_initial_state() {
+        let set = GateSet::default();
+        assert_eq!(set.count(), 0);
+        assert!(set.is_empty());
+    }
+
+    #[test]
+    fn test_gate_set_push_one() {
+        let mut set = GateSet::default();
+        set.push(12);
+        assert_eq!(set.count(), 1);
+        assert!(!set.is_empty());
+    }
+
+    #[test]
+    fn test_gate_set_push_two() {
+        let mut set = GateSet::default();
+        set.push(34);
+        set.push(56);
+        assert_eq!(set.count(), 2);
+        assert!(!set.is_empty());
+    }
+
+    #[test]
+    fn test_gate_set_pop_one() {
+        let mut set = GateSet::default();
+        set.push(34);
+        set.push(56);
+        assert_eq!(set.pop(), 34);
+        assert_eq!(set.count(), 2);
+        assert!(!set.is_empty());
+    }
+
+    #[test]
+    fn test_gate_set_pop_two() {
+        let mut set = GateSet::default();
+        set.push(34);
+        set.push(56);
+        assert_eq!(set.pop(), 34);
+        assert_eq!(set.pop(), 56);
+        assert_eq!(set.count(), 2);
+        assert!(set.is_empty());
+    }
+
+    #[test]
     fn test_witness_one_row_initial_state() {
         let witness = Witness::new(1);
         assert_eq!(witness.size(), 1);
@@ -984,6 +1029,90 @@ mod tests {
         assert_eq!(witness.get(Wire::LeftIn(1)), 34.into());
         assert_eq!(witness.get(Wire::RightIn(1)), 12.into());
         assert_eq!(witness.get(Wire::Out(1)), 56.into());
+    }
+
+    #[test]
+    fn test_witness_assert_constant() {
+        let mut witness = Witness::new(1);
+        let wire = witness.assert_constant(0, 42.into());
+        assert_eq!(wire, Wire::Out(0));
+        assert_eq!(witness.get(wire), 42.into());
+    }
+
+    #[test]
+    fn test_witness_add() {
+        let mut witness = Witness::new(1);
+        let lhs = Wire::LeftIn(0);
+        let rhs = Wire::RightIn(0);
+        witness.set(lhs, 12.into());
+        witness.set(rhs, 34.into());
+        let wire = witness.add(0, lhs, rhs);
+        assert_eq!(wire, Wire::Out(0));
+        assert_eq!(witness.get(wire), 46.into());
+    }
+
+    #[test]
+    fn test_witness_add_const() {
+        let mut witness = Witness::new(1);
+        let lhs = Wire::LeftIn(0);
+        witness.set(lhs, 12.into());
+        let wire = witness.add_const(0, lhs, 34.into());
+        assert_eq!(wire, Wire::Out(0));
+        assert_eq!(witness.get(wire), 46.into());
+    }
+
+    #[test]
+    fn test_witness_sub() {
+        let mut witness = Witness::new(1);
+        let lhs = Wire::LeftIn(0);
+        let rhs = Wire::RightIn(0);
+        witness.set(lhs, 34.into());
+        witness.set(rhs, 12.into());
+        let wire = witness.sub(0, lhs, rhs);
+        assert_eq!(wire, Wire::Out(0));
+        assert_eq!(witness.get(wire), 22.into());
+    }
+
+    #[test]
+    fn test_witness_sub_const() {
+        let mut witness = Witness::new(1);
+        let lhs = Wire::LeftIn(0);
+        witness.set(lhs, 34.into());
+        let wire = witness.sub_const(0, lhs, 12.into());
+        assert_eq!(wire, Wire::Out(0));
+        assert_eq!(witness.get(wire), 22.into());
+    }
+
+    #[test]
+    fn test_witness_sub_from_const() {
+        let mut witness = Witness::new(1);
+        let rhs = Wire::LeftIn(0);
+        witness.set(rhs, 12.into());
+        let wire = witness.sub_from_const(0, 34.into(), rhs);
+        assert_eq!(wire, Wire::Out(0));
+        assert_eq!(witness.get(wire), 22.into());
+    }
+
+    #[test]
+    fn test_witness_mul() {
+        let mut witness = Witness::new(1);
+        let lhs = Wire::LeftIn(0);
+        let rhs = Wire::RightIn(0);
+        witness.set(lhs, 12.into());
+        witness.set(rhs, 34.into());
+        let wire = witness.mul(0, lhs, rhs);
+        assert_eq!(wire, Wire::Out(0));
+        assert_eq!(witness.get(wire), 408.into());
+    }
+
+    #[test]
+    fn test_witness_mul_by_const() {
+        let mut witness = Witness::new(1);
+        let lhs = Wire::LeftIn(0);
+        witness.set(lhs, 12.into());
+        let wire = witness.mul_by_const(0, lhs, 34.into());
+        assert_eq!(wire, Wire::Out(0));
+        assert_eq!(witness.get(wire), 408.into());
     }
 
     /// Builds the circuit at https://vitalik.eth.limo/general/2019/09/22/plonk.html.
