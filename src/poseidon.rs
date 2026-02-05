@@ -191,7 +191,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
             let gate3 = builder.add_sub();
             self.mds_gates.push(gate3);
             builder.connect(Wire::LeftIn(gate3), Wire::Out(gate1));
-            builder.connect(Wire::LeftIn(gate3), Wire::Out(gate2));
+            builder.connect(Wire::RightIn(gate3), Wire::Out(gate2));
             new_state[i] = Some(Wire::Out(gate3));
         }
         *state = new_state;
@@ -203,9 +203,15 @@ impl<const T: usize, const I: usize> Chip<T, I> {
             let state = state.map(|wire| witness.get(wire.unwrap()));
             let mut new_state: [Option<Wire>; T] = [None; T];
             for i in 0..4 {
-                let out1 = Wire::Out(self.mds_gates.pop());
+                let gate = self.mds_gates.pop();
+                witness.set(Wire::LeftIn(gate), state[0]);
+                witness.set(Wire::RightIn(gate), state[1]);
+                let out1 = Wire::Out(gate);
                 witness.set(out1, mds[i][0] * state[0] + mds[i][1] * state[1]);
-                let out2 = Wire::Out(self.mds_gates.pop());
+                let gate = self.mds_gates.pop();
+                witness.set(Wire::LeftIn(gate), state[2]);
+                witness.set(Wire::RightIn(gate), state[3]);
+                let out2 = Wire::Out(gate);
                 witness.set(out2, mds[i][2] * state[2] + mds[i][3] * state[3]);
                 new_state[i] = Some(witness.add(self.mds_gates.pop(), out1, out2));
             }
@@ -327,6 +333,7 @@ impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I> {
 mod tests {
     use super::*;
     use crate::utils::testing::parse_scalar;
+    use std::collections::BTreeMap;
 
     #[test]
     fn test_hash1() {
@@ -375,13 +382,28 @@ mod tests {
         let input = Wire::Out(builder.add_const(42.into()));
         let result = chip.build(&mut builder, [input]).unwrap();
         builder.declare_public_inputs([input, result[0]]);
-        let circuit = builder.build();
+        let circuit = builder.clone().build();
         let mut witness = Witness::new(circuit.size());
+        witness.set(input, 42.into());
         assert!(chip.witness(&mut witness, [input], result).is_ok());
         assert_eq!(
             witness.get(result[0]),
             parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c")
         );
-        // TODO: circuit.prove()
+        builder.check_witness(&witness).unwrap();
+        let proof = circuit.prove(witness).unwrap();
+        let inputs = circuit.verify(&proof).unwrap();
+        assert_eq!(
+            inputs,
+            BTreeMap::from([
+                (input, Scalar::from(42)),
+                (
+                    result[0],
+                    parse_scalar(
+                        "0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c"
+                    )
+                ),
+            ])
+        );
     }
 }
