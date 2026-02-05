@@ -8,10 +8,9 @@ struct Constants<const T: usize> {}
 
 impl<const T: usize> Constants<T> {
     fn decode_round_constants<const N: usize>(bytes: &[u8]) -> [Scalar; N] {
-        assert_eq!(
-            N,
-            (Self::num_full_rounds() * 2 + Self::num_partial_rounds()) * T
-        );
+        let num_full_rounds = Self::num_full_rounds();
+        let num_partial_rounds = Self::num_partial_rounds();
+        assert_eq!(N, (num_full_rounds * 2 + num_partial_rounds) * T);
         let mut constants = [Scalar::ZERO; N];
         for i in 0..N {
             constants[i] =
@@ -63,7 +62,7 @@ impl Constants<4> {
     const FR: usize = 4;
     const PR: usize = 56;
 
-    fn get_round_constants_impl() -> &'static [Scalar] {
+    fn get_round_constants_impl() -> &'static [Scalar; 256] {
         static ROUND_CONSTANTS: LazyLock<[Scalar; 256]> = LazyLock::new(|| {
             let bytes = include_bytes!("../params/arc_t4.bin");
             Constants::<4>::decode_round_constants::<256>(bytes)
@@ -71,7 +70,7 @@ impl Constants<4> {
         &*ROUND_CONSTANTS
     }
 
-    fn get_mds_matrix_impl() -> &'static [Scalar] {
+    fn get_mds_matrix_impl() -> &'static [Scalar; 16] {
         static MDS_MATRIX: LazyLock<[Scalar; 16]> = LazyLock::new(|| {
             let bytes = include_bytes!("../params/mds_t4.bin");
             Constants::<4>::decode_mds_matrix(bytes)
@@ -122,15 +121,10 @@ fn sbox(x: Scalar) -> Scalar {
     x.square().square() * x
 }
 
-/// Poseidon hash with x^5 S-box and T=4 (rate=3, capacity=1).
-///
-/// The x^5 S-box is optimal for BLS12-381.
-///
-/// Our choice of capacity=1 warrants 128-bit security, while our choice of rate=3 makes this hash
-/// optimal for SNARKing ternary Merkle trees.
 fn hash<const T: usize>(inputs: &[Scalar]) -> Scalar {
     let num_full_rounds = Constants::<T>::num_full_rounds();
     let num_partial_rounds = Constants::<T>::num_partial_rounds();
+    let num_total_rounds = Constants::<T>::num_total_rounds();
 
     assert!(!inputs.is_empty());
 
@@ -142,7 +136,7 @@ fn hash<const T: usize>(inputs: &[Scalar]) -> Scalar {
         for i in 0..chunk.len() {
             state[i] += chunk[i];
         }
-        for r in 0..(num_full_rounds * 2 + num_partial_rounds) {
+        for r in 0..num_total_rounds {
             for i in 0..T {
                 state[i] += c[r * T + i];
             }
@@ -165,10 +159,22 @@ fn hash<const T: usize>(inputs: &[Scalar]) -> Scalar {
     state[0]
 }
 
+/// Poseidon hash with x^5 S-box and T=3 (rate=2, capacity=1).
+///
+/// The x^5 S-box is optimal for BLS12-381.
+///
+/// Our choice of capacity=1 warrants 128-bit security, while our choice of rate=2 makes this hash
+/// optimal for SNARKing binary Merkle proofs.
 pub fn hash_t3(inputs: &[Scalar]) -> Scalar {
     hash::<3>(inputs)
 }
 
+/// Poseidon hash with x^5 S-box and T=4 (rate=3, capacity=1).
+///
+/// The x^5 S-box is optimal for BLS12-381.
+///
+/// Our choice of capacity=1 warrants 128-bit security, while our choice of rate=3 makes this hash
+/// optimal for SNARKing ternary Merkle proofs.
 pub fn hash_t4(inputs: &[Scalar]) -> Scalar {
     hash::<4>(inputs)
 }
