@@ -199,16 +199,18 @@ impl<const T: usize, const I: usize> Chip<T, I> {
 
     fn witness_mds4(&mut self, witness: &mut Witness, state: &mut [Option<Wire>; T]) {
         let mds = &*MDS_MATRIX;
-        let mut new_state: [Option<Wire>; T] = [None; T];
-        for i in 0..4 {
+        *state = {
             let state = state.map(|wire| witness.get(wire.unwrap()));
-            let out1 = Wire::Out(self.mds_gates.pop());
-            witness.set(out1, mds[i][0] * state[0] + mds[i][1] * state[1]);
-            let out2 = Wire::Out(self.mds_gates.pop());
-            witness.set(out2, mds[i][2] * state[2] + mds[i][3] * state[3]);
-            new_state[i] = Some(witness.add(self.mds_gates.pop(), out1, out2));
-        }
-        *state = new_state;
+            let mut new_state: [Option<Wire>; T] = [None; T];
+            for i in 0..4 {
+                let out1 = Wire::Out(self.mds_gates.pop());
+                witness.set(out1, mds[i][0] * state[0] + mds[i][1] * state[1]);
+                let out2 = Wire::Out(self.mds_gates.pop());
+                witness.set(out2, mds[i][2] * state[2] + mds[i][3] * state[3]);
+                new_state[i] = Some(witness.add(self.mds_gates.pop(), out1, out2));
+            }
+            new_state
+        };
     }
 
     fn build_mds(&mut self, builder: &mut CircuitBuilder, state: &mut [Option<Wire>; T]) {
