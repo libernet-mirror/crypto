@@ -188,7 +188,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
             self.mds_gates.push(gate2);
             builder.connect(Wire::LeftIn(gate2), state[2].unwrap());
             builder.connect(Wire::RightIn(gate2), state[3].unwrap());
-            let gate3 = builder.add_sub();
+            let gate3 = builder.add_sum();
             self.mds_gates.push(gate3);
             builder.connect(Wire::LeftIn(gate3), Wire::Out(gate1));
             builder.connect(Wire::RightIn(gate3), Wire::Out(gate2));
