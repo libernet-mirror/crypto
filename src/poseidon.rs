@@ -261,6 +261,35 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness.mul(self.sbox_gates.pop(), out, wire)
     }
 
+    fn build_mds3(&mut self, builder: &mut CircuitBuilder, state: &mut [Option<Wire>; T]) {
+        let mds = Constants::<3>::get_mds_matrix();
+        let mut new_state: [Option<Wire>; T] = [None; T];
+        for i in 0..3 {
+            let gate1 = builder.add_gate(
+                mds[i * 3 + 0],
+                mds[i * 3 + 1],
+                -Scalar::from(1),
+                0.into(),
+                0.into(),
+            );
+            self.mds_gates.push(gate1);
+            builder.connect(Wire::LeftIn(gate1), state[0].unwrap());
+            builder.connect(Wire::RightIn(gate1), state[1].unwrap());
+            let gate2 = builder.add_gate(
+                1.into(),
+                mds[i * 3 + 2],
+                -Scalar::from(1),
+                0.into(),
+                0.into(),
+            );
+            self.mds_gates.push(gate2);
+            builder.connect(Wire::LeftIn(gate2), Wire::Out(gate1));
+            builder.connect(Wire::RightIn(gate2), state[2].unwrap());
+            new_state[i] = Some(Wire::Out(gate2));
+        }
+        *state = new_state;
+    }
+
     fn build_mds4(&mut self, builder: &mut CircuitBuilder, state: &mut [Option<Wire>; T]) {
         let mds = Constants::<4>::get_mds_matrix();
         let mut new_state: [Option<Wire>; T] = [None; T];
@@ -294,6 +323,28 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         *state = new_state;
     }
 
+    fn witness_mds3(&mut self, witness: &mut Witness, state: &mut [Option<Wire>; T]) {
+        let mds = Constants::<3>::get_mds_matrix();
+        *state = {
+            let state = state.map(|wire| witness.get(wire.unwrap()));
+            let mut new_state: [Option<Wire>; T] = [None; T];
+            for i in 0..3 {
+                let gate1 = self.mds_gates.pop();
+                witness.set(Wire::LeftIn(gate1), state[0]);
+                witness.set(Wire::RightIn(gate1), state[1]);
+                let out1 = Wire::Out(gate1);
+                witness.set(out1, mds[i * 3 + 0] * state[0] + mds[i * 3 + 1] * state[1]);
+                let gate2 = self.mds_gates.pop();
+                witness.copy(Wire::LeftIn(gate2), out1);
+                witness.set(Wire::RightIn(gate2), state[2]);
+                let out2 = Wire::Out(gate2);
+                witness.set(out2, witness.get(out1) + mds[i * 3 + 2] * state[2]);
+                new_state[i] = Some(out2);
+            }
+            new_state
+        };
+    }
+
     fn witness_mds4(&mut self, witness: &mut Witness, state: &mut [Option<Wire>; T]) {
         let mds = Constants::<4>::get_mds_matrix();
         *state = {
@@ -318,7 +369,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
 
     fn build_mds(&mut self, builder: &mut CircuitBuilder, state: &mut [Option<Wire>; T]) {
         match T {
-            3 => todo!(),
+            3 => self.build_mds3(builder, state),
             4 => self.build_mds4(builder, state),
             _ => unimplemented!(),
         }
@@ -326,7 +377,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
 
     fn witness_mds(&mut self, witness: &mut Witness, state: &mut [Option<Wire>; T]) {
         match T {
-            3 => todo!(),
+            3 => self.witness_mds3(witness, state),
             4 => self.witness_mds4(witness, state),
             _ => unimplemented!(),
         }
@@ -529,27 +580,52 @@ mod tests {
     }
 
     #[test]
-    fn test_hash_chip1() {
+    fn test_hash_chip_t3_1() {
+        test_hash_chip::<3, 1>([42.into()]);
+    }
+
+    #[test]
+    fn test_hash_chip_t3_2() {
+        test_hash_chip::<3, 2>([1.into(), 2.into()]);
+    }
+
+    #[test]
+    fn test_hash_chip_t3_3() {
+        test_hash_chip::<3, 3>([3.into(), 4.into(), 5.into()]);
+    }
+
+    #[test]
+    fn test_hash_chip_t3_4() {
+        test_hash_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()]);
+    }
+
+    #[test]
+    fn test_hash_chip_t3_5() {
+        test_hash_chip::<3, 5>([10.into(), 11.into(), 12.into(), 13.into(), 14.into()]);
+    }
+
+    #[test]
+    fn test_hash_chip_t4_1() {
         test_hash_chip::<4, 1>([42.into()]);
     }
 
     #[test]
-    fn test_hash_chip2() {
+    fn test_hash_chip_t4_2() {
         test_hash_chip::<4, 2>([1.into(), 2.into()]);
     }
 
     #[test]
-    fn test_hash_chip3() {
+    fn test_hash_chip_t4_3() {
         test_hash_chip::<4, 3>([3.into(), 4.into(), 5.into()]);
     }
 
     #[test]
-    fn test_hash_chip4() {
+    fn test_hash_chip_t4_4() {
         test_hash_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()]);
     }
 
     #[test]
-    fn test_hash_chip5() {
+    fn test_hash_chip_t4_5() {
         test_hash_chip::<4, 5>([10.into(), 11.into(), 12.into(), 13.into(), 14.into()]);
     }
 }
