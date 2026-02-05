@@ -375,35 +375,34 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_hash_chip1() {
+    fn test_hash_chip(input: Scalar, result: Scalar) {
         let mut builder = CircuitBuilder::default();
         let mut chip = Chip::<T, 1>::default();
-        let input = Wire::Out(builder.add_const(42.into()));
-        let result = chip.build(&mut builder, [input]).unwrap();
-        builder.declare_public_inputs([input, result[0]]);
+        let input_wire = Wire::Out(builder.add_const(input));
+        let result_wire = chip.build(&mut builder, [input_wire]).unwrap();
+        builder.declare_public_inputs([input_wire, result_wire[0]]);
         let circuit = builder.clone().build();
         let mut witness = Witness::new(circuit.size());
-        witness.set(input, 42.into());
-        assert!(chip.witness(&mut witness, [input], result).is_ok());
-        assert_eq!(
-            witness.get(result[0]),
-            parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c")
+        witness.set(input_wire, input);
+        assert!(
+            chip.witness(&mut witness, [input_wire], result_wire)
+                .is_ok()
         );
-        builder.check_witness(&witness).unwrap();
+        assert_eq!(witness.get(result_wire[0]), result);
+        assert!(builder.check_witness(&witness).is_ok());
         let proof = circuit.prove(witness).unwrap();
         let inputs = circuit.verify(&proof).unwrap();
         assert_eq!(
             inputs,
-            BTreeMap::from([
-                (input, Scalar::from(42)),
-                (
-                    result[0],
-                    parse_scalar(
-                        "0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c"
-                    )
-                ),
-            ])
+            BTreeMap::from([(input_wire, input), (result_wire[0], result),])
+        );
+    }
+
+    #[test]
+    fn test_hash_chip1() {
+        test_hash_chip(
+            42.into(),
+            parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c"),
         );
     }
 }
