@@ -306,7 +306,8 @@ impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I> {
                 self.witness_round(
                     witness,
                     &mut state,
-                    i, /*full=*/
+                    i,
+                    /*full=*/
                     i < NUM_FULL_ROUNDS_START || i >= NUM_FULL_ROUNDS_START + NUM_PARTIAL_ROUNDS,
                 );
             }
