@@ -175,7 +175,7 @@ pub struct Witness {
 }
 
 impl Witness {
-    fn new(size: usize) -> Self {
+    pub fn new(size: usize) -> Self {
         let padded_size = padded_size(size);
         Self {
             size,

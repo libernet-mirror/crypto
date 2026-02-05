@@ -100,6 +100,7 @@ pub struct Chip<const T: usize, const I: usize> {
     absorption_gates: GateSet,
     arc_gates: GateSet,
     sbox_gates: GateSet,
+    mds_gates: GateSet,
 }
 
 impl<const T: usize, const I: usize> Chip<T, I> {
@@ -168,7 +169,9 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     }
 
     fn witness_sbox(&mut self, witness: &mut Witness, wire: Wire) -> Wire {
-        witness.mul(self.sbox_gates.pop(), wire, wire)
+        let out = witness.mul(self.sbox_gates.pop(), wire, wire);
+        let out = witness.mul(self.sbox_gates.pop(), out, out);
+        witness.mul(self.sbox_gates.pop(), out, wire)
     }
 
     fn build_mds4(&mut self, builder: &mut CircuitBuilder, state: &mut [Option<Wire>; T]) {
@@ -177,13 +180,16 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         for i in 0..4 {
             let gate1 =
                 builder.add_gate(mds[i][0], mds[i][1], -Scalar::from(1), 0.into(), 0.into());
+            self.mds_gates.push(gate1);
             builder.connect(Wire::LeftIn(gate1), state[0].unwrap());
             builder.connect(Wire::RightIn(gate1), state[1].unwrap());
             let gate2 =
                 builder.add_gate(mds[i][2], mds[i][3], -Scalar::from(1), 0.into(), 0.into());
+            self.mds_gates.push(gate2);
             builder.connect(Wire::LeftIn(gate2), state[2].unwrap());
             builder.connect(Wire::RightIn(gate2), state[3].unwrap());
             let gate3 = builder.add_sub();
+            self.mds_gates.push(gate3);
             builder.connect(Wire::LeftIn(gate3), Wire::Out(gate1));
             builder.connect(Wire::LeftIn(gate3), Wire::Out(gate2));
             new_state[i] = Some(Wire::Out(gate3));
@@ -195,7 +201,12 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let mds = &*MDS_MATRIX;
         let mut new_state: [Option<Wire>; T] = [None; T];
         for i in 0..4 {
-            // TODO
+            let state = state.map(|wire| witness.get(wire.unwrap()));
+            let out1 = Wire::Out(self.mds_gates.pop());
+            witness.set(out1, mds[i][0] * state[0] + mds[i][1] * state[1]);
+            let out2 = Wire::Out(self.mds_gates.pop());
+            witness.set(out2, mds[i][2] * state[2] + mds[i][3] * state[3]);
+            new_state[i] = Some(witness.add(self.mds_gates.pop(), out1, out2));
         }
         *state = new_state;
     }
@@ -360,6 +371,12 @@ mod tests {
         let result = chip.build(&mut builder, [input]).unwrap();
         builder.declare_public_inputs([input, result[0]]);
         let circuit = builder.build();
-        // TODO
+        let mut witness = Witness::new(circuit.size());
+        assert!(chip.witness(&mut witness, [input], result).is_ok());
+        assert_eq!(
+            witness.get(result[0]),
+            parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c")
+        );
+        // TODO: circuit.prove()
     }
 }
