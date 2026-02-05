@@ -4,66 +4,99 @@ use blstrs::Scalar;
 use ff::Field;
 use std::sync::LazyLock;
 
-const R: usize = 3;
-const C: usize = 1;
-const T: usize = R + C;
 const NUM_FULL_ROUNDS_START: usize = 4;
 const NUM_FULL_ROUNDS_END: usize = 4;
 const NUM_FULL_ROUNDS: usize = NUM_FULL_ROUNDS_START + NUM_FULL_ROUNDS_END;
 const NUM_PARTIAL_ROUNDS: usize = 56;
 const NUM_ROUNDS: usize = NUM_FULL_ROUNDS + NUM_PARTIAL_ROUNDS;
 
-static ROUND_CONSTANTS: LazyLock<[Scalar; NUM_ROUNDS * T]> = LazyLock::new(|| {
-    let bytes = include_bytes!("../params/arc.bin");
-    let mut constants = [Scalar::ZERO; NUM_ROUNDS * T];
-    for i in 0..(NUM_ROUNDS * T) {
-        constants[i] = Scalar::from_bytes_le(&bytes[(i * 32)..((i + 1) * 32)].try_into().unwrap())
-            .into_option()
-            .unwrap();
-    }
-    constants
-});
+struct Constants<const T: usize, const FR: usize, const PR: usize> {}
 
-static MDS_MATRIX: LazyLock<[[Scalar; T]; T]> = LazyLock::new(|| {
-    let bytes = include_bytes!("../params/mds.bin");
-    let mut mds = [[Scalar::ZERO; T]; T];
-    for i in 0..T {
-        for j in 0..T {
-            let offset = (i * T + j) * 32;
-            mds[i][j] = Scalar::from_bytes_le(&bytes[offset..(offset + 32)].try_into().unwrap())
-                .into_option()
-                .unwrap()
+impl<const T: usize, const FR: usize, const PR: usize> Constants<T, FR, PR> {
+    fn decode_round_constants<const N: usize>(bytes: &[u8]) -> [Scalar; N] {
+        assert_eq!(N, (FR * 2 + PR) * T);
+        let mut constants = [Scalar::ZERO; N];
+        for i in 0..N {
+            constants[i] =
+                Scalar::from_bytes_le(&bytes[(i * 32)..((i + 1) * 32)].try_into().unwrap())
+                    .into_option()
+                    .unwrap();
+        }
+        constants
+    }
+
+    fn decode_mds_matrix<const N: usize>(bytes: &[u8]) -> [Scalar; N] {
+        assert_eq!(N, T * T);
+        let mut mds = [Scalar::ZERO; N];
+        for i in 0..T {
+            for j in 0..T {
+                let k = i * T + j;
+                let offset = k * 32;
+                mds[k] = Scalar::from_bytes_le(&bytes[offset..(offset + 32)].try_into().unwrap())
+                    .into_option()
+                    .unwrap()
+            }
+        }
+        mds
+    }
+}
+
+impl Constants<3, 4, 57> {
+    fn get_round_constants_impl() -> &'static [Scalar; 195] {
+        static ROUND_CONSTANTS: LazyLock<[Scalar; 195]> = LazyLock::new(|| {
+            let bytes = include_bytes!("../params/arc_t3.bin");
+            Constants::<3, 4, 57>::decode_round_constants::<195>(bytes)
+        });
+        &*ROUND_CONSTANTS
+    }
+
+    fn get_mds_matrix_impl() -> &'static [Scalar; 9] {
+        static MDS_MATRIX: LazyLock<[Scalar; 9]> = LazyLock::new(|| {
+            let bytes = include_bytes!("../params/mds_t3.bin");
+            Constants::<3, 4, 57>::decode_mds_matrix(bytes)
+        });
+        &*MDS_MATRIX
+    }
+}
+
+impl Constants<4, 4, 56> {
+    fn get_round_constants_impl() -> &'static [Scalar] {
+        static ROUND_CONSTANTS: LazyLock<[Scalar; 256]> = LazyLock::new(|| {
+            let bytes = include_bytes!("../params/arc_t4.bin");
+            Constants::<4, 4, 56>::decode_round_constants::<256>(bytes)
+        });
+        &*ROUND_CONSTANTS
+    }
+
+    fn get_mds_matrix_impl() -> &'static [Scalar] {
+        static MDS_MATRIX: LazyLock<[Scalar; 16]> = LazyLock::new(|| {
+            let bytes = include_bytes!("../params/mds_t4.bin");
+            Constants::<4, 4, 56>::decode_mds_matrix(bytes)
+        });
+        &*MDS_MATRIX
+    }
+}
+
+impl<const T: usize, const FR: usize, const PR: usize> Constants<T, FR, PR> {
+    fn get_round_constants() -> &'static [Scalar] {
+        match (T, FR, PR) {
+            (3, 4, 57) => Constants::<3, 4, 57>::get_round_constants_impl(),
+            (4, 4, 56) => Constants::<4, 4, 56>::get_round_constants_impl(),
+            _ => unimplemented!(),
         }
     }
-    mds
-});
+
+    fn get_mds_matrix() -> &'static [Scalar] {
+        match (T, FR, PR) {
+            (3, 4, 57) => Constants::<3, 4, 57>::get_mds_matrix_impl(),
+            (4, 4, 56) => Constants::<4, 4, 56>::get_mds_matrix_impl(),
+            _ => unimplemented!(),
+        }
+    }
+}
 
 fn sbox(x: Scalar) -> Scalar {
     x.square().square() * x
-}
-
-fn round(state: &mut [Scalar; T], r: usize, full: bool) {
-    let c = &*ROUND_CONSTANTS;
-    let mds = &*MDS_MATRIX;
-
-    for i in 0..T {
-        state[i] += c[r * T + i];
-    }
-
-    state[0] = sbox(state[0]);
-    if full {
-        for i in 1..T {
-            state[i] = sbox(state[i]);
-        }
-    }
-
-    let mut new_state = [Scalar::ZERO; T];
-    for i in 0..T {
-        for j in 0..T {
-            new_state[i] += mds[i][j] * state[j];
-        }
-    }
-    *state = new_state;
 }
 
 /// Poseidon hash with x^5 S-box and T=4 (rate=3, capacity=1).
@@ -72,24 +105,47 @@ fn round(state: &mut [Scalar; T], r: usize, full: bool) {
 ///
 /// Our choice of capacity=1 warrants 128-bit security, while our choice of rate=3 makes this hash
 /// optimal for SNARKing ternary Merkle trees.
-pub fn hash(inputs: &[Scalar]) -> Scalar {
+fn hash<const T: usize, const FR: usize, const PR: usize>(inputs: &[Scalar]) -> Scalar {
     assert!(T > 0);
     assert!(!inputs.is_empty());
+
+    let c = Constants::<T, FR, PR>::get_round_constants();
+    let mds = Constants::<T, FR, PR>::get_mds_matrix();
+
     let mut state = [Scalar::ZERO; T];
     for chunk in inputs.chunks(T - 1) {
         for i in 0..chunk.len() {
             state[i] += chunk[i];
         }
-        for i in 0..NUM_ROUNDS {
-            round(
-                &mut state,
-                i,
-                /*full=*/
-                i < NUM_FULL_ROUNDS_START || i >= NUM_FULL_ROUNDS_START + NUM_PARTIAL_ROUNDS,
-            );
+        for r in 0..(FR * 2 + PR) {
+            for i in 0..T {
+                state[i] += c[r * T + i];
+            }
+            state[0] = sbox(state[0]);
+            if r < FR || r >= FR + PR {
+                for i in 1..T {
+                    state[i] = sbox(state[i]);
+                }
+            }
+            let mut new_state = [Scalar::ZERO; T];
+            for i in 0..T {
+                for j in 0..T {
+                    new_state[i] += mds[i * T + j] * state[j];
+                }
+            }
+            state = new_state;
         }
     }
+
     state[0]
+}
+
+pub fn hash_t3(inputs: &[Scalar]) -> Scalar {
+    hash::<3, 4, 57>(inputs)
+}
+
+pub fn hash_t4(inputs: &[Scalar]) -> Scalar {
+    hash::<4, 4, 56>(inputs)
 }
 
 /// PLONK chip for our Poseidon hash instance (see the `hash` function above for the exact
@@ -175,16 +231,26 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     }
 
     fn build_mds4(&mut self, builder: &mut CircuitBuilder, state: &mut [Option<Wire>; T]) {
-        let mds = &*MDS_MATRIX;
+        let mds = Constants::<4, 4, 56>::get_mds_matrix();
         let mut new_state: [Option<Wire>; T] = [None; T];
         for i in 0..4 {
-            let gate1 =
-                builder.add_gate(mds[i][0], mds[i][1], -Scalar::from(1), 0.into(), 0.into());
+            let gate1 = builder.add_gate(
+                mds[i * 4 + 0],
+                mds[i * 4 + 1],
+                -Scalar::from(1),
+                0.into(),
+                0.into(),
+            );
             self.mds_gates.push(gate1);
             builder.connect(Wire::LeftIn(gate1), state[0].unwrap());
             builder.connect(Wire::RightIn(gate1), state[1].unwrap());
-            let gate2 =
-                builder.add_gate(mds[i][2], mds[i][3], -Scalar::from(1), 0.into(), 0.into());
+            let gate2 = builder.add_gate(
+                mds[i * 4 + 2],
+                mds[i * 4 + 3],
+                -Scalar::from(1),
+                0.into(),
+                0.into(),
+            );
             self.mds_gates.push(gate2);
             builder.connect(Wire::LeftIn(gate2), state[2].unwrap());
             builder.connect(Wire::RightIn(gate2), state[3].unwrap());
@@ -198,7 +264,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     }
 
     fn witness_mds4(&mut self, witness: &mut Witness, state: &mut [Option<Wire>; T]) {
-        let mds = &*MDS_MATRIX;
+        let mds = Constants::<4, 4, 56>::get_mds_matrix();
         *state = {
             let state = state.map(|wire| witness.get(wire.unwrap()));
             let mut new_state: [Option<Wire>; T] = [None; T];
@@ -207,12 +273,12 @@ impl<const T: usize, const I: usize> Chip<T, I> {
                 witness.set(Wire::LeftIn(gate), state[0]);
                 witness.set(Wire::RightIn(gate), state[1]);
                 let out1 = Wire::Out(gate);
-                witness.set(out1, mds[i][0] * state[0] + mds[i][1] * state[1]);
+                witness.set(out1, mds[i * 4 + 0] * state[0] + mds[i * 4 + 1] * state[1]);
                 let gate = self.mds_gates.pop();
                 witness.set(Wire::LeftIn(gate), state[2]);
                 witness.set(Wire::RightIn(gate), state[3]);
                 let out2 = Wire::Out(gate);
-                witness.set(out2, mds[i][2] * state[2] + mds[i][3] * state[3]);
+                witness.set(out2, mds[i * 4 + 2] * state[2] + mds[i * 4 + 3] * state[3]);
                 new_state[i] = Some(witness.add(self.mds_gates.pop(), out1, out2));
             }
             new_state
@@ -240,7 +306,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         r: usize,
         full: bool,
     ) {
-        let c = &*ROUND_CONSTANTS;
+        let c = Constants::<4, 4, 56>::get_round_constants();
         for i in 0..T {
             let gate = builder.add_sum_with_const(c[r * T + i]);
             self.arc_gates.push(gate);
@@ -265,7 +331,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         r: usize,
         full: bool,
     ) {
-        let c = &*ROUND_CONSTANTS;
+        let c = Constants::<4, 4, 56>::get_round_constants();
         for i in 0..T {
             state[i] =
                 Some(witness.add_const(self.arc_gates.pop(), state[i].unwrap(), c[r * T + i]));
@@ -338,7 +404,7 @@ mod tests {
     #[test]
     fn test_hash1() {
         assert_eq!(
-            hash(&[42.into()]),
+            hash_t4(&[42.into()]),
             parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c")
         );
     }
@@ -346,7 +412,7 @@ mod tests {
     #[test]
     fn test_hash2() {
         assert_eq!(
-            hash(&[1.into(), 2.into()]),
+            hash_t4(&[1.into(), 2.into()]),
             parse_scalar("0x520651bc5804254d3306d30c7e3242e00f527bb7f39aedb7f828e346299bd91c")
         );
     }
@@ -354,7 +420,7 @@ mod tests {
     #[test]
     fn test_hash3() {
         assert_eq!(
-            hash(&[3.into(), 4.into(), 5.into()]),
+            hash_t4(&[3.into(), 4.into(), 5.into()]),
             parse_scalar("0x1a9f84b2d90c7ec4efb7e8c38efddad5983245c1132434bb94c74d19eb04cb3a")
         );
     }
@@ -362,7 +428,7 @@ mod tests {
     #[test]
     fn test_hash4() {
         assert_eq!(
-            hash(&[6.into(), 7.into(), 8.into(), 9.into()]),
+            hash_t4(&[6.into(), 7.into(), 8.into(), 9.into()]),
             parse_scalar("0x5497afdc8bc505782b08a63601eec9fa0e4037e61d06f453edff9a8ca1991b76")
         );
     }
@@ -370,15 +436,15 @@ mod tests {
     #[test]
     fn test_hash5() {
         assert_eq!(
-            hash(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
+            hash_t4(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
             parse_scalar("0x0c8f1b5e59a0120bda56f3e28b2558f3541f2fc0a421418081b071dd30e89a3f")
         );
     }
 
     fn test_hash_chip<const I: usize>(inputs: [Scalar; I]) {
-        let result = hash(&inputs);
+        let result = hash_t4(&inputs);
         let mut builder = CircuitBuilder::default();
-        let mut chip = Chip::<T, I>::default();
+        let mut chip = Chip::<4, I>::default();
         let input_wires = inputs.map(|input| Wire::Out(builder.add_const(input)));
         let result_wire = chip.build(&mut builder, input_wires).unwrap();
         builder.declare_public_inputs(input_wires.into_iter().chain(result_wire.into_iter()));
