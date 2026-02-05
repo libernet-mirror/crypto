@@ -239,6 +239,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
             let gate = builder.add_sum_with_const(c[r * T + i]);
             self.arc_gates.push(gate);
             builder.connect(Wire::LeftIn(gate), state[i].unwrap());
+            state[i] = Some(Wire::Out(gate));
         }
 
         state[0] = Some(self.build_sbox(builder, state[0].unwrap()));
@@ -316,6 +317,7 @@ impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I> {
         assert!(self.absorption_gates.is_empty());
         assert!(self.arc_gates.is_empty());
         assert!(self.sbox_gates.is_empty());
+        assert!(self.mds_gates.is_empty());
         assert_eq!(state[0].unwrap(), outputs[0]);
         Ok(())
     }
