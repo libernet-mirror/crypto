@@ -416,7 +416,47 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn test_hash1() {
+    fn test_hash_t3_1() {
+        assert_eq!(
+            hash_t3(&[42.into()]),
+            parse_scalar("0x5cc740e0dc958ca8f36dc7dfb606caa67e93866b599ded1864b0028c6ded8936")
+        );
+    }
+
+    #[test]
+    fn test_hash_t3_2() {
+        assert_eq!(
+            hash_t3(&[1.into(), 2.into()]),
+            parse_scalar("0x591e00d609149c3a82adc2ef3b4209ff7a558de82ccbd0a0944d479f76185d2f")
+        );
+    }
+
+    #[test]
+    fn test_hash_t3_3() {
+        assert_eq!(
+            hash_t3(&[3.into(), 4.into(), 5.into()]),
+            parse_scalar("0x56bed0ed7205eb1caaedd73b5b8466da2b22359d986d99f9e22597a129719503")
+        );
+    }
+
+    #[test]
+    fn test_hash_t3_4() {
+        assert_eq!(
+            hash_t3(&[6.into(), 7.into(), 8.into(), 9.into()]),
+            parse_scalar("0x10ab5a769957aa4672694398a5dcc04518ca9ca8341a17fb90997dde0dc008d8")
+        );
+    }
+
+    #[test]
+    fn test_hash_t3_5() {
+        assert_eq!(
+            hash_t3(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
+            parse_scalar("0x1b4c7f689fa7b4e9e1c4229edeeb54b15db471955f027467ddc886438d918344")
+        );
+    }
+
+    #[test]
+    fn test_hash_t4_1() {
         assert_eq!(
             hash_t4(&[42.into()]),
             parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c")
@@ -424,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hash2() {
+    fn test_hash_t4_2() {
         assert_eq!(
             hash_t4(&[1.into(), 2.into()]),
             parse_scalar("0x520651bc5804254d3306d30c7e3242e00f527bb7f39aedb7f828e346299bd91c")
@@ -432,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hash3() {
+    fn test_hash_t4_3() {
         assert_eq!(
             hash_t4(&[3.into(), 4.into(), 5.into()]),
             parse_scalar("0x1a9f84b2d90c7ec4efb7e8c38efddad5983245c1132434bb94c74d19eb04cb3a")
@@ -440,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hash4() {
+    fn test_hash_t4_4() {
         assert_eq!(
             hash_t4(&[6.into(), 7.into(), 8.into(), 9.into()]),
             parse_scalar("0x5497afdc8bc505782b08a63601eec9fa0e4037e61d06f453edff9a8ca1991b76")
@@ -448,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hash5() {
+    fn test_hash_t4_5() {
         assert_eq!(
             hash_t4(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
             parse_scalar("0x0c8f1b5e59a0120bda56f3e28b2558f3541f2fc0a421418081b071dd30e89a3f")
