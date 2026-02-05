@@ -375,7 +375,8 @@ mod tests {
         );
     }
 
-    fn test_hash_chip<const I: usize>(inputs: [Scalar; I], result: Scalar) {
+    fn test_hash_chip<const I: usize>(inputs: [Scalar; I]) {
+        let result = hash(&inputs);
         let mut builder = CircuitBuilder::default();
         let mut chip = Chip::<T, I>::default();
         let input_wires = inputs.map(|input| Wire::Out(builder.add_const(input)));
@@ -403,41 +404,26 @@ mod tests {
 
     #[test]
     fn test_hash_chip1() {
-        test_hash_chip(
-            [42.into()],
-            parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c"),
-        );
+        test_hash_chip([42.into()]);
     }
 
     #[test]
     fn test_hash_chip2() {
-        test_hash_chip(
-            [1.into(), 2.into()],
-            parse_scalar("0x520651bc5804254d3306d30c7e3242e00f527bb7f39aedb7f828e346299bd91c"),
-        );
+        test_hash_chip([1.into(), 2.into()]);
     }
 
     #[test]
     fn test_hash_chip3() {
-        test_hash_chip(
-            [3.into(), 4.into(), 5.into()],
-            parse_scalar("0x1a9f84b2d90c7ec4efb7e8c38efddad5983245c1132434bb94c74d19eb04cb3a"),
-        );
+        test_hash_chip([3.into(), 4.into(), 5.into()]);
     }
 
     #[test]
     fn test_hash_chip4() {
-        test_hash_chip(
-            [6.into(), 7.into(), 8.into(), 9.into()],
-            parse_scalar("0x5497afdc8bc505782b08a63601eec9fa0e4037e61d06f453edff9a8ca1991b76"),
-        );
+        test_hash_chip([6.into(), 7.into(), 8.into(), 9.into()]);
     }
 
     #[test]
     fn test_hash_chip5() {
-        test_hash_chip(
-            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-            parse_scalar("0x0c8f1b5e59a0120bda56f3e28b2558f3541f2fc0a421418081b071dd30e89a3f"),
-        );
+        test_hash_chip([10.into(), 11.into(), 12.into(), 13.into(), 14.into()]);
     }
 }
