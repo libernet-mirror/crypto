@@ -139,6 +139,33 @@ impl WirePartitioning {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct GateSet {
+    gates: Vec<u32>,
+    index: usize,
+}
+
+impl GateSet {
+    pub fn count(&self) -> usize {
+        self.gates.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        assert!(self.index <= self.gates.len());
+        self.index == self.gates.len()
+    }
+
+    pub fn push(&mut self, gate: u32) {
+        self.gates.push(gate);
+    }
+
+    pub fn pop(&mut self) -> u32 {
+        let gate = self.gates[self.index];
+        self.index += 1;
+        gate
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Witness {
     size: usize,
@@ -865,7 +892,13 @@ impl CompressedCircuit {
 
 pub trait Chip<const I: usize, const O: usize> {
     fn build(&mut self, builder: &mut CircuitBuilder, inputs: [Wire; I]) -> Result<[Wire; O]>;
-    fn witness(&self, witness: &mut Witness, inputs: [Wire; I], outputs: [Wire; O]) -> Result<()>;
+
+    fn witness(
+        &mut self,
+        witness: &mut Witness,
+        inputs: [Wire; I],
+        outputs: [Wire; O],
+    ) -> Result<()>;
 }
 
 #[cfg(test)]

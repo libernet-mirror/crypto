@@ -1,4 +1,4 @@
-use crate::plonk::{Chip as PlonkChip, CircuitBuilder, Wire, Witness};
+use crate::plonk::{Chip as PlonkChip, CircuitBuilder, GateSet, Wire, Witness};
 use anyhow::Result;
 use blstrs::Scalar;
 use ff::Field;
@@ -96,14 +96,14 @@ pub fn hash(inputs: &[Scalar]) -> Scalar {
 /// parameters).
 #[derive(Debug, Default)]
 pub struct Chip<const T: usize, const I: usize> {
-    state_init_gates: Vec<u32>,
-    absorption_gates: Vec<u32>,
-    arc_gates: Vec<u32>,
-    sbox_gates: Vec<u32>,
+    state_init_gates: GateSet,
+    absorption_gates: GateSet,
+    arc_gates: GateSet,
+    sbox_gates: GateSet,
 }
 
 impl<const T: usize, const I: usize> Chip<T, I> {
-    fn absorb(
+    fn build_absorb(
         &mut self,
         builder: &mut CircuitBuilder,
         state: &mut [Option<Wire>; T],
@@ -130,7 +130,26 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         }
     }
 
-    fn sbox(&mut self, builder: &mut CircuitBuilder, wire: Wire) -> Wire {
+    fn witness_absorb(
+        &mut self,
+        witness: &mut Witness,
+        state: &mut [Option<Wire>; T],
+        chunk: &[Wire],
+    ) {
+        for i in 0..chunk.len() {
+            state[i] = Some(match state[i] {
+                Some(wire) => witness.add(self.absorption_gates.pop(), wire, chunk[i]),
+                None => chunk[i],
+            });
+        }
+        for i in 0..T {
+            if state[i].is_none() {
+                state[i] = Some(witness.assert_constant(self.state_init_gates.pop(), Scalar::ZERO));
+            }
+        }
+    }
+
+    fn build_sbox(&mut self, builder: &mut CircuitBuilder, wire: Wire) -> Wire {
         let gate = builder.add_mul();
         self.sbox_gates.push(gate);
         builder.connect(Wire::LeftIn(gate), wire);
@@ -148,7 +167,11 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         Wire::Out(gate)
     }
 
-    fn mds4(&mut self, builder: &mut CircuitBuilder, state: &mut [Option<Wire>; T]) {
+    fn witness_sbox(&mut self, witness: &mut Witness, wire: Wire) -> Wire {
+        witness.mul(self.sbox_gates.pop(), wire, wire)
+    }
+
+    fn build_mds4(&mut self, builder: &mut CircuitBuilder, state: &mut [Option<Wire>; T]) {
         let mds = &*MDS_MATRIX;
         let mut new_state: [Option<Wire>; T] = [None; T];
         for i in 0..4 {
@@ -168,14 +191,30 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         *state = new_state;
     }
 
-    fn mds(&mut self, builder: &mut CircuitBuilder, state: &mut [Option<Wire>; T]) {
+    fn witness_mds4(&mut self, witness: &mut Witness, state: &mut [Option<Wire>; T]) {
+        let mds = &*MDS_MATRIX;
+        let mut new_state: [Option<Wire>; T] = [None; T];
+        for i in 0..4 {
+            // TODO
+        }
+        *state = new_state;
+    }
+
+    fn build_mds(&mut self, builder: &mut CircuitBuilder, state: &mut [Option<Wire>; T]) {
         match T {
-            4 => self.mds4(builder, state),
+            4 => self.build_mds4(builder, state),
             _ => unimplemented!(),
         }
     }
 
-    fn round(
+    fn witness_mds(&mut self, witness: &mut Witness, state: &mut [Option<Wire>; T]) {
+        match T {
+            4 => self.witness_mds4(witness, state),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn build_round(
         &mut self,
         builder: &mut CircuitBuilder,
         state: &mut [Option<Wire>; T],
@@ -189,14 +228,37 @@ impl<const T: usize, const I: usize> Chip<T, I> {
             builder.connect(Wire::LeftIn(gate), state[i].unwrap());
         }
 
-        state[0] = Some(self.sbox(builder, state[0].unwrap()));
+        state[0] = Some(self.build_sbox(builder, state[0].unwrap()));
         if full {
             for i in 1..T {
-                state[i] = Some(self.sbox(builder, state[i].unwrap()));
+                state[i] = Some(self.build_sbox(builder, state[i].unwrap()));
             }
         }
 
-        self.mds(builder, state);
+        self.build_mds(builder, state);
+    }
+
+    fn witness_round(
+        &mut self,
+        witness: &mut Witness,
+        state: &mut [Option<Wire>; T],
+        r: usize,
+        full: bool,
+    ) {
+        let c = &*ROUND_CONSTANTS;
+        for i in 0..T {
+            state[i] =
+                Some(witness.add_const(self.arc_gates.pop(), state[i].unwrap(), c[r * T + i]));
+        }
+
+        state[0] = Some(self.witness_sbox(witness, state[0].unwrap()));
+        if full {
+            for i in 1..T {
+                state[i] = Some(self.witness_sbox(witness, state[i].unwrap()));
+            }
+        }
+
+        self.witness_mds(witness, state);
     }
 }
 
@@ -204,9 +266,9 @@ impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I> {
     fn build(&mut self, builder: &mut CircuitBuilder, inputs: [Wire; I]) -> Result<[Wire; 1]> {
         let mut state: [Option<Wire>; T] = [None; T];
         for chunk in inputs.chunks(T - 1) {
-            self.absorb(builder, &mut state, chunk);
+            self.build_absorb(builder, &mut state, chunk);
             for i in 0..NUM_ROUNDS {
-                self.round(
+                self.build_round(
                     builder,
                     &mut state,
                     i,
@@ -218,67 +280,29 @@ impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I> {
         Ok([state[0].unwrap()])
     }
 
-    fn witness(&self, witness: &mut Witness, inputs: [Wire; I], outputs: [Wire; 1]) -> Result<()> {
-        let c = &*ROUND_CONSTANTS;
-        let mds = &*MDS_MATRIX;
-
-        let mut absorption_gate_index = 0;
-        let mut state_init_gate_index = 0;
-        let mut arc_gate_index = 0;
-        let mut sbox_gate_index = 0;
-
+    fn witness(
+        &mut self,
+        witness: &mut Witness,
+        inputs: [Wire; I],
+        outputs: [Wire; 1],
+    ) -> Result<()> {
         let mut state: [Option<Wire>; T] = [None; T];
-
         for chunk in inputs.chunks(T - 1) {
-            // Phase 1: absorb.
-            for i in 0..chunk.len() {
-                state[i] = Some(match state[i] {
-                    Some(wire) => {
-                        let gate = self.absorption_gates[absorption_gate_index];
-                        absorption_gate_index += 1;
-                        witness.add(gate, wire, chunk[i])
-                    }
-                    None => chunk[i],
-                });
+            self.witness_absorb(witness, &mut state, chunk);
+            for i in 0..NUM_ROUNDS {
+                self.witness_round(
+                    witness,
+                    &mut state,
+                    i, /*full=*/
+                    i < NUM_FULL_ROUNDS_START || i >= NUM_FULL_ROUNDS_START + NUM_PARTIAL_ROUNDS,
+                );
             }
-            for i in 0..T {
-                if state[i].is_none() {
-                    let gate = self.state_init_gates[state_init_gate_index];
-                    state_init_gate_index += 1;
-                    state[i] = Some(witness.assert_constant(gate, Scalar::ZERO));
-                }
-            }
-
-            // Phase 2: rounds.
-            for r in 0..NUM_ROUNDS {
-                // Phase 2.1: ARC.
-                for i in 0..T {
-                    let gate = self.arc_gates[arc_gate_index];
-                    arc_gate_index += 1;
-                    state[i] = Some(witness.add_const(gate, state[i].unwrap(), c[r * T + i]));
-                }
-
-                // Phase 2.2: S-Box.
-                let gate = self.sbox_gates[sbox_gate_index];
-                sbox_gate_index += 1;
-                state[0] = Some(witness.mul(gate, state[0].unwrap(), state[0].unwrap()));
-                if r < NUM_FULL_ROUNDS_START || r >= NUM_FULL_ROUNDS_START + NUM_PARTIAL_ROUNDS {
-                    for i in 1..T {
-                        let gate = self.sbox_gates[sbox_gate_index];
-                        sbox_gate_index += 1;
-                        state[i] = Some(witness.mul(gate, state[i].unwrap(), state[i].unwrap()));
-                    }
-                }
-
-                // Phase 2.3: MDS
-
-                // TODO
-            }
-
-            // Phase 3: squeeze.
-            assert_eq!(state[0].unwrap(), outputs[0]);
         }
-
+        assert!(self.state_init_gates.is_empty());
+        assert!(self.absorption_gates.is_empty());
+        assert!(self.arc_gates.is_empty());
+        assert!(self.sbox_gates.is_empty());
+        assert_eq!(state[0].unwrap(), outputs[0]);
         Ok(())
     }
 }
