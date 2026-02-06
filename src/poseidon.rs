@@ -335,10 +335,10 @@ impl<const T: usize, const I: usize> Chip<T, I> {
                 let out1 = Wire::Out(gate1);
                 witness.set(out1, mds[i * 3 + 0] * state[0] + mds[i * 3 + 1] * state[1]);
                 let gate2 = self.mds_gates.pop();
-                witness.copy(Wire::LeftIn(gate2), out1);
+                let out1 = witness.copy(out1, Wire::LeftIn(gate2));
                 witness.set(Wire::RightIn(gate2), state[2]);
                 let out2 = Wire::Out(gate2);
-                witness.set(out2, witness.get(out1) + mds[i * 3 + 2] * state[2]);
+                witness.set(out2, out1 + mds[i * 3 + 2] * state[2]);
                 new_state[i] = Some(out2);
             }
             new_state
