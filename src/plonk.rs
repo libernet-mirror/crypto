@@ -226,7 +226,7 @@ impl Witness {
         out
     }
 
-    pub fn add_const(&mut self, gate: u32, lhs: Wire, rhs: Scalar) -> Wire {
+    pub fn add_const_gate(&mut self, gate: u32, lhs: Wire, rhs: Scalar) -> Wire {
         let lhs = self.copy(lhs, Wire::LeftIn(gate));
         let out = Wire::Out(gate);
         self.set(out, lhs + rhs);
@@ -290,19 +290,32 @@ impl CircuitBuilder {
         index
     }
 
-    pub fn add_const(&mut self, value: Scalar) -> u32 {
+    pub fn add_const_gate(&mut self, value: Scalar) -> u32 {
         self.add_gate(0.into(), 0.into(), 1.into(), 0.into(), -value)
     }
 
-    pub fn add_sum(&mut self) -> u32 {
+    pub fn add_sum_gate(&mut self) -> u32 {
         self.add_gate(1.into(), 1.into(), -Scalar::from(1), 0.into(), 0.into())
     }
 
-    pub fn add_sum_with_const(&mut self, c: Scalar) -> u32 {
+    pub fn connect_sum_gate(&mut self, lhs: Wire, rhs: Wire) -> u32 {
+        let gate = self.add_sum_gate();
+        self.connect(lhs, Wire::LeftIn(gate));
+        self.connect(rhs, Wire::RightIn(gate));
+        gate
+    }
+
+    pub fn add_sum_with_const_gate(&mut self, c: Scalar) -> u32 {
         self.add_gate(1.into(), 0.into(), -Scalar::from(1), 0.into(), c)
     }
 
-    pub fn add_sub(&mut self) -> u32 {
+    pub fn connect_sum_with_const_gate(&mut self, lhs: Wire, c: Scalar) -> u32 {
+        let gate = self.add_sum_with_const_gate(c);
+        self.connect(lhs, Wire::LeftIn(gate));
+        gate
+    }
+
+    pub fn add_sub_gate(&mut self) -> u32 {
         self.add_gate(
             1.into(),
             -Scalar::from(1),
@@ -312,29 +325,67 @@ impl CircuitBuilder {
         )
     }
 
-    pub fn add_sub_const(&mut self, c: Scalar) -> u32 {
+    pub fn connect_sub_gate(&mut self, lhs: Wire, rhs: Wire) -> u32 {
+        let gate = self.add_sub_gate();
+        self.connect(lhs, Wire::LeftIn(gate));
+        self.connect(rhs, Wire::RightIn(gate));
+        gate
+    }
+
+    pub fn add_sub_const_gate(&mut self, c: Scalar) -> u32 {
         self.add_gate(1.into(), 0.into(), -Scalar::from(1), 0.into(), -c)
     }
 
-    pub fn add_sub_from_const(&mut self, c: Scalar) -> u32 {
+    pub fn connect_sub_const_gate(&mut self, lhs: Wire, c: Scalar) -> u32 {
+        let gate = self.add_sub_const_gate(c);
+        self.connect(lhs, Wire::LeftIn(gate));
+        gate
+    }
+
+    pub fn add_sub_from_const_gate(&mut self, c: Scalar) -> u32 {
         self.add_gate(0.into(), -Scalar::from(1), -Scalar::from(1), 0.into(), c)
     }
 
-    pub fn add_mul(&mut self) -> u32 {
+    pub fn connect_sub_from_const_gate(&mut self, c: Scalar, rhs: Wire) -> u32 {
+        let gate = self.add_sub_from_const_gate(c);
+        self.connect(rhs, Wire::RightIn(gate));
+        gate
+    }
+
+    pub fn add_mul_gate(&mut self) -> u32 {
         self.add_gate(0.into(), 0.into(), -Scalar::from(1), 1.into(), 0.into())
     }
 
-    pub fn add_mul_by_const(&mut self, c: Scalar) -> u32 {
-        self.add_gate(0.into(), 0.into(), -Scalar::from(1), c, 0.into())
+    pub fn connect_mul_gate(&mut self, lhs: Wire, rhs: Wire) -> u32 {
+        let gate = self.add_mul_gate();
+        self.connect(lhs, Wire::LeftIn(gate));
+        self.connect(rhs, Wire::RightIn(gate));
+        gate
     }
 
-    pub fn add_bool_assertion(&mut self) -> u32 {
+    pub fn add_mul_by_const_gate(&mut self, c: Scalar) -> u32 {
+        self.add_gate(c, 0.into(), -Scalar::from(1), 0.into(), 0.into())
+    }
+
+    pub fn connect_mul_by_const_gate(&mut self, lhs: Wire, c: Scalar) -> u32 {
+        let gate = self.add_mul_by_const_gate(c);
+        self.connect(lhs, Wire::LeftIn(gate));
+        gate
+    }
+
+    pub fn add_bool_assertion_gate(&mut self) -> u32 {
         let gate = self.add_gate(1.into(), 0.into(), 0.into(), -Scalar::from(1), 0.into());
         self.connect(Wire::LeftIn(gate), Wire::RightIn(gate));
         gate
     }
 
-    pub fn add_not(&mut self) -> u32 {
+    pub fn connect_bool_assertion_gate(&mut self, input: Wire) -> u32 {
+        let gate = self.add_bool_assertion_gate();
+        self.connect(input, Wire::LeftIn(gate));
+        gate
+    }
+
+    pub fn add_not_gate(&mut self) -> u32 {
         let gate = self.add_gate(
             -Scalar::from(1),
             0.into(),
@@ -346,11 +397,11 @@ impl CircuitBuilder {
         gate
     }
 
-    pub fn add_and(&mut self) -> u32 {
+    pub fn add_and_gate(&mut self) -> u32 {
         self.add_gate(0.into(), 0.into(), -Scalar::from(1), 1.into(), 0.into())
     }
 
-    pub fn add_or(&mut self) -> u32 {
+    pub fn add_or_gate(&mut self) -> u32 {
         self.add_gate(
             1.into(),
             1.into(),
@@ -360,7 +411,7 @@ impl CircuitBuilder {
         )
     }
 
-    pub fn add_xor(&mut self) -> u32 {
+    pub fn add_xor_gate(&mut self) -> u32 {
         self.add_gate(
             1.into(),
             1.into(),
@@ -1057,7 +1108,7 @@ mod tests {
         let mut witness = Witness::new(1);
         let lhs = Wire::LeftIn(0);
         witness.set(lhs, 12.into());
-        let wire = witness.add_const(0, lhs, 34.into());
+        let wire = witness.add_const_gate(0, lhs, 34.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 46.into());
     }
@@ -1167,15 +1218,15 @@ mod tests {
     #[test]
     fn test_circuit1_with_helpers() {
         let mut builder = CircuitBuilder::default();
-        let gate1 = builder.add_mul();
+        let gate1 = builder.add_mul_gate();
         builder.connect(Wire::LeftIn(gate1), Wire::RightIn(gate1));
-        let gate2 = builder.add_mul();
+        let gate2 = builder.add_mul_gate();
         builder.connect(Wire::LeftIn(gate2), Wire::Out(gate1));
         builder.connect(Wire::RightIn(gate2), Wire::LeftIn(gate1));
-        let gate3 = builder.add_sum();
+        let gate3 = builder.add_sum_gate();
         builder.connect(Wire::LeftIn(gate3), Wire::LeftIn(gate1));
         builder.connect(Wire::RightIn(gate3), Wire::Out(gate2));
-        let gate4 = builder.add_sum();
+        let gate4 = builder.add_sum_gate();
         builder.connect(Wire::LeftIn(gate4), Wire::Out(gate3));
         builder.declare_public_inputs([Wire::RightIn(gate4), Wire::Out(gate4)]);
         let circuit = builder.build();
@@ -1298,7 +1349,7 @@ mod tests {
     #[test]
     fn test_const_gate() {
         let mut builder = CircuitBuilder::default();
-        builder.add_const(42.into());
+        builder.add_const_gate(42.into());
         let circuit = builder.build();
         assert!(test_gate(&circuit, 0, 0, 41).is_err());
         assert!(test_gate(&circuit, 0, 0, 42).is_ok());
@@ -1308,7 +1359,7 @@ mod tests {
     #[test]
     fn test_sum_gate() {
         let mut builder = CircuitBuilder::default();
-        builder.add_sum();
+        builder.add_sum_gate();
         let circuit = builder.build();
         assert!(test_gate(&circuit, 12, 34, 46).is_ok());
         assert!(test_gate(&circuit, 34, 12, 46).is_ok());
@@ -1321,7 +1372,7 @@ mod tests {
     #[test]
     fn test_sum_with_const_gate1() {
         let mut builder = CircuitBuilder::default();
-        builder.add_sum_with_const(12.into());
+        builder.add_sum_with_const_gate(12.into());
         let circuit = builder.build();
         assert!(test_gate(&circuit, 34, 0, 46).is_ok());
         assert!(test_gate(&circuit, 56, 0, 68).is_ok());
@@ -1332,7 +1383,7 @@ mod tests {
     #[test]
     fn test_sum_with_const_gate2() {
         let mut builder = CircuitBuilder::default();
-        builder.add_sum_with_const(34.into());
+        builder.add_sum_with_const_gate(34.into());
         let circuit = builder.build();
         assert!(test_gate(&circuit, 34, 0, 68).is_ok());
         assert!(test_gate(&circuit, 56, 0, 90).is_ok());
@@ -1343,7 +1394,7 @@ mod tests {
     #[test]
     fn test_sub_gate() {
         let mut builder = CircuitBuilder::default();
-        builder.add_sub();
+        builder.add_sub_gate();
         let circuit = builder.build();
         assert!(test_gate(&circuit, 34, 12, 22).is_ok());
         assert!(test_gate(&circuit, 56, 12, 44).is_ok());
@@ -1355,7 +1406,7 @@ mod tests {
     #[test]
     fn test_sub_const_gate1() {
         let mut builder = CircuitBuilder::default();
-        builder.add_sub_const(12.into());
+        builder.add_sub_const_gate(12.into());
         let circuit = builder.build();
         assert!(test_gate(&circuit, 34, 0, 22).is_ok());
         assert!(test_gate(&circuit, 56, 0, 44).is_ok());
@@ -1366,7 +1417,7 @@ mod tests {
     #[test]
     fn test_sub_const_gate2() {
         let mut builder = CircuitBuilder::default();
-        builder.add_sub_const(34.into());
+        builder.add_sub_const_gate(34.into());
         let circuit = builder.build();
         assert!(test_gate(&circuit, 34, 0, 0).is_ok());
         assert!(test_gate(&circuit, 56, 0, 22).is_ok());
@@ -1377,7 +1428,7 @@ mod tests {
     #[test]
     fn test_mul_gate() {
         let mut builder = CircuitBuilder::default();
-        builder.add_mul();
+        builder.add_mul_gate();
         let circuit = builder.build();
         assert!(test_gate(&circuit, 12, 34, 408).is_ok());
         assert!(test_gate(&circuit, 34, 12, 408).is_ok());
@@ -1390,7 +1441,7 @@ mod tests {
     #[test]
     fn test_mul_by_const_gate1() {
         let mut builder = CircuitBuilder::default();
-        builder.add_mul_by_const(12.into());
+        builder.add_mul_by_const_gate(12.into());
         let circuit = builder.build();
         assert!(test_gate(&circuit, 12, 1, 144).is_ok());
         assert!(test_gate(&circuit, 34, 1, 408).is_ok());
@@ -1401,7 +1452,7 @@ mod tests {
     #[test]
     fn test_mul_by_const_gate2() {
         let mut builder = CircuitBuilder::default();
-        builder.add_mul_by_const(34.into());
+        builder.add_mul_by_const_gate(34.into());
         let circuit = builder.build();
         assert!(test_gate(&circuit, 12, 1, 408).is_ok());
         assert!(test_gate(&circuit, 34, 1, 1156).is_ok());
@@ -1412,7 +1463,7 @@ mod tests {
     #[test]
     fn test_bool_assertion_gate() {
         let mut builder = CircuitBuilder::default();
-        builder.add_bool_assertion();
+        builder.add_bool_assertion_gate();
         let circuit = builder.build();
         assert!(test_gate(&circuit, 0, 0, 0).is_ok());
         assert!(test_gate(&circuit, 0, 1, 0).is_err());
@@ -1426,7 +1477,7 @@ mod tests {
     #[test]
     fn test_not_gate() {
         let mut builder = CircuitBuilder::default();
-        builder.add_not();
+        builder.add_not_gate();
         let circuit = builder.build();
         assert!(test_gate(&circuit, 0, 0, 0).is_err());
         assert!(test_gate(&circuit, 0, 0, 1).is_ok());
@@ -1441,7 +1492,7 @@ mod tests {
     #[test]
     fn test_and_gate() {
         let mut builder = CircuitBuilder::default();
-        builder.add_and();
+        builder.add_and_gate();
         let circuit = builder.build();
         assert!(test_gate(&circuit, 0, 0, 0).is_ok());
         assert!(test_gate(&circuit, 0, 0, 1).is_err());
@@ -1456,7 +1507,7 @@ mod tests {
     #[test]
     fn test_or_gate() {
         let mut builder = CircuitBuilder::default();
-        builder.add_or();
+        builder.add_or_gate();
         let circuit = builder.build();
         assert!(test_gate(&circuit, 0, 0, 0).is_ok());
         assert!(test_gate(&circuit, 0, 0, 1).is_err());
@@ -1471,7 +1522,7 @@ mod tests {
     #[test]
     fn test_xor_gate() {
         let mut builder = CircuitBuilder::default();
-        builder.add_xor();
+        builder.add_xor_gate();
         let circuit = builder.build();
         assert!(test_gate(&circuit, 0, 0, 0).is_ok());
         assert!(test_gate(&circuit, 0, 0, 1).is_err());
@@ -1489,17 +1540,17 @@ mod tests {
     /// padding.
     fn build_uneven_size_circuit() -> (Circuit, u32) {
         let mut builder = CircuitBuilder::default();
-        let gate1 = builder.add_mul();
+        let gate1 = builder.add_mul_gate();
         builder.connect(Wire::LeftIn(gate1), Wire::RightIn(gate1));
-        let gate2 = builder.add_mul();
+        let gate2 = builder.add_mul_gate();
         builder.connect(Wire::LeftIn(gate2), Wire::Out(gate1));
         builder.connect(Wire::RightIn(gate2), Wire::LeftIn(gate1));
-        let gate3 = builder.add_mul();
+        let gate3 = builder.add_mul_gate();
         builder.connect(Wire::LeftIn(gate3), Wire::LeftIn(gate1));
-        let gate4 = builder.add_sum();
+        let gate4 = builder.add_sum_gate();
         builder.connect(Wire::LeftIn(gate4), Wire::Out(gate3));
         builder.connect(Wire::RightIn(gate4), Wire::Out(gate2));
-        let gate5 = builder.add_sum();
+        let gate5 = builder.add_sum_gate();
         builder.connect(Wire::RightIn(gate5), Wire::Out(gate4));
         builder.declare_public_inputs([Wire::LeftIn(gate5), Wire::Out(gate5)]);
         (builder.build(), gate5)
