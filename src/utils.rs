@@ -175,7 +175,7 @@ pub fn shuffle<T>(elements: &mut [T]) {
 }
 
 pub fn poseidon_hash<'a, I: IntoIterator<Item = &'a Scalar>>(values: I) -> Scalar {
-    poseidon::hash(
+    poseidon::hash_t4(
         values
             .into_iter()
             .map(|value| *value)
