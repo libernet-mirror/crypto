@@ -34,8 +34,20 @@ fn map_err<E: Into<anyhow::Error>>(error: E) -> JsValue {
 }
 
 #[wasm_bindgen]
-pub fn poseidon_hash(inputs: Vec<String>) -> Result<String, JsValue> {
-    Ok(utils::format_scalar(utils::poseidon_hash(
+pub fn poseidon_hash_t3(inputs: Vec<String>) -> Result<String, JsValue> {
+    Ok(utils::format_scalar(poseidon::hash_t3(
+        inputs
+            .iter()
+            .map(|input| utils::parse_scalar(input.as_str()))
+            .collect::<anyhow::Result<Vec<Scalar>>>()
+            .map_err(map_err)?
+            .as_slice(),
+    )))
+}
+
+#[wasm_bindgen]
+pub fn poseidon_hash_t4(inputs: Vec<String>) -> Result<String, JsValue> {
+    Ok(utils::format_scalar(poseidon::hash_t4(
         inputs
             .iter()
             .map(|input| utils::parse_scalar(input.as_str()))
@@ -498,9 +510,21 @@ mod tests {
     }
 
     #[test]
-    fn test_poseidon_hash() {
+    fn test_poseidon_hash_t3() {
         assert_eq!(
-            poseidon_hash(vec![
+            poseidon_hash_t3(vec![
+                "0x255144e621ed2a6e5717c3164e8cf146b4a757369db8ea63c739843ef1c16364".to_string(),
+                "0x638a49ba49c18944c21827cbab35b970ef3763a4639ec2d30eaf1fc8ee6da2ec".to_string()
+            ])
+            .unwrap(),
+            "0x4f5f56ea0562571a77e253382bfbaed95f23e810e3bfe94f9788699851440cb8"
+        );
+    }
+
+    #[test]
+    fn test_poseidon_hash_t4() {
+        assert_eq!(
+            poseidon_hash_t4(vec![
                 "0x255144e621ed2a6e5717c3164e8cf146b4a757369db8ea63c739843ef1c16364".to_string(),
                 "0x638a49ba49c18944c21827cbab35b970ef3763a4639ec2d30eaf1fc8ee6da2ec".to_string()
             ])
@@ -523,9 +547,9 @@ mod tests {
                 let bit = xits::and1(key);
                 key = xits::shr1(key);
                 if bit == 0.into() {
-                    hash = utils::poseidon_hash(&[hash, sister_hash]);
+                    hash = poseidon::hash_t3(&[hash, sister_hash]);
                 } else if bit == 1.into() {
-                    hash = utils::poseidon_hash(&[sister_hash, hash]);
+                    hash = poseidon::hash_t3(&[sister_hash, hash]);
                 } else {
                     unreachable!();
                 }
@@ -560,11 +584,11 @@ mod tests {
                 let trit = xits::mod3(key);
                 key = xits::div3(key);
                 if trit == 0.into() {
-                    hash = utils::poseidon_hash(&[hash, sister1, sister2]);
+                    hash = poseidon::hash_t4(&[hash, sister1, sister2]);
                 } else if trit == 1.into() {
-                    hash = utils::poseidon_hash(&[sister1, hash, sister2]);
+                    hash = poseidon::hash_t4(&[sister1, hash, sister2]);
                 } else if trit == 2.into() {
-                    hash = utils::poseidon_hash(&[sister1, sister2, hash]);
+                    hash = poseidon::hash_t4(&[sister1, sister2, hash]);
                 } else {
                     unreachable!();
                 }

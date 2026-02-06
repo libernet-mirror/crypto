@@ -1,4 +1,3 @@
-use crate::poseidon;
 use anyhow::{Context, Result, anyhow};
 use blstrs::{G1Affine, G2Affine, Scalar};
 use curve25519_dalek::{
@@ -174,19 +173,7 @@ pub fn shuffle<T>(elements: &mut [T]) {
     }
 }
 
-pub fn poseidon_hash<'a, I: IntoIterator<Item = &'a Scalar>>(values: I) -> Scalar {
-    poseidon::hash_t4(
-        values
-            .into_iter()
-            .map(|value| *value)
-            .collect::<Vec<Scalar>>()
-            .as_slice(),
-    )
-}
-
-/// Makes a type hashable with Poseidon (using `P128Pow5T3`).
-///
-/// Implementors can use the `poseidon_hash` function above.
+/// Makes a type hashable with Poseidon.
 pub trait PoseidonHash {
     fn poseidon_hash(&self) -> Scalar;
 }
@@ -400,17 +387,5 @@ mod tests {
         let point = Point25519::mul_base(&get_random_scalar_25519()).into();
         let parsed = parse_point_25519(format_point_25519(point).as_str()).unwrap();
         assert_eq!(point, parsed);
-    }
-
-    #[test]
-    fn test_poseidon_hash() {
-        assert_eq!(
-            poseidon_hash(&[parse_scalar(
-                "0x197cb2084240e63117ae20eafb7de2433eb9bd6b4fdc78d0d949f042724306fd"
-            )
-            .unwrap()]),
-            parse_scalar("0x07245d3be6b0bffb51e5ea4dc10d94bc1e3edb10792be35c99390054f7952ff3")
-                .unwrap()
-        );
     }
 }

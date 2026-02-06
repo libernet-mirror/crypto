@@ -1,5 +1,6 @@
 use crate::kzg;
 use crate::poly::Polynomial;
+use crate::poseidon;
 use crate::utils;
 use anyhow::{Context, Result, anyhow};
 use blstrs::{G1Affine, G1Projective, Scalar};
@@ -598,15 +599,15 @@ impl Circuit {
     }
 
     fn get_challenges(witness_commitments: &[G1Affine]) -> (Scalar, Scalar, Scalar, Scalar) {
-        let witness_hash = utils::poseidon_hash(&[
+        let witness_hash = poseidon::hash_t4(&[
             witness_hash_dst(),
             utils::hash_g1_to_scalar(witness_commitments[0]),
             utils::hash_g1_to_scalar(witness_commitments[1]),
             utils::hash_g1_to_scalar(witness_commitments[2]),
         ]);
-        let alpha = utils::poseidon_hash(&[alpha_challenge_dst(), witness_hash, 1.into()]);
-        let beta = utils::poseidon_hash(&[beta_challenge_dst(), witness_hash, 2.into()]);
-        let gamma = utils::poseidon_hash(&[gamma_challenge_dst(), witness_hash, 3.into()]);
+        let alpha = poseidon::hash_t4(&[alpha_challenge_dst(), witness_hash, 1.into()]);
+        let beta = poseidon::hash_t4(&[beta_challenge_dst(), witness_hash, 2.into()]);
+        let gamma = poseidon::hash_t4(&[gamma_challenge_dst(), witness_hash, 3.into()]);
         (witness_hash, alpha, beta, gamma)
     }
 
