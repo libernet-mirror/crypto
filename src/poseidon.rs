@@ -200,10 +200,8 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         for i in 0..chunk.len() {
             state[i] = Some(match state[i] {
                 Some(wire) => {
-                    let gate = builder.add_sum();
+                    let gate = builder.connect_sum_gate(wire, chunk[i]);
                     self.absorption_gates.push(gate);
-                    builder.connect(Wire::LeftIn(gate), wire);
-                    builder.connect(Wire::RightIn(gate), chunk[i]);
                     Wire::Out(gate)
                 }
                 None => chunk[i],
@@ -211,7 +209,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         }
         for i in 0..T {
             if state[i].is_none() {
-                let gate = builder.add_const(Scalar::ZERO);
+                let gate = builder.add_const_gate(Scalar::ZERO);
                 self.state_init_gates.push(gate);
                 state[i] = Some(Wire::Out(gate));
             }
@@ -238,20 +236,14 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     }
 
     fn build_sbox(&mut self, builder: &mut CircuitBuilder, wire: Wire) -> Wire {
-        let gate = builder.add_mul();
+        let gate = builder.connect_mul_gate(wire, wire);
         self.sbox_gates.push(gate);
-        builder.connect(Wire::LeftIn(gate), wire);
-        builder.connect(Wire::RightIn(gate), wire);
         let out = Wire::Out(gate);
-        let gate = builder.add_mul();
+        let gate = builder.connect_mul_gate(out, out);
         self.sbox_gates.push(gate);
-        builder.connect(Wire::LeftIn(gate), out);
-        builder.connect(Wire::RightIn(gate), out);
         let out = Wire::Out(gate);
-        let gate = builder.add_mul();
+        let gate = builder.connect_mul_gate(out, wire);
         self.sbox_gates.push(gate);
-        builder.connect(Wire::LeftIn(gate), out);
-        builder.connect(Wire::RightIn(gate), wire);
         Wire::Out(gate)
     }
 
@@ -314,10 +306,8 @@ impl<const T: usize, const I: usize> Chip<T, I> {
             self.mds_gates.push(gate2);
             builder.connect(Wire::LeftIn(gate2), state[2].unwrap());
             builder.connect(Wire::RightIn(gate2), state[3].unwrap());
-            let gate3 = builder.add_sum();
+            let gate3 = builder.connect_sum_gate(Wire::Out(gate1), Wire::Out(gate2));
             self.mds_gates.push(gate3);
-            builder.connect(Wire::LeftIn(gate3), Wire::Out(gate1));
-            builder.connect(Wire::RightIn(gate3), Wire::Out(gate2));
             new_state[i] = Some(Wire::Out(gate3));
         }
         *state = new_state;
@@ -394,9 +384,8 @@ impl<const T: usize, const I: usize> Chip<T, I> {
 
         let c = Constants::<T>::get_round_constants();
         for i in 0..T {
-            let gate = builder.add_sum_with_const(c[r * T + i]);
+            let gate = builder.connect_sum_with_const_gate(state[i].unwrap(), c[r * T + i]);
             self.arc_gates.push(gate);
-            builder.connect(Wire::LeftIn(gate), state[i].unwrap());
             state[i] = Some(Wire::Out(gate));
         }
 
@@ -417,7 +406,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let c = Constants::<T>::get_round_constants();
         for i in 0..T {
             state[i] =
-                Some(witness.add_const(self.arc_gates.pop(), state[i].unwrap(), c[r * T + i]));
+                Some(witness.add_const_gate(self.arc_gates.pop(), state[i].unwrap(), c[r * T + i]));
         }
 
         state[0] = Some(self.witness_sbox(witness, state[0].unwrap()));
@@ -556,7 +545,7 @@ mod tests {
         let result = hash::<T>(&inputs);
         let mut builder = CircuitBuilder::default();
         let mut chip = Chip::<T, I>::default();
-        let input_wires = inputs.map(|input| Wire::Out(builder.add_const(input)));
+        let input_wires = inputs.map(|input| Wire::Out(builder.add_const_gate(input)));
         let result_wire = chip.build(&mut builder, input_wires).unwrap();
         builder.declare_public_inputs(input_wires.into_iter().chain(result_wire.into_iter()));
         let circuit = builder.clone().build();
