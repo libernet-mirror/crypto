@@ -140,13 +140,13 @@ impl WirePartitioning {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct GateSet {
+#[derive(Debug, Default, Clone)]
+struct GateQueue {
     gates: Vec<u32>,
     index: usize,
 }
 
-impl GateSet {
+impl GateQueue {
     pub fn count(&self) -> usize {
         self.gates.len()
     }
@@ -275,11 +275,12 @@ impl Witness {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct CircuitBuilder {
     gates: Vec<GateConstraint>,
     wires: WirePartitioning,
     public_inputs: BTreeSet<Wire>,
+    gate_queue: GateQueue,
 }
 
 impl CircuitBuilder {
@@ -298,6 +299,14 @@ impl CircuitBuilder {
         self.wires.connect(wire1, wire2);
     }
 
+    pub fn push_gate(&mut self, gate: u32) {
+        self.gate_queue.push(gate)
+    }
+
+    pub fn pop_gate(&mut self) -> u32 {
+        self.gate_queue.pop()
+    }
+
     pub fn connect_gate(
         &mut self,
         ql: Scalar,
@@ -307,26 +316,34 @@ impl CircuitBuilder {
         qc: Scalar,
         lhs: Wire,
         rhs: Wire,
-    ) -> u32 {
+    ) -> Wire {
         let gate = self.add_gate(ql, qr, qo, qm, qc);
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_const_gate(&mut self, value: Scalar) -> u32 {
         self.add_gate(0.into(), 0.into(), 1.into(), 0.into(), -value)
     }
 
+    pub fn connect_const_gate(&mut self, value: Scalar) -> Wire {
+        let gate = self.add_const_gate(value);
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
+    }
+
     pub fn add_sum_gate(&mut self) -> u32 {
         self.add_gate(1.into(), 1.into(), -Scalar::from(1), 0.into(), 0.into())
     }
 
-    pub fn connect_sum_gate(&mut self, lhs: Wire, rhs: Wire) -> u32 {
+    pub fn connect_sum_gate(&mut self, lhs: Wire, rhs: Wire) -> Wire {
         let gate = self.add_sum_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_sum_with_const_gate(&mut self, c: Scalar) -> u32 {
@@ -335,10 +352,11 @@ impl CircuitBuilder {
         gate
     }
 
-    pub fn connect_sum_with_const_gate(&mut self, lhs: Wire, c: Scalar) -> u32 {
+    pub fn connect_sum_with_const_gate(&mut self, lhs: Wire, c: Scalar) -> Wire {
         let gate = self.add_sum_with_const_gate(c);
         self.connect(lhs, Wire::LeftIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_sub_gate(&mut self) -> u32 {
@@ -351,11 +369,12 @@ impl CircuitBuilder {
         )
     }
 
-    pub fn connect_sub_gate(&mut self, lhs: Wire, rhs: Wire) -> u32 {
+    pub fn connect_sub_gate(&mut self, lhs: Wire, rhs: Wire) -> Wire {
         let gate = self.add_sub_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_sub_const_gate(&mut self, c: Scalar) -> u32 {
@@ -364,10 +383,11 @@ impl CircuitBuilder {
         gate
     }
 
-    pub fn connect_sub_const_gate(&mut self, lhs: Wire, c: Scalar) -> u32 {
+    pub fn connect_sub_const_gate(&mut self, lhs: Wire, c: Scalar) -> Wire {
         let gate = self.add_sub_const_gate(c);
         self.connect(lhs, Wire::LeftIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_sub_from_const_gate(&mut self, c: Scalar) -> u32 {
@@ -376,21 +396,23 @@ impl CircuitBuilder {
         gate
     }
 
-    pub fn connect_sub_from_const_gate(&mut self, c: Scalar, rhs: Wire) -> u32 {
+    pub fn connect_sub_from_const_gate(&mut self, c: Scalar, rhs: Wire) -> Wire {
         let gate = self.add_sub_from_const_gate(c);
         self.connect(rhs, Wire::RightIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_mul_gate(&mut self) -> u32 {
         self.add_gate(0.into(), 0.into(), -Scalar::from(1), 1.into(), 0.into())
     }
 
-    pub fn connect_mul_gate(&mut self, lhs: Wire, rhs: Wire) -> u32 {
+    pub fn connect_mul_gate(&mut self, lhs: Wire, rhs: Wire) -> Wire {
         let gate = self.add_mul_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_mul_by_const_gate(&mut self, c: Scalar) -> u32 {
@@ -399,10 +421,11 @@ impl CircuitBuilder {
         gate
     }
 
-    pub fn connect_mul_by_const_gate(&mut self, lhs: Wire, c: Scalar) -> u32 {
+    pub fn connect_mul_by_const_gate(&mut self, lhs: Wire, c: Scalar) -> Wire {
         let gate = self.add_mul_by_const_gate(c);
         self.connect(lhs, Wire::LeftIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_bool_assertion_gate(&mut self) -> u32 {
@@ -411,10 +434,11 @@ impl CircuitBuilder {
         gate
     }
 
-    pub fn connect_bool_assertion_gate(&mut self, input: Wire) -> u32 {
+    pub fn connect_bool_assertion_gate(&mut self, input: Wire) -> Wire {
         let gate = self.add_bool_assertion_gate();
         self.connect(input, Wire::LeftIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_not_gate(&mut self) -> u32 {
@@ -429,21 +453,23 @@ impl CircuitBuilder {
         gate
     }
 
-    pub fn connect_not_gate(&mut self, input: Wire) -> u32 {
+    pub fn connect_not_gate(&mut self, input: Wire) -> Wire {
         let gate = self.add_not_gate();
         self.connect(input, Wire::LeftIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_and_gate(&mut self) -> u32 {
         self.add_gate(0.into(), 0.into(), -Scalar::from(1), 1.into(), 0.into())
     }
 
-    pub fn connect_and_gate(&mut self, lhs: Wire, rhs: Wire) -> u32 {
+    pub fn connect_and_gate(&mut self, lhs: Wire, rhs: Wire) -> Wire {
         let gate = self.add_and_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_or_gate(&mut self) -> u32 {
@@ -456,11 +482,12 @@ impl CircuitBuilder {
         )
     }
 
-    pub fn connect_or_gate(&mut self, lhs: Wire, rhs: Wire) -> u32 {
+    pub fn connect_or_gate(&mut self, lhs: Wire, rhs: Wire) -> Wire {
         let gate = self.add_or_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn add_xor_gate(&mut self) -> u32 {
@@ -473,11 +500,12 @@ impl CircuitBuilder {
         )
     }
 
-    pub fn connect_xor_gate(&mut self, lhs: Wire, rhs: Wire) -> u32 {
+    pub fn connect_xor_gate(&mut self, lhs: Wire, rhs: Wire) -> Wire {
         let gate = self.add_xor_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        gate
+        self.gate_queue.push(gate);
+        Wire::Out(gate)
     }
 
     pub fn declare_public_inputs<I: IntoIterator<Item = Wire>>(&mut self, wires: I) {
@@ -998,10 +1026,11 @@ impl CompressedCircuit {
 }
 
 pub trait Chip<const I: usize, const O: usize> {
-    fn build(&mut self, builder: &mut CircuitBuilder, inputs: [Wire; I]) -> Result<[Wire; O]>;
+    fn build(&self, builder: &mut CircuitBuilder, inputs: [Wire; I]) -> Result<[Wire; O]>;
 
     fn witness(
-        &mut self,
+        &self,
+        builder: &mut CircuitBuilder,
         witness: &mut Witness,
         inputs: [Wire; I],
         outputs: [Wire; O],
@@ -1014,14 +1043,14 @@ mod tests {
 
     #[test]
     fn test_gate_set_initial_state() {
-        let set = GateSet::default();
+        let set = GateQueue::default();
         assert_eq!(set.count(), 0);
         assert!(set.is_empty());
     }
 
     #[test]
     fn test_gate_set_push_one() {
-        let mut set = GateSet::default();
+        let mut set = GateQueue::default();
         set.push(12);
         assert_eq!(set.count(), 1);
         assert!(!set.is_empty());
@@ -1029,7 +1058,7 @@ mod tests {
 
     #[test]
     fn test_gate_set_push_two() {
-        let mut set = GateSet::default();
+        let mut set = GateQueue::default();
         set.push(34);
         set.push(56);
         assert_eq!(set.count(), 2);
@@ -1038,7 +1067,7 @@ mod tests {
 
     #[test]
     fn test_gate_set_pop_one() {
-        let mut set = GateSet::default();
+        let mut set = GateQueue::default();
         set.push(34);
         set.push(56);
         assert_eq!(set.pop(), 34);
@@ -1048,7 +1077,7 @@ mod tests {
 
     #[test]
     fn test_gate_set_pop_two() {
-        let mut set = GateSet::default();
+        let mut set = GateQueue::default();
         set.push(34);
         set.push(56);
         assert_eq!(set.pop(), 34);
@@ -1640,16 +1669,16 @@ mod tests {
     #[test]
     fn test_connect_gate1() {
         let mut builder = CircuitBuilder::default();
-        let gate1 = builder.add_const_gate(12.into());
-        let gate2 = builder.add_const_gate(34.into());
+        let lhs = builder.connect_const_gate(12.into());
+        let rhs = builder.connect_const_gate(34.into());
         builder.connect_gate(
             56.into(),
             78.into(),
             -Scalar::from(1),
             0.into(),
             0.into(),
-            Wire::Out(gate1),
-            Wire::Out(gate2),
+            lhs,
+            rhs,
         );
         let circuit = builder.build();
         assert!(test_connect_gate(&circuit, 12, 34, 3324).is_ok());
@@ -1658,12 +1687,14 @@ mod tests {
     #[test]
     fn test_connect_sum_gate() {
         let mut builder = CircuitBuilder::default();
-        let gate1 = builder.add_const_gate(12.into());
-        let gate2 = builder.add_const_gate(34.into());
-        builder.connect_sum_gate(Wire::Out(gate1), Wire::Out(gate2));
+        let lhs = builder.connect_const_gate(12.into());
+        let rhs = builder.connect_const_gate(34.into());
+        builder.connect_sum_gate(lhs, rhs);
         let circuit = builder.build();
         assert!(test_connect_gate(&circuit, 12, 34, 46).is_ok());
     }
+
+    // TODO: test other gate connections.
 
     /// A slight variation of Vitalik's circuit. This one proves knowledge of three numbers x, y,
     /// and z such that x^3 + xy + 5 = z. Valid combinations are (3, 4, 44) and (4, 3, 81). This
