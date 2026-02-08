@@ -140,46 +140,33 @@ impl WirePartitioning {
     }
 }
 
-#[derive(Debug, Default, Clone)]
-struct GateQueue {
-    gates: Vec<u32>,
-    index: usize,
-}
-
-impl GateQueue {
-    pub fn count(&self) -> usize {
-        self.gates.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        assert!(self.index <= self.gates.len());
-        self.index == self.gates.len()
-    }
-
-    pub fn push(&mut self, gate: u32) {
-        self.gates.push(gate);
-    }
-
-    pub fn pop(&mut self) -> u32 {
-        let gate = self.gates[self.index];
-        self.index += 1;
-        gate
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Witness {
     size: usize,
+    gate_counter: u32,
     left: Vec<Scalar>,
     right: Vec<Scalar>,
     out: Vec<Scalar>,
 }
 
+impl PartialEq for Witness {
+    fn eq(&self, other: &Self) -> bool {
+        self.size == other.size
+            && self.left == other.left
+            && self.right == other.right
+            && self.out == other.out
+    }
+}
+
+impl Eq for Witness {}
+
 impl Witness {
     pub fn new(size: usize) -> Self {
+        assert!(size <= u32::MAX as usize);
         let padded_size = padded_size(size);
         Self {
             size,
+            gate_counter: 0,
             left: vec![Scalar::ZERO; padded_size],
             right: vec![Scalar::ZERO; padded_size],
             out: vec![Scalar::ZERO; padded_size],
@@ -212,13 +199,20 @@ impl Witness {
         value
     }
 
-    pub fn assert_constant(&mut self, gate: u32, value: Scalar) -> Wire {
-        let wire = Wire::Out(gate);
+    pub fn pop_gate(&mut self) -> u32 {
+        let gate = self.gate_counter;
+        self.gate_counter += 1;
+        gate
+    }
+
+    pub fn assert_constant(&mut self, value: Scalar) -> Wire {
+        let wire = Wire::Out(self.pop_gate());
         self.set(wire, value);
         wire
     }
 
-    pub fn add(&mut self, gate: u32, lhs: Wire, rhs: Wire) -> Wire {
+    pub fn add(&mut self, lhs: Wire, rhs: Wire) -> Wire {
+        let gate = self.pop_gate();
         let lhs = self.copy(lhs, Wire::LeftIn(gate));
         let rhs = self.copy(rhs, Wire::RightIn(gate));
         let out = Wire::Out(gate);
@@ -226,7 +220,8 @@ impl Witness {
         out
     }
 
-    pub fn add_const_gate(&mut self, gate: u32, lhs: Wire, rhs: Scalar) -> Wire {
+    pub fn add_const_gate(&mut self, lhs: Wire, rhs: Scalar) -> Wire {
+        let gate = self.pop_gate();
         self.copy(lhs, Wire::LeftIn(gate));
         let lhs = self.copy(lhs, Wire::RightIn(gate));
         let out = Wire::Out(gate);
@@ -234,7 +229,8 @@ impl Witness {
         out
     }
 
-    pub fn sub(&mut self, gate: u32, lhs: Wire, rhs: Wire) -> Wire {
+    pub fn sub(&mut self, lhs: Wire, rhs: Wire) -> Wire {
+        let gate = self.pop_gate();
         let lhs = self.copy(lhs, Wire::LeftIn(gate));
         let rhs = self.copy(rhs, Wire::RightIn(gate));
         let out = Wire::Out(gate);
@@ -242,7 +238,8 @@ impl Witness {
         out
     }
 
-    pub fn sub_const(&mut self, gate: u32, lhs: Wire, rhs: Scalar) -> Wire {
+    pub fn sub_const(&mut self, lhs: Wire, rhs: Scalar) -> Wire {
+        let gate = self.pop_gate();
         self.copy(lhs, Wire::LeftIn(gate));
         let lhs = self.copy(lhs, Wire::RightIn(gate));
         let out = Wire::Out(gate);
@@ -250,7 +247,8 @@ impl Witness {
         out
     }
 
-    pub fn sub_from_const(&mut self, gate: u32, lhs: Scalar, rhs: Wire) -> Wire {
+    pub fn sub_from_const(&mut self, lhs: Scalar, rhs: Wire) -> Wire {
+        let gate = self.pop_gate();
         self.copy(rhs, Wire::LeftIn(gate));
         let rhs = self.copy(rhs, Wire::RightIn(gate));
         let out = Wire::Out(gate);
@@ -258,7 +256,8 @@ impl Witness {
         out
     }
 
-    pub fn mul(&mut self, gate: u32, lhs: Wire, rhs: Wire) -> Wire {
+    pub fn mul(&mut self, lhs: Wire, rhs: Wire) -> Wire {
+        let gate = self.pop_gate();
         let lhs = self.copy(lhs, Wire::LeftIn(gate));
         let rhs = self.copy(rhs, Wire::RightIn(gate));
         let out = Wire::Out(gate);
@@ -266,7 +265,8 @@ impl Witness {
         out
     }
 
-    pub fn mul_by_const(&mut self, gate: u32, lhs: Wire, rhs: Scalar) -> Wire {
+    pub fn mul_by_const(&mut self, lhs: Wire, rhs: Scalar) -> Wire {
+        let gate = self.pop_gate();
         self.copy(lhs, Wire::LeftIn(gate));
         let lhs = self.copy(lhs, Wire::RightIn(gate));
         let out = Wire::Out(gate);
@@ -280,7 +280,6 @@ pub struct CircuitBuilder {
     gates: Vec<GateConstraint>,
     wires: WirePartitioning,
     public_inputs: BTreeSet<Wire>,
-    gate_queue: GateQueue,
 }
 
 impl CircuitBuilder {
@@ -299,14 +298,6 @@ impl CircuitBuilder {
         self.wires.connect(wire1, wire2);
     }
 
-    pub fn push_gate(&mut self, gate: u32) {
-        self.gate_queue.push(gate)
-    }
-
-    pub fn pop_gate(&mut self) -> u32 {
-        self.gate_queue.pop()
-    }
-
     pub fn connect_gate(
         &mut self,
         ql: Scalar,
@@ -320,7 +311,6 @@ impl CircuitBuilder {
         let gate = self.add_gate(ql, qr, qo, qm, qc);
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -330,7 +320,6 @@ impl CircuitBuilder {
 
     pub fn connect_const_gate(&mut self, value: Scalar) -> Wire {
         let gate = self.add_const_gate(value);
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -342,7 +331,6 @@ impl CircuitBuilder {
         let gate = self.add_sum_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -355,7 +343,6 @@ impl CircuitBuilder {
     pub fn connect_sum_with_const_gate(&mut self, lhs: Wire, c: Scalar) -> Wire {
         let gate = self.add_sum_with_const_gate(c);
         self.connect(lhs, Wire::LeftIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -373,7 +360,6 @@ impl CircuitBuilder {
         let gate = self.add_sub_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -386,7 +372,6 @@ impl CircuitBuilder {
     pub fn connect_sub_const_gate(&mut self, lhs: Wire, c: Scalar) -> Wire {
         let gate = self.add_sub_const_gate(c);
         self.connect(lhs, Wire::LeftIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -399,7 +384,6 @@ impl CircuitBuilder {
     pub fn connect_sub_from_const_gate(&mut self, c: Scalar, rhs: Wire) -> Wire {
         let gate = self.add_sub_from_const_gate(c);
         self.connect(rhs, Wire::RightIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -411,7 +395,6 @@ impl CircuitBuilder {
         let gate = self.add_mul_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -424,7 +407,6 @@ impl CircuitBuilder {
     pub fn connect_mul_by_const_gate(&mut self, lhs: Wire, c: Scalar) -> Wire {
         let gate = self.add_mul_by_const_gate(c);
         self.connect(lhs, Wire::LeftIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -437,7 +419,6 @@ impl CircuitBuilder {
     pub fn connect_bool_assertion_gate(&mut self, input: Wire) -> Wire {
         let gate = self.add_bool_assertion_gate();
         self.connect(input, Wire::LeftIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -456,7 +437,6 @@ impl CircuitBuilder {
     pub fn connect_not_gate(&mut self, input: Wire) -> Wire {
         let gate = self.add_not_gate();
         self.connect(input, Wire::LeftIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -468,7 +448,6 @@ impl CircuitBuilder {
         let gate = self.add_and_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -486,7 +465,6 @@ impl CircuitBuilder {
         let gate = self.add_or_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -504,7 +482,6 @@ impl CircuitBuilder {
         let gate = self.add_xor_gate();
         self.connect(lhs, Wire::LeftIn(gate));
         self.connect(rhs, Wire::RightIn(gate));
-        self.gate_queue.push(gate);
         Wire::Out(gate)
     }
 
@@ -1027,64 +1004,12 @@ impl CompressedCircuit {
 
 pub trait Chip<const I: usize, const O: usize> {
     fn build(&self, builder: &mut CircuitBuilder, inputs: [Wire; I]) -> Result<[Wire; O]>;
-
-    fn witness(
-        &self,
-        builder: &mut CircuitBuilder,
-        witness: &mut Witness,
-        inputs: [Wire; I],
-        outputs: [Wire; O],
-    ) -> Result<()>;
+    fn witness(&self, witness: &mut Witness, inputs: [Wire; I], outputs: [Wire; O]) -> Result<()>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_gate_set_initial_state() {
-        let set = GateQueue::default();
-        assert_eq!(set.count(), 0);
-        assert!(set.is_empty());
-    }
-
-    #[test]
-    fn test_gate_set_push_one() {
-        let mut set = GateQueue::default();
-        set.push(12);
-        assert_eq!(set.count(), 1);
-        assert!(!set.is_empty());
-    }
-
-    #[test]
-    fn test_gate_set_push_two() {
-        let mut set = GateQueue::default();
-        set.push(34);
-        set.push(56);
-        assert_eq!(set.count(), 2);
-        assert!(!set.is_empty());
-    }
-
-    #[test]
-    fn test_gate_set_pop_one() {
-        let mut set = GateQueue::default();
-        set.push(34);
-        set.push(56);
-        assert_eq!(set.pop(), 34);
-        assert_eq!(set.count(), 2);
-        assert!(!set.is_empty());
-    }
-
-    #[test]
-    fn test_gate_set_pop_two() {
-        let mut set = GateQueue::default();
-        set.push(34);
-        set.push(56);
-        assert_eq!(set.pop(), 34);
-        assert_eq!(set.pop(), 56);
-        assert_eq!(set.count(), 2);
-        assert!(set.is_empty());
-    }
 
     #[test]
     fn test_witness_one_row_initial_state() {
@@ -1170,7 +1095,7 @@ mod tests {
     #[test]
     fn test_witness_assert_constant() {
         let mut witness = Witness::new(1);
-        let wire = witness.assert_constant(0, 42.into());
+        let wire = witness.assert_constant(42.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 42.into());
     }
@@ -1182,7 +1107,7 @@ mod tests {
         let rhs = Wire::RightIn(0);
         witness.set(lhs, 12.into());
         witness.set(rhs, 34.into());
-        let wire = witness.add(0, lhs, rhs);
+        let wire = witness.add(lhs, rhs);
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 46.into());
     }
@@ -1192,7 +1117,7 @@ mod tests {
         let mut witness = Witness::new(1);
         let lhs = Wire::LeftIn(0);
         witness.set(lhs, 12.into());
-        let wire = witness.add_const_gate(0, lhs, 34.into());
+        let wire = witness.add_const_gate(lhs, 34.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 46.into());
     }
@@ -1204,7 +1129,7 @@ mod tests {
         let rhs = Wire::RightIn(0);
         witness.set(lhs, 34.into());
         witness.set(rhs, 12.into());
-        let wire = witness.sub(0, lhs, rhs);
+        let wire = witness.sub(lhs, rhs);
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 22.into());
     }
@@ -1214,7 +1139,7 @@ mod tests {
         let mut witness = Witness::new(1);
         let lhs = Wire::LeftIn(0);
         witness.set(lhs, 34.into());
-        let wire = witness.sub_const(0, lhs, 12.into());
+        let wire = witness.sub_const(lhs, 12.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 22.into());
     }
@@ -1224,7 +1149,7 @@ mod tests {
         let mut witness = Witness::new(1);
         let rhs = Wire::LeftIn(0);
         witness.set(rhs, 12.into());
-        let wire = witness.sub_from_const(0, 34.into(), rhs);
+        let wire = witness.sub_from_const(34.into(), rhs);
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 22.into());
     }
@@ -1236,7 +1161,7 @@ mod tests {
         let rhs = Wire::RightIn(0);
         witness.set(lhs, 12.into());
         witness.set(rhs, 34.into());
-        let wire = witness.mul(0, lhs, rhs);
+        let wire = witness.mul(lhs, rhs);
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 408.into());
     }
@@ -1246,7 +1171,7 @@ mod tests {
         let mut witness = Witness::new(1);
         let lhs = Wire::LeftIn(0);
         witness.set(lhs, 12.into());
-        let wire = witness.mul_by_const(0, lhs, 34.into());
+        let wire = witness.mul_by_const(lhs, 34.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 408.into());
     }
@@ -1278,6 +1203,7 @@ mod tests {
         out.resize(padded_size, Scalar::ZERO);
         Witness {
             size: original_size,
+            gate_counter: 0,
             left,
             right,
             out,
