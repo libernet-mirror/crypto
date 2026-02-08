@@ -35,6 +35,14 @@ impl AsScalar for u64 {
     }
 }
 
+impl AsScalar for u128 {
+    fn as_scalar(&self) -> Scalar {
+        let mut bytes = [0u8; 32];
+        bytes[0..16].copy_from_slice(&self.to_le_bytes());
+        Scalar::from_bytes_le(&bytes).into_option().unwrap()
+    }
+}
+
 /// Makes a type parseable from a BLS12-381 scalar. Must be implemented by all types used as keys in
 /// Merkle trees.
 ///
@@ -357,6 +365,14 @@ mod tests {
         assert_eq!(
             0x06bb65fba05109a7u64.as_scalar(),
             parse_scalar("0x06bb65fba05109a7")
+        );
+    }
+
+    #[test]
+    fn test_u128_as_scalar() {
+        assert_eq!(
+            0x49170a6333866d8106bb65fba05109a7u128.as_scalar(),
+            parse_scalar("0x49170a6333866d8106bb65fba05109a7")
         );
     }
 
