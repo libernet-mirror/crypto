@@ -257,26 +257,26 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let mds = Constants::<3>::get_mds_matrix();
         let mut new_state: [Option<Wire>; T] = [None; T];
         for i in 0..3 {
-            let gate1 = builder.add_gate(
+            let gate1 = builder.connect_gate(
                 mds[i * 3 + 0],
                 mds[i * 3 + 1],
                 -Scalar::from(1),
                 0.into(),
                 0.into(),
+                state[0].unwrap(),
+                state[1].unwrap(),
             );
             self.mds_gates.push(gate1);
-            builder.connect(Wire::LeftIn(gate1), state[0].unwrap());
-            builder.connect(Wire::RightIn(gate1), state[1].unwrap());
-            let gate2 = builder.add_gate(
+            let gate2 = builder.connect_gate(
                 1.into(),
                 mds[i * 3 + 2],
                 -Scalar::from(1),
                 0.into(),
                 0.into(),
+                Wire::Out(gate1),
+                state[2].unwrap(),
             );
             self.mds_gates.push(gate2);
-            builder.connect(Wire::LeftIn(gate2), Wire::Out(gate1));
-            builder.connect(Wire::RightIn(gate2), state[2].unwrap());
             new_state[i] = Some(Wire::Out(gate2));
         }
         *state = new_state;
@@ -286,26 +286,26 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let mds = Constants::<4>::get_mds_matrix();
         let mut new_state: [Option<Wire>; T] = [None; T];
         for i in 0..4 {
-            let gate1 = builder.add_gate(
+            let gate1 = builder.connect_gate(
                 mds[i * 4 + 0],
                 mds[i * 4 + 1],
                 -Scalar::from(1),
                 0.into(),
                 0.into(),
+                state[0].unwrap(),
+                state[1].unwrap(),
             );
             self.mds_gates.push(gate1);
-            builder.connect(Wire::LeftIn(gate1), state[0].unwrap());
-            builder.connect(Wire::RightIn(gate1), state[1].unwrap());
-            let gate2 = builder.add_gate(
+            let gate2 = builder.connect_gate(
                 mds[i * 4 + 2],
                 mds[i * 4 + 3],
                 -Scalar::from(1),
                 0.into(),
                 0.into(),
+                state[2].unwrap(),
+                state[3].unwrap(),
             );
             self.mds_gates.push(gate2);
-            builder.connect(Wire::LeftIn(gate2), state[2].unwrap());
-            builder.connect(Wire::RightIn(gate2), state[3].unwrap());
             let gate3 = builder.connect_sum_gate(Wire::Out(gate1), Wire::Out(gate2));
             self.mds_gates.push(gate3);
             new_state[i] = Some(Wire::Out(gate3));
