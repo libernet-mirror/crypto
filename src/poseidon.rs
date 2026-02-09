@@ -193,13 +193,13 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     ) {
         for i in 0..chunk.len() {
             state[i] = match state[i] {
-                Some(wire) => Some(builder.connect_sum_gate(wire.into(), chunk[i])),
+                Some(wire) => Some(builder.add_sum_gate(wire.into(), chunk[i])),
                 None => chunk[i],
             };
         }
         for i in 0..T {
             if state[i].is_none() {
-                state[i] = Some(builder.connect_const_gate(Scalar::ZERO));
+                state[i] = Some(builder.add_const_gate(Scalar::ZERO));
             }
         }
     }
@@ -219,9 +219,9 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     }
 
     fn build_sbox(&self, builder: &mut CircuitBuilder, wire: Wire) -> Wire {
-        let out = builder.connect_square_gate(wire.into());
-        let out = builder.connect_square_gate(out.into());
-        builder.connect_mul_gate(out.into(), wire.into())
+        let out = builder.add_square_gate(wire.into());
+        let out = builder.add_square_gate(out.into());
+        builder.add_mul_gate(out.into(), wire.into())
     }
 
     fn witness_sbox(&self, witness: &mut Witness, wire: Wire) -> Wire {
@@ -234,7 +234,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let mds = Constants::<3>::get_mds_matrix();
         let mut new_state: [Option<Wire>; T] = [None; T];
         for i in 0..3 {
-            let lhs = builder.connect_binary_gate(
+            let lhs = builder.add_binary_gate(
                 mds[i * 3 + 0],
                 mds[i * 3 + 1],
                 -Scalar::from(1),
@@ -243,7 +243,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
                 state[0],
                 state[1],
             );
-            let out = builder.connect_binary_gate(
+            let out = builder.add_binary_gate(
                 1.into(),
                 mds[i * 3 + 2],
                 -Scalar::from(1),
@@ -261,7 +261,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let mds = Constants::<4>::get_mds_matrix();
         let mut new_state: [Option<Wire>; T] = [None; T];
         for i in 0..4 {
-            let lhs = builder.connect_binary_gate(
+            let lhs = builder.add_binary_gate(
                 mds[i * 4 + 0],
                 mds[i * 4 + 1],
                 -Scalar::from(1),
@@ -270,7 +270,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
                 state[0],
                 state[1],
             );
-            let rhs = builder.connect_binary_gate(
+            let rhs = builder.add_binary_gate(
                 mds[i * 4 + 2],
                 mds[i * 4 + 3],
                 -Scalar::from(1),
@@ -279,7 +279,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
                 state[2],
                 state[3],
             );
-            new_state[i] = Some(builder.connect_sum_gate(lhs.into(), rhs.into()));
+            new_state[i] = Some(builder.add_sum_gate(lhs.into(), rhs.into()));
         }
         *state = new_state;
     }
@@ -350,7 +350,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
 
         let c = Constants::<T>::get_round_constants();
         for i in 0..T {
-            state[i] = Some(builder.connect_sum_with_const_gate(state[i], c[r * T + i]));
+            state[i] = Some(builder.add_sum_with_const_gate(state[i], c[r * T + i]));
         }
 
         state[0] = Some(self.build_sbox(builder, state[0].unwrap()));
@@ -369,7 +369,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
 
         let c = Constants::<T>::get_round_constants();
         for i in 0..T {
-            state[i] = Some(witness.add_const_gate(state[i].unwrap(), c[r * T + i]));
+            state[i] = Some(witness.add_const(state[i].unwrap(), c[r * T + i]));
         }
 
         state[0] = Some(self.witness_sbox(witness, state[0].unwrap()));
@@ -498,7 +498,7 @@ mod tests {
         let result = hash::<T>(&inputs);
         let mut builder = CircuitBuilder::default();
         let chip = Chip::<T, I>::default();
-        let input_wires = inputs.map(|input| builder.connect_const_gate(input));
+        let input_wires = inputs.map(|input| builder.add_const_gate(input));
         let result_wire = chip
             .build(&mut builder, input_wires.map(|wire| Some(wire)))
             .unwrap();
