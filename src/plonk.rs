@@ -1447,7 +1447,6 @@ mod tests {
         builder.connect_sum_with_const_gate(input.into(), 12.into());
         let circuit = builder.build();
         assert!(test_connected_unary_gate(&circuit, 34, 46).is_ok());
-        assert!(test_connected_unary_gate(&circuit, 56, 46).is_err());
         assert!(test_connected_unary_gate(&circuit, 34, 56).is_err());
     }
 
@@ -1458,8 +1457,7 @@ mod tests {
         builder.connect_sum_with_const_gate(input.into(), 34.into());
         let circuit = builder.build();
         assert!(test_connected_unary_gate(&circuit, 56, 90).is_ok());
-        assert!(test_connected_unary_gate(&circuit, 34, 90).is_err());
-        assert!(test_connected_unary_gate(&circuit, 56, 34).is_err());
+        assert!(test_connected_unary_gate(&circuit, 56, 78).is_err());
     }
 
     #[test]
@@ -1519,10 +1517,8 @@ mod tests {
         let input = builder.connect_const_gate(34.into());
         builder.connect_sub_const_gate(input.into(), 12.into());
         let circuit = builder.build();
-        assert!(test_gate(&circuit, 34, 34, 22).is_ok());
-        assert!(test_gate(&circuit, 34, 56, 22).is_err());
-        assert!(test_gate(&circuit, 56, 56, 45).is_err());
-        assert!(test_gate(&circuit, 78, 78, 46).is_err());
+        assert!(test_connected_unary_gate(&circuit, 34, 22).is_ok());
+        assert!(test_connected_unary_gate(&circuit, 34, 56).is_err());
     }
 
     #[test]
@@ -1531,150 +1527,303 @@ mod tests {
         let input = builder.connect_const_gate(56.into());
         builder.connect_sub_const_gate(input.into(), 34.into());
         let circuit = builder.build();
-        assert!(test_gate(&circuit, 56, 56, 22).is_ok());
-        assert!(test_gate(&circuit, 56, 78, 22).is_err());
-        assert!(test_gate(&circuit, 78, 78, 45).is_err());
-        assert!(test_gate(&circuit, 90, 90, 46).is_err());
+        assert!(test_connected_unary_gate(&circuit, 56, 22).is_ok());
+        assert!(test_connected_unary_gate(&circuit, 56, 78).is_err());
     }
 
-    // #[test]
-    // fn test_sub_from_const_gate1() {
-    //     let mut builder = CircuitBuilder::default();
-    //     builder.add_sub_from_const_gate(90.into());
-    //     let circuit = builder.build();
-    //     assert!(test_gate(&circuit, 34, 34, 56).is_ok());
-    //     assert!(test_gate(&circuit, 34, 56, 56).is_err());
-    //     assert!(test_gate(&circuit, 56, 56, 34).is_ok());
-    //     assert!(test_gate(&circuit, 56, 78, 34).is_err());
-    //     assert!(test_gate(&circuit, 78, 78, 13).is_err());
-    //     assert!(test_gate(&circuit, 90, 90, 14).is_err());
-    // }
+    #[test]
+    fn test_sub_from_const_gate1() {
+        let mut builder = CircuitBuilder::default();
+        builder.connect_sub_from_const_gate(90.into(), None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 34, 34, 56).is_ok());
+        assert!(test_gate(&circuit, 34, 56, 56).is_err());
+        assert!(test_gate(&circuit, 56, 56, 34).is_ok());
+        assert!(test_gate(&circuit, 56, 78, 34).is_err());
+        assert!(test_gate(&circuit, 78, 78, 13).is_err());
+        assert!(test_gate(&circuit, 90, 90, 14).is_err());
+    }
 
-    // #[test]
-    // fn test_sub_from_const_gate2() {
-    //     let mut builder = CircuitBuilder::default();
-    //     builder.add_sub_from_const_gate(78.into());
-    //     let circuit = builder.build();
-    //     assert!(test_gate(&circuit, 12, 12, 66).is_ok());
-    //     assert!(test_gate(&circuit, 12, 34, 66).is_err());
-    //     assert!(test_gate(&circuit, 34, 34, 44).is_ok());
-    //     assert!(test_gate(&circuit, 34, 56, 44).is_err());
-    //     assert!(test_gate(&circuit, 56, 56, 23).is_err());
-    //     assert!(test_gate(&circuit, 78, 78, 24).is_err());
-    // }
+    #[test]
+    fn test_sub_from_const_gate2() {
+        let mut builder = CircuitBuilder::default();
+        builder.connect_sub_from_const_gate(78.into(), None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 12, 12, 66).is_ok());
+        assert!(test_gate(&circuit, 12, 34, 66).is_err());
+        assert!(test_gate(&circuit, 34, 34, 44).is_ok());
+        assert!(test_gate(&circuit, 34, 56, 44).is_err());
+        assert!(test_gate(&circuit, 56, 56, 23).is_err());
+        assert!(test_gate(&circuit, 78, 78, 24).is_err());
+    }
 
-    // #[test]
-    // fn test_mul_gate() {
-    //     let mut builder = CircuitBuilder::default();
-    //     builder.add_mul_gate();
-    //     let circuit = builder.build();
-    //     assert!(test_gate(&circuit, 12, 34, 408).is_ok());
-    //     assert!(test_gate(&circuit, 34, 12, 408).is_ok());
-    //     assert!(test_gate(&circuit, 56, 78, 4368).is_ok());
-    //     assert!(test_gate(&circuit, 56, 34, 408).is_err());
-    //     assert!(test_gate(&circuit, 12, 56, 408).is_err());
-    //     assert!(test_gate(&circuit, 12, 34, 56).is_err());
-    // }
+    #[test]
+    fn test_connected_sub_from_const_gate1() {
+        let mut builder = CircuitBuilder::default();
+        let input = builder.connect_const_gate(34.into());
+        builder.connect_sub_from_const_gate(90.into(), input.into());
+        let circuit = builder.build();
+        assert!(test_connected_unary_gate(&circuit, 34, 56).is_ok());
+        assert!(test_connected_unary_gate(&circuit, 34, 78).is_err());
+    }
 
-    // #[test]
-    // fn test_mul_by_const_gate1() {
-    //     let mut builder = CircuitBuilder::default();
-    //     builder.add_mul_by_const_gate(12.into());
-    //     let circuit = builder.build();
-    //     assert!(test_gate(&circuit, 12, 12, 144).is_ok());
-    //     assert!(test_gate(&circuit, 12, 34, 144).is_err());
-    //     assert!(test_gate(&circuit, 34, 34, 408).is_ok());
-    //     assert!(test_gate(&circuit, 34, 56, 408).is_err());
-    //     assert!(test_gate(&circuit, 56, 56, 409).is_err());
-    //     assert!(test_gate(&circuit, 78, 78, 410).is_err());
-    // }
+    #[test]
+    fn test_connected_sub_from_const_gate2() {
+        let mut builder = CircuitBuilder::default();
+        let input = builder.connect_const_gate(12.into());
+        builder.connect_sub_from_const_gate(78.into(), input.into());
+        let circuit = builder.build();
+        assert!(test_connected_unary_gate(&circuit, 12, 66).is_ok());
+        assert!(test_connected_unary_gate(&circuit, 12, 34).is_err());
+    }
 
-    // #[test]
-    // fn test_mul_by_const_gate2() {
-    //     let mut builder = CircuitBuilder::default();
-    //     builder.add_mul_by_const_gate(34.into());
-    //     let circuit = builder.build();
-    //     assert!(test_gate(&circuit, 12, 12, 408).is_ok());
-    //     assert!(test_gate(&circuit, 12, 34, 408).is_err());
-    //     assert!(test_gate(&circuit, 34, 34, 1156).is_ok());
-    //     assert!(test_gate(&circuit, 34, 56, 1156).is_err());
-    //     assert!(test_gate(&circuit, 56, 56, 1157).is_err());
-    //     assert!(test_gate(&circuit, 78, 78, 1158).is_err());
-    // }
+    #[test]
+    fn test_mul_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.connect_mul_gate(None, None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 12, 34, 408).is_ok());
+        assert!(test_gate(&circuit, 34, 12, 408).is_ok());
+        assert!(test_gate(&circuit, 56, 78, 4368).is_ok());
+        assert!(test_gate(&circuit, 56, 34, 408).is_err());
+        assert!(test_gate(&circuit, 12, 56, 408).is_err());
+        assert!(test_gate(&circuit, 12, 34, 56).is_err());
+    }
 
-    // #[test]
-    // fn test_bool_assertion_gate() {
-    //     let mut builder = CircuitBuilder::default();
-    //     builder.add_bool_assertion_gate();
-    //     let circuit = builder.build();
-    //     assert!(test_gate(&circuit, 0, 0, 0).is_ok());
-    //     assert!(test_gate(&circuit, 0, 1, 0).is_err());
-    //     assert!(test_gate(&circuit, 1, 0, 0).is_err());
-    //     assert!(test_gate(&circuit, 1, 1, 0).is_ok());
-    //     assert!(test_gate(&circuit, 2, 2, 0).is_err());
-    //     assert!(test_gate(&circuit, 3, 3, 0).is_err());
-    //     assert!(test_gate(&circuit, 123, 123, 0).is_err());
-    // }
+    #[test]
+    fn test_connected_mul_gate() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.connect_const_gate(12.into());
+        let rhs = builder.connect_const_gate(34.into());
+        builder.connect_mul_gate(lhs.into(), rhs.into());
+        let circuit = builder.build();
+        assert!(test_connected_binary_gate(&circuit, 12, 34, 408).is_ok());
+        assert!(test_connected_binary_gate(&circuit, 12, 34, 804).is_err());
+    }
 
-    // #[test]
-    // fn test_not_gate() {
-    //     let mut builder = CircuitBuilder::default();
-    //     builder.add_not_gate();
-    //     let circuit = builder.build();
-    //     assert!(test_gate(&circuit, 0, 0, 0).is_err());
-    //     assert!(test_gate(&circuit, 0, 0, 1).is_ok());
-    //     assert!(test_gate(&circuit, 0, 1, 0).is_err());
-    //     assert!(test_gate(&circuit, 0, 1, 1).is_err());
-    //     assert!(test_gate(&circuit, 1, 0, 0).is_err());
-    //     assert!(test_gate(&circuit, 1, 0, 1).is_err());
-    //     assert!(test_gate(&circuit, 1, 1, 0).is_ok());
-    //     assert!(test_gate(&circuit, 1, 1, 1).is_err());
-    // }
+    #[test]
+    fn test_mul_by_const_gate1() {
+        let mut builder = CircuitBuilder::default();
+        builder.connect_mul_by_const_gate(None, 12.into());
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 12, 12, 144).is_ok());
+        assert!(test_gate(&circuit, 12, 34, 144).is_err());
+        assert!(test_gate(&circuit, 34, 34, 408).is_ok());
+        assert!(test_gate(&circuit, 34, 56, 408).is_err());
+        assert!(test_gate(&circuit, 56, 56, 409).is_err());
+        assert!(test_gate(&circuit, 78, 78, 410).is_err());
+    }
 
-    // #[test]
-    // fn test_and_gate() {
-    //     let mut builder = CircuitBuilder::default();
-    //     builder.add_and_gate();
-    //     let circuit = builder.build();
-    //     assert!(test_gate(&circuit, 0, 0, 0).is_ok());
-    //     assert!(test_gate(&circuit, 0, 0, 1).is_err());
-    //     assert!(test_gate(&circuit, 0, 1, 0).is_ok());
-    //     assert!(test_gate(&circuit, 0, 1, 1).is_err());
-    //     assert!(test_gate(&circuit, 1, 0, 0).is_ok());
-    //     assert!(test_gate(&circuit, 1, 0, 1).is_err());
-    //     assert!(test_gate(&circuit, 1, 1, 0).is_err());
-    //     assert!(test_gate(&circuit, 1, 1, 1).is_ok());
-    // }
+    #[test]
+    fn test_mul_by_const_gate2() {
+        let mut builder = CircuitBuilder::default();
+        builder.connect_mul_by_const_gate(None, 34.into());
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 12, 12, 408).is_ok());
+        assert!(test_gate(&circuit, 12, 34, 408).is_err());
+        assert!(test_gate(&circuit, 34, 34, 1156).is_ok());
+        assert!(test_gate(&circuit, 34, 56, 1156).is_err());
+        assert!(test_gate(&circuit, 56, 56, 1157).is_err());
+        assert!(test_gate(&circuit, 78, 78, 1158).is_err());
+    }
 
-    // #[test]
-    // fn test_or_gate() {
-    //     let mut builder = CircuitBuilder::default();
-    //     builder.add_or_gate();
-    //     let circuit = builder.build();
-    //     assert!(test_gate(&circuit, 0, 0, 0).is_ok());
-    //     assert!(test_gate(&circuit, 0, 0, 1).is_err());
-    //     assert!(test_gate(&circuit, 0, 1, 0).is_err());
-    //     assert!(test_gate(&circuit, 0, 1, 1).is_ok());
-    //     assert!(test_gate(&circuit, 1, 0, 0).is_err());
-    //     assert!(test_gate(&circuit, 1, 0, 1).is_ok());
-    //     assert!(test_gate(&circuit, 1, 1, 0).is_err());
-    //     assert!(test_gate(&circuit, 1, 1, 1).is_ok());
-    // }
+    #[test]
+    fn test_connected_mul_by_const_gate1() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.connect_const_gate(12.into());
+        builder.connect_mul_by_const_gate(lhs.into(), 34.into());
+        let circuit = builder.build();
+        assert!(test_connected_unary_gate(&circuit, 12, 408).is_ok());
+        assert!(test_connected_unary_gate(&circuit, 12, 804).is_err());
+    }
 
-    // #[test]
-    // fn test_xor_gate() {
-    //     let mut builder = CircuitBuilder::default();
-    //     builder.add_xor_gate();
-    //     let circuit = builder.build();
-    //     assert!(test_gate(&circuit, 0, 0, 0).is_ok());
-    //     assert!(test_gate(&circuit, 0, 0, 1).is_err());
-    //     assert!(test_gate(&circuit, 0, 1, 0).is_err());
-    //     assert!(test_gate(&circuit, 0, 1, 1).is_ok());
-    //     assert!(test_gate(&circuit, 1, 0, 0).is_err());
-    //     assert!(test_gate(&circuit, 1, 0, 1).is_ok());
-    //     assert!(test_gate(&circuit, 1, 1, 0).is_ok());
-    //     assert!(test_gate(&circuit, 1, 1, 1).is_err());
-    // }
+    #[test]
+    fn test_connected_mul_by_const_gate2() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.connect_const_gate(34.into());
+        builder.connect_mul_by_const_gate(lhs.into(), 12.into());
+        let circuit = builder.build();
+        assert!(test_connected_unary_gate(&circuit, 34, 408).is_ok());
+        assert!(test_connected_unary_gate(&circuit, 34, 804).is_err());
+    }
+
+    #[test]
+    fn test_bool_assertion_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.connect_bool_assertion_gate(None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 0, 1, 0).is_err());
+        assert!(test_gate(&circuit, 1, 0, 0).is_err());
+        assert!(test_gate(&circuit, 1, 1, 0).is_ok());
+        assert!(test_gate(&circuit, 2, 2, 0).is_err());
+        assert!(test_gate(&circuit, 3, 3, 0).is_err());
+        assert!(test_gate(&circuit, 123, 123, 0).is_err());
+    }
+
+    #[test]
+    fn test_connected_bool_assertion_gate1() {
+        let mut builder = CircuitBuilder::default();
+        let input = builder.connect_const_gate(0.into());
+        builder.connect_bool_assertion_gate(input.into());
+        let circuit = builder.build();
+        assert!(test_connected_unary_gate(&circuit, 0, 0).is_ok());
+    }
+
+    #[test]
+    fn test_connected_bool_assertion_gate2() {
+        let mut builder = CircuitBuilder::default();
+        let input = builder.connect_const_gate(1.into());
+        builder.connect_bool_assertion_gate(input.into());
+        let circuit = builder.build();
+        assert!(test_connected_unary_gate(&circuit, 1, 0).is_ok());
+    }
+
+    #[test]
+    fn test_connected_bool_assertion_gate3() {
+        let mut builder = CircuitBuilder::default();
+        let input = builder.connect_const_gate(2.into());
+        builder.connect_bool_assertion_gate(input.into());
+        let circuit = builder.build();
+        assert!(test_connected_unary_gate(&circuit, 2, 0).is_err());
+    }
+
+    #[test]
+    fn test_not_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.connect_not_gate(None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 0).is_err());
+        assert!(test_gate(&circuit, 0, 0, 1).is_ok());
+        assert!(test_gate(&circuit, 0, 1, 0).is_err());
+        assert!(test_gate(&circuit, 0, 1, 1).is_err());
+        assert!(test_gate(&circuit, 1, 0, 0).is_err());
+        assert!(test_gate(&circuit, 1, 0, 1).is_err());
+        assert!(test_gate(&circuit, 1, 1, 0).is_ok());
+        assert!(test_gate(&circuit, 1, 1, 1).is_err());
+    }
+
+    #[test]
+    fn test_connected_not_gate() {
+        let mut builder = CircuitBuilder::default();
+        let input = builder.connect_const_gate(0.into());
+        builder.connect_not_gate(input.into());
+        let circuit = builder.build();
+        assert!(test_connected_unary_gate(&circuit, 0, 1).is_ok());
+        assert!(test_connected_unary_gate(&circuit, 1, 1).is_err());
+        assert!(test_connected_unary_gate(&circuit, 0, 0).is_err());
+    }
+
+    #[test]
+    fn test_and_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.connect_and_gate(None, None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 0, 0, 1).is_err());
+        assert!(test_gate(&circuit, 0, 1, 0).is_ok());
+        assert!(test_gate(&circuit, 0, 1, 1).is_err());
+        assert!(test_gate(&circuit, 1, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 1, 0, 1).is_err());
+        assert!(test_gate(&circuit, 1, 1, 0).is_err());
+        assert!(test_gate(&circuit, 1, 1, 1).is_ok());
+    }
+
+    #[test]
+    fn test_connected_and_gate1() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.connect_const_gate(0.into());
+        let rhs = builder.connect_const_gate(1.into());
+        builder.connect_and_gate(lhs.into(), rhs.into());
+        let circuit = builder.build();
+        assert!(test_connected_binary_gate(&circuit, 0, 1, 0).is_ok());
+        assert!(test_connected_binary_gate(&circuit, 0, 1, 1).is_err());
+    }
+
+    #[test]
+    fn test_connected_and_gate2() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.connect_const_gate(1.into());
+        let rhs = builder.connect_const_gate(1.into());
+        builder.connect_and_gate(lhs.into(), rhs.into());
+        let circuit = builder.build();
+        assert!(test_connected_binary_gate(&circuit, 1, 1, 1).is_ok());
+        assert!(test_connected_binary_gate(&circuit, 1, 1, 0).is_err());
+    }
+
+    #[test]
+    fn test_or_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.connect_or_gate(None, None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 0, 0, 1).is_err());
+        assert!(test_gate(&circuit, 0, 1, 0).is_err());
+        assert!(test_gate(&circuit, 0, 1, 1).is_ok());
+        assert!(test_gate(&circuit, 1, 0, 0).is_err());
+        assert!(test_gate(&circuit, 1, 0, 1).is_ok());
+        assert!(test_gate(&circuit, 1, 1, 0).is_err());
+        assert!(test_gate(&circuit, 1, 1, 1).is_ok());
+    }
+
+    #[test]
+    fn test_connected_or_gate1() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.connect_const_gate(0.into());
+        let rhs = builder.connect_const_gate(0.into());
+        builder.connect_or_gate(lhs.into(), rhs.into());
+        let circuit = builder.build();
+        assert!(test_connected_binary_gate(&circuit, 0, 0, 0).is_ok());
+        assert!(test_connected_binary_gate(&circuit, 0, 0, 1).is_err());
+    }
+
+    #[test]
+    fn test_connected_or_gate2() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.connect_const_gate(0.into());
+        let rhs = builder.connect_const_gate(1.into());
+        builder.connect_or_gate(lhs.into(), rhs.into());
+        let circuit = builder.build();
+        assert!(test_connected_binary_gate(&circuit, 0, 1, 1).is_ok());
+        assert!(test_connected_binary_gate(&circuit, 0, 1, 0).is_err());
+    }
+
+    #[test]
+    fn test_xor_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.connect_xor_gate(None, None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 0, 0, 0).is_ok());
+        assert!(test_gate(&circuit, 0, 0, 1).is_err());
+        assert!(test_gate(&circuit, 0, 1, 0).is_err());
+        assert!(test_gate(&circuit, 0, 1, 1).is_ok());
+        assert!(test_gate(&circuit, 1, 0, 0).is_err());
+        assert!(test_gate(&circuit, 1, 0, 1).is_ok());
+        assert!(test_gate(&circuit, 1, 1, 0).is_ok());
+        assert!(test_gate(&circuit, 1, 1, 1).is_err());
+    }
+
+    #[test]
+    fn test_connected_xor_gate1() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.connect_const_gate(0.into());
+        let rhs = builder.connect_const_gate(1.into());
+        builder.connect_xor_gate(lhs.into(), rhs.into());
+        let circuit = builder.build();
+        assert!(test_connected_binary_gate(&circuit, 0, 1, 1).is_ok());
+        assert!(test_connected_binary_gate(&circuit, 0, 1, 0).is_err());
+    }
+
+    #[test]
+    fn test_connected_xor_gate2() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.connect_const_gate(1.into());
+        let rhs = builder.connect_const_gate(1.into());
+        builder.connect_xor_gate(lhs.into(), rhs.into());
+        let circuit = builder.build();
+        assert!(test_connected_binary_gate(&circuit, 1, 1, 0).is_ok());
+        assert!(test_connected_binary_gate(&circuit, 1, 1, 1).is_err());
+    }
 
     // /// A slight variation of Vitalik's circuit. This one proves knowledge of three numbers x, y,
     // /// and z such that x^3 + xy + 5 = z. Valid combinations are (3, 4, 44) and (4, 3, 81). This
