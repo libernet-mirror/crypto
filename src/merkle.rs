@@ -945,4 +945,16 @@ mod tests {
         .unwrap();
         assert!(proof.map(TestValue { scalar: root_hash }).is_err());
     }
+
+    #[test]
+    fn test_proof_chip_2_0() {
+        let root_hash =
+            parse_scalar("0x2f1e5f91aa954def1ed17cb40d9fd24da546f68da56f314ca3f7e4dc1d0a2400");
+        let value =
+            parse_scalar("0x2f1e5f91aa954def1ed17cb40d9fd24da546f68da56f314ca3f7e4dc1d0a2400");
+        let chip = Proof::<Scalar, Scalar, 2, 0>::from_compressed(0.into(), value, root_hash, &[])
+            .unwrap()
+            .to_lookup_chip();
+        // TODO
+    }
 }

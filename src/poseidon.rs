@@ -225,8 +225,8 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     }
 
     fn witness_sbox(&self, witness: &mut Witness, wire: Wire) -> Wire {
-        let out = witness.mul(wire, wire);
-        let out = witness.mul(out, out);
+        let out = witness.square(wire);
+        let out = witness.square(out);
         witness.mul(out, wire)
     }
 
@@ -494,7 +494,10 @@ mod tests {
         );
     }
 
-    fn test_hash_chip<const T: usize, const I: usize>(inputs: [Scalar; I]) {
+    fn test_hash_chip<const T: usize, const I: usize>(
+        inputs: [Scalar; I],
+        expected_circuit_size: usize,
+    ) {
         let result = hash::<T>(&inputs);
         let mut builder = CircuitBuilder::default();
         let chip = Chip::<T, I>::default();
@@ -511,6 +514,7 @@ mod tests {
         assert_eq!(witness.get(result_wire[0]), result);
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
+        assert_eq!(circuit.size(), expected_circuit_size);
         let proof = circuit.prove(witness).unwrap();
         assert_eq!(
             circuit.verify(&proof).unwrap(),
@@ -525,51 +529,57 @@ mod tests {
 
     #[test]
     fn test_hash_chip_t3_1() {
-        test_hash_chip::<3, 1>([42.into()]);
+        test_hash_chip::<3, 1>([42.into()], 831);
     }
 
     #[test]
     fn test_hash_chip_t3_2() {
-        test_hash_chip::<3, 2>([1.into(), 2.into()]);
+        test_hash_chip::<3, 2>([1.into(), 2.into()], 831);
     }
 
     #[test]
     fn test_hash_chip_t3_3() {
-        test_hash_chip::<3, 3>([3.into(), 4.into(), 5.into()]);
+        test_hash_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1661);
     }
 
     #[test]
     fn test_hash_chip_t3_4() {
-        test_hash_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()]);
+        test_hash_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1663);
     }
 
     #[test]
     fn test_hash_chip_t3_5() {
-        test_hash_chip::<3, 5>([10.into(), 11.into(), 12.into(), 13.into(), 14.into()]);
+        test_hash_chip::<3, 5>(
+            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+            2493,
+        );
     }
 
     #[test]
     fn test_hash_chip_t4_1() {
-        test_hash_chip::<4, 1>([42.into()]);
+        test_hash_chip::<4, 1>([42.into()], 1292);
     }
 
     #[test]
     fn test_hash_chip_t4_2() {
-        test_hash_chip::<4, 2>([1.into(), 2.into()]);
+        test_hash_chip::<4, 2>([1.into(), 2.into()], 1292);
     }
 
     #[test]
     fn test_hash_chip_t4_3() {
-        test_hash_chip::<4, 3>([3.into(), 4.into(), 5.into()]);
+        test_hash_chip::<4, 3>([3.into(), 4.into(), 5.into()], 1292);
     }
 
     #[test]
     fn test_hash_chip_t4_4() {
-        test_hash_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()]);
+        test_hash_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 2582);
     }
 
     #[test]
     fn test_hash_chip_t4_5() {
-        test_hash_chip::<4, 5>([10.into(), 11.into(), 12.into(), 13.into(), 14.into()]);
+        test_hash_chip::<4, 5>(
+            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+            2584,
+        );
     }
 }

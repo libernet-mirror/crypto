@@ -273,6 +273,15 @@ impl Witness {
         out
     }
 
+    pub fn square(&mut self, wire: Wire) -> Wire {
+        let gate = self.pop_gate();
+        let lhs = self.copy(wire, Wire::LeftIn(gate));
+        let rhs = self.copy(wire, Wire::RightIn(gate));
+        let out = Wire::Out(gate);
+        self.set(out, lhs * rhs);
+        out
+    }
+
     pub fn mul_by_const(&mut self, lhs: Wire, rhs: Scalar) -> Wire {
         let gate = self.pop_gate();
         self.copy(lhs, Wire::LeftIn(gate));
@@ -1167,6 +1176,17 @@ mod tests {
         let wire = witness.mul(lhs, rhs);
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 408.into());
+    }
+
+    #[test]
+    fn test_witness_square() {
+        let mut witness = Witness::new(1);
+        let input = Wire::LeftIn(0);
+        witness.set(input, 12.into());
+        witness.copy(input, Wire::RightIn(0));
+        let wire = witness.square(input);
+        assert_eq!(wire, Wire::Out(0));
+        assert_eq!(witness.get(wire), 144.into());
     }
 
     #[test]
