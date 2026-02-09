@@ -375,7 +375,7 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<2, H> {
         &self,
         builder: &mut plonk::CircuitBuilder,
         inputs: [Option<plonk::Wire>; 1],
-    ) -> Result<[plonk::Wire; 1]> {
+    ) -> Result<[Option<plonk::Wire>; 1]> {
         let mut key = self.key;
         let mut hash = self.leaf;
         let mut wire = inputs[0];
@@ -391,15 +391,13 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<2, H> {
             }
             key = xits::shr1(key);
             hash = poseidon::hash_t3(&children);
-            wire = Some(
-                poseidon::Chip::<3, 2>::default().build(
-                    builder,
-                    match bit {
-                        0 => [wire, None],
-                        _ => [None, wire],
-                    },
-                )?[0],
-            );
+            wire = poseidon::Chip::<3, 2>::default().build(
+                builder,
+                match bit {
+                    0 => [wire, None],
+                    _ => [None, wire],
+                },
+            )?[0];
         }
         if hash != self.root_hash {
             return Err(anyhow!(
@@ -408,23 +406,52 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<2, H> {
                 utils::format_scalar(hash),
             ));
         }
-        Ok([wire.unwrap()])
+        Ok([wire])
     }
 
     fn witness(
         &self,
         witness: &mut plonk::Witness,
-        inputs: [plonk::Wire; 1],
-        outputs: [plonk::Wire; 1],
-    ) -> Result<()> {
-        // TODO
-        todo!()
+        inputs: [plonk::WireOrUnconstrained; 1],
+    ) -> Result<[plonk::WireOrUnconstrained; 1]> {
+        let mut key = self.key;
+        let mut hash = self.leaf;
+        let mut wire = inputs[0];
+        for children in self.path {
+            let bit = xits::and1(key);
+            let bit = bit.to_bytes_le()[0] as usize;
+            if hash != children[bit] {
+                return Err(anyhow!(
+                    "hash mismatch: got {}, want {}",
+                    utils::format_scalar(children[bit]),
+                    utils::format_scalar(hash),
+                ));
+            }
+            key = xits::shr1(key);
+            hash = poseidon::hash_t3(&children);
+            wire = poseidon::Chip::<3, 2>::default().witness(
+                witness,
+                match bit {
+                    0 => [wire, plonk::WireOrUnconstrained::Unconstrained(children[1])],
+                    _ => [plonk::WireOrUnconstrained::Unconstrained(children[0]), wire],
+                },
+            )?[0];
+        }
+        if hash != self.root_hash {
+            return Err(anyhow!(
+                "final hash mismatch: got {}, want {}",
+                utils::format_scalar(self.root_hash),
+                utils::format_scalar(hash),
+            ));
+        }
+        Ok([wire])
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plonk::{Chip, CircuitBuilder, Witness};
     use utils::testing::parse_scalar;
 
     #[test]
@@ -955,6 +982,12 @@ mod tests {
         let chip = Proof::<Scalar, Scalar, 2, 0>::from_compressed(0.into(), value, root_hash, &[])
             .unwrap()
             .to_lookup_chip();
+        let mut builder = CircuitBuilder::default();
+        let input = builder.add_const_gate(value);
+        let output = chip.build(&mut builder, [Some(input)]).unwrap();
+        builder.declare_public_inputs([input, output[0].unwrap()]);
+        let circuit = builder.build();
+        let witness = Witness::new(circuit.size());
         // TODO
     }
 }

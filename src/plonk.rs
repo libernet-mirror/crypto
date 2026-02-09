@@ -78,6 +78,24 @@ impl Wire {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum WireOrUnconstrained {
+    Wire(Wire),
+    Unconstrained(Scalar),
+}
+
+impl From<Wire> for WireOrUnconstrained {
+    fn from(wire: Wire) -> Self {
+        WireOrUnconstrained::Wire(wire)
+    }
+}
+
+impl From<Scalar> for WireOrUnconstrained {
+    fn from(value: Scalar) -> Self {
+        WireOrUnconstrained::Unconstrained(value)
+    }
+}
+
 struct NodeIterator<'a> {
     inner: btree_map::Iter<'a, usize, BTreeSet<Wire>>,
 }
@@ -201,8 +219,11 @@ impl Witness {
         };
     }
 
-    pub fn copy(&mut self, from: Wire, to: Wire) -> Scalar {
-        let value = self.get(from);
+    pub fn copy(&mut self, from: WireOrUnconstrained, to: Wire) -> Scalar {
+        let value = match from {
+            WireOrUnconstrained::Wire(from) => self.get(from),
+            WireOrUnconstrained::Unconstrained(value) => value,
+        };
         self.set(to, value);
         value
     }
@@ -219,7 +240,7 @@ impl Witness {
         wire
     }
 
-    pub fn add(&mut self, lhs: Wire, rhs: Wire) -> Wire {
+    pub fn add(&mut self, lhs: WireOrUnconstrained, rhs: WireOrUnconstrained) -> Wire {
         let gate = self.pop_gate();
         let lhs = self.copy(lhs, Wire::LeftIn(gate));
         let rhs = self.copy(rhs, Wire::RightIn(gate));
@@ -228,7 +249,7 @@ impl Witness {
         out
     }
 
-    pub fn add_const(&mut self, lhs: Wire, rhs: Scalar) -> Wire {
+    pub fn add_const(&mut self, lhs: WireOrUnconstrained, rhs: Scalar) -> Wire {
         let gate = self.pop_gate();
         self.copy(lhs, Wire::LeftIn(gate));
         let lhs = self.copy(lhs, Wire::RightIn(gate));
@@ -237,7 +258,7 @@ impl Witness {
         out
     }
 
-    pub fn sub(&mut self, lhs: Wire, rhs: Wire) -> Wire {
+    pub fn sub(&mut self, lhs: WireOrUnconstrained, rhs: WireOrUnconstrained) -> Wire {
         let gate = self.pop_gate();
         let lhs = self.copy(lhs, Wire::LeftIn(gate));
         let rhs = self.copy(rhs, Wire::RightIn(gate));
@@ -246,7 +267,7 @@ impl Witness {
         out
     }
 
-    pub fn sub_const(&mut self, lhs: Wire, rhs: Scalar) -> Wire {
+    pub fn sub_const(&mut self, lhs: WireOrUnconstrained, rhs: Scalar) -> Wire {
         let gate = self.pop_gate();
         self.copy(lhs, Wire::LeftIn(gate));
         let lhs = self.copy(lhs, Wire::RightIn(gate));
@@ -255,7 +276,7 @@ impl Witness {
         out
     }
 
-    pub fn sub_from_const(&mut self, lhs: Scalar, rhs: Wire) -> Wire {
+    pub fn sub_from_const(&mut self, lhs: Scalar, rhs: WireOrUnconstrained) -> Wire {
         let gate = self.pop_gate();
         self.copy(rhs, Wire::LeftIn(gate));
         let rhs = self.copy(rhs, Wire::RightIn(gate));
@@ -264,7 +285,7 @@ impl Witness {
         out
     }
 
-    pub fn mul(&mut self, lhs: Wire, rhs: Wire) -> Wire {
+    pub fn mul(&mut self, lhs: WireOrUnconstrained, rhs: WireOrUnconstrained) -> Wire {
         let gate = self.pop_gate();
         let lhs = self.copy(lhs, Wire::LeftIn(gate));
         let rhs = self.copy(rhs, Wire::RightIn(gate));
@@ -273,7 +294,7 @@ impl Witness {
         out
     }
 
-    pub fn square(&mut self, wire: Wire) -> Wire {
+    pub fn square(&mut self, wire: WireOrUnconstrained) -> Wire {
         let gate = self.pop_gate();
         let lhs = self.copy(wire, Wire::LeftIn(gate));
         let rhs = self.copy(wire, Wire::RightIn(gate));
@@ -282,7 +303,7 @@ impl Witness {
         out
     }
 
-    pub fn mul_by_const(&mut self, lhs: Wire, rhs: Scalar) -> Wire {
+    pub fn mul_by_const(&mut self, lhs: WireOrUnconstrained, rhs: Scalar) -> Wire {
         let gate = self.pop_gate();
         self.copy(lhs, Wire::LeftIn(gate));
         let lhs = self.copy(lhs, Wire::RightIn(gate));
@@ -1015,8 +1036,17 @@ impl CompressedCircuit {
 }
 
 pub trait Chip<const I: usize, const O: usize> {
-    fn build(&self, builder: &mut CircuitBuilder, inputs: [Option<Wire>; I]) -> Result<[Wire; O]>;
-    fn witness(&self, witness: &mut Witness, inputs: [Wire; I], outputs: [Wire; O]) -> Result<()>;
+    fn build(
+        &self,
+        builder: &mut CircuitBuilder,
+        inputs: [Option<Wire>; I],
+    ) -> Result<[Option<Wire>; O]>;
+
+    fn witness(
+        &self,
+        witness: &mut Witness,
+        inputs: [WireOrUnconstrained; I],
+    ) -> Result<[WireOrUnconstrained; O]>;
 }
 
 #[cfg(test)]
@@ -1079,7 +1109,10 @@ mod tests {
         let mut witness = Witness::new(1);
         witness.set(Wire::LeftIn(0), 12.into());
         witness.set(Wire::RightIn(0), 34.into());
-        assert_eq!(witness.copy(Wire::RightIn(0), Wire::Out(0)), 34.into());
+        assert_eq!(
+            witness.copy(Wire::RightIn(0).into(), Wire::Out(0)),
+            34.into()
+        );
         assert_eq!(witness.size(), 1);
         assert_eq!(witness.get(Wire::LeftIn(0)), 12.into());
         assert_eq!(witness.get(Wire::RightIn(0)), 34.into());
@@ -1092,8 +1125,14 @@ mod tests {
         witness.set(Wire::LeftIn(0), 12.into());
         witness.set(Wire::RightIn(0), 34.into());
         witness.set(Wire::Out(0), 56.into());
-        assert_eq!(witness.copy(Wire::RightIn(0), Wire::LeftIn(1)), 34.into());
-        assert_eq!(witness.copy(Wire::LeftIn(0), Wire::RightIn(1)), 12.into());
+        assert_eq!(
+            witness.copy(Wire::RightIn(0).into(), Wire::LeftIn(1)),
+            34.into()
+        );
+        assert_eq!(
+            witness.copy(Wire::LeftIn(0).into(), Wire::RightIn(1)),
+            12.into()
+        );
         witness.set(Wire::Out(1), 56.into());
         assert_eq!(witness.size(), 2);
         assert_eq!(witness.get(Wire::LeftIn(0)), 12.into());
@@ -1119,7 +1158,7 @@ mod tests {
         let rhs = Wire::RightIn(0);
         witness.set(lhs, 12.into());
         witness.set(rhs, 34.into());
-        let wire = witness.add(lhs, rhs);
+        let wire = witness.add(lhs.into(), rhs.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 46.into());
     }
@@ -1129,7 +1168,7 @@ mod tests {
         let mut witness = Witness::new(1);
         let lhs = Wire::LeftIn(0);
         witness.set(lhs, 12.into());
-        let wire = witness.add_const(lhs, 34.into());
+        let wire = witness.add_const(lhs.into(), 34.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 46.into());
     }
@@ -1141,7 +1180,7 @@ mod tests {
         let rhs = Wire::RightIn(0);
         witness.set(lhs, 34.into());
         witness.set(rhs, 12.into());
-        let wire = witness.sub(lhs, rhs);
+        let wire = witness.sub(lhs.into(), rhs.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 22.into());
     }
@@ -1151,7 +1190,7 @@ mod tests {
         let mut witness = Witness::new(1);
         let lhs = Wire::LeftIn(0);
         witness.set(lhs, 34.into());
-        let wire = witness.sub_const(lhs, 12.into());
+        let wire = witness.sub_const(lhs.into(), 12.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 22.into());
     }
@@ -1161,7 +1200,7 @@ mod tests {
         let mut witness = Witness::new(1);
         let rhs = Wire::LeftIn(0);
         witness.set(rhs, 12.into());
-        let wire = witness.sub_from_const(34.into(), rhs);
+        let wire = witness.sub_from_const(34.into(), rhs.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 22.into());
     }
@@ -1173,7 +1212,7 @@ mod tests {
         let rhs = Wire::RightIn(0);
         witness.set(lhs, 12.into());
         witness.set(rhs, 34.into());
-        let wire = witness.mul(lhs, rhs);
+        let wire = witness.mul(lhs.into(), rhs.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 408.into());
     }
@@ -1183,8 +1222,8 @@ mod tests {
         let mut witness = Witness::new(1);
         let input = Wire::LeftIn(0);
         witness.set(input, 12.into());
-        witness.copy(input, Wire::RightIn(0));
-        let wire = witness.square(input);
+        witness.copy(input.into(), Wire::RightIn(0));
+        let wire = witness.square(input.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 144.into());
     }
@@ -1194,7 +1233,7 @@ mod tests {
         let mut witness = Witness::new(1);
         let lhs = Wire::LeftIn(0);
         witness.set(lhs, 12.into());
-        let wire = witness.mul_by_const(lhs, 34.into());
+        let wire = witness.mul_by_const(lhs.into(), 34.into());
         assert_eq!(wire, Wire::Out(0));
         assert_eq!(witness.get(wire), 408.into());
     }
