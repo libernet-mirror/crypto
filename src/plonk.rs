@@ -1237,14 +1237,14 @@ mod tests {
         let gate3 = builder.connect_sum_gate(input.into(), gate2.into());
         let gate4 = builder.connect_sum_with_const_gate(gate3.into(), 5.into());
         builder.declare_public_inputs([gate4]);
+        let witness = witness(
+            vec![3.into(), 9.into(), 3.into(), 30.into()],
+            vec![3.into(), 3.into(), 27.into(), 30.into()],
+            vec![9.into(), 27.into(), 30.into(), 35.into()],
+        );
+        assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let proof = circuit
-            .prove(witness(
-                vec![3.into(), 9.into(), 3.into(), 30.into()],
-                vec![3.into(), 3.into(), 27.into(), 0.into()],
-                vec![9.into(), 27.into(), 30.into(), 35.into()],
-            ))
-            .unwrap();
+        let proof = circuit.prove(witness).unwrap();
         let public_inputs = circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&gate4).unwrap(), 35.into());
     }
