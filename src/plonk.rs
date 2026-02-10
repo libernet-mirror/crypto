@@ -311,6 +311,21 @@ impl Witness {
         self.set(out, lhs * rhs);
         out
     }
+
+    pub fn combine(
+        &mut self,
+        c1: Scalar,
+        lhs: WireOrUnconstrained,
+        c2: Scalar,
+        rhs: WireOrUnconstrained,
+    ) -> Wire {
+        let gate = self.pop_gate();
+        let lhs = self.copy(lhs, Wire::LeftIn(gate));
+        let rhs = self.copy(rhs, Wire::RightIn(gate));
+        let out = Wire::Out(gate);
+        self.set(out, c1 * lhs + c2 * rhs);
+        out
+    }
 }
 
 #[derive(Debug, Default)]
@@ -458,6 +473,16 @@ impl CircuitBuilder {
 
     pub fn add_mul_by_const_gate(&mut self, lhs: Option<Wire>, c: Scalar) -> Wire {
         self.add_unary_gate(c, 0.into(), -Scalar::from(1), 0.into(), 0.into(), lhs)
+    }
+
+    pub fn add_linear_combination_gate(
+        &mut self,
+        c1: Scalar,
+        lhs: Option<Wire>,
+        c2: Scalar,
+        rhs: Option<Wire>,
+    ) -> Wire {
+        self.add_binary_gate(c1, c2, -Scalar::from(1), 0.into(), 0.into(), lhs, rhs)
     }
 
     pub fn add_bool_assertion_gate(&mut self, input: Option<Wire>) {
@@ -1238,6 +1263,18 @@ mod tests {
         assert_eq!(witness.get(wire), 408.into());
     }
 
+    #[test]
+    fn test_witness_combine() {
+        let mut witness = Witness::new(1);
+        let lhs = Wire::LeftIn(0);
+        let rhs = Wire::RightIn(0);
+        witness.set(lhs, 34.into());
+        witness.set(rhs, 78.into());
+        let wire = witness.combine(12.into(), lhs.into(), 56.into(), rhs.into());
+        assert_eq!(wire, Wire::Out(0));
+        assert_eq!(witness.get(wire), 4776.into());
+    }
+
     /// Builds the circuit at https://vitalik.eth.limo/general/2019/09/22/plonk.html.
     fn build_test_circuit() -> (Circuit, u32) {
         let mut builder = CircuitBuilder::default();
@@ -1704,6 +1741,29 @@ mod tests {
         let circuit = builder.build();
         assert!(test_connected_unary_gate(&circuit, 34, 408).is_ok());
         assert!(test_connected_unary_gate(&circuit, 34, 804).is_err());
+    }
+
+    #[test]
+    fn test_linear_combination_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_linear_combination_gate(12.into(), None, 56.into(), None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 34, 78, 4776).is_ok());
+        assert!(test_gate(&circuit, 78, 90, 5976).is_ok());
+        assert!(test_gate(&circuit, 42, 78, 4776).is_err());
+        assert!(test_gate(&circuit, 34, 42, 4776).is_err());
+        assert!(test_gate(&circuit, 34, 78, 42).is_err());
+    }
+
+    #[test]
+    fn test_connected_linear_combination_gate() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.add_const_gate(34.into());
+        let rhs = builder.add_const_gate(78.into());
+        builder.add_linear_combination_gate(12.into(), lhs.into(), 56.into(), rhs.into());
+        let circuit = builder.build();
+        assert!(test_connected_binary_gate(&circuit, 34, 78, 4776).is_ok());
+        assert!(test_connected_binary_gate(&circuit, 34, 78, 7647).is_err());
     }
 
     #[test]
