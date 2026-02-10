@@ -974,15 +974,10 @@ mod tests {
         assert!(proof.map(TestValue { scalar: root_hash }).is_err());
     }
 
-    #[test]
-    fn test_proof_chip_2_0() {
-        let root_hash =
-            parse_scalar("0x2f1e5f91aa954def1ed17cb40d9fd24da546f68da56f314ca3f7e4dc1d0a2400");
-        let value =
-            parse_scalar("0x2f1e5f91aa954def1ed17cb40d9fd24da546f68da56f314ca3f7e4dc1d0a2400");
-        let chip = Proof::<Scalar, Scalar, 2, 0>::from_compressed(0.into(), value, root_hash, &[])
-            .unwrap()
-            .to_lookup_chip();
+    fn test_proof_chip_2<const H: usize>(proof: Proof<Scalar, Scalar, 2, H>) {
+        let value = *proof.value();
+        let root_hash = proof.root_hash();
+        let chip = proof.to_lookup_chip();
         let mut builder = CircuitBuilder::default();
         let input_wire = builder.add_const_gate(value);
         let output_wire = chip.build(&mut builder, [Some(input_wire)]).unwrap()[0].unwrap();
@@ -999,6 +994,130 @@ mod tests {
         assert_eq!(
             circuit.verify(&proof).unwrap(),
             BTreeMap::from([(input_wire, value), (output_wire, root_hash)])
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_2_0() {
+        let root_hash =
+            parse_scalar("0x2f1e5f91aa954def1ed17cb40d9fd24da546f68da56f314ca3f7e4dc1d0a2400");
+        let value =
+            parse_scalar("0x2f1e5f91aa954def1ed17cb40d9fd24da546f68da56f314ca3f7e4dc1d0a2400");
+        test_proof_chip_2::<0>(
+            Proof::<Scalar, Scalar, 2, 0>::from_compressed(0.into(), value, root_hash, &[])
+                .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_2_1_left() {
+        let root_hash =
+            parse_scalar("0x000cf5091385528d99c45837cd4b13f421b2e26eeff75b0778c2406d6f5392c7");
+        let left =
+            parse_scalar("0x649911b84fd6fceb1314d8eda893ee60abb4f55d52ef2a7a88491587dd432c24");
+        let right =
+            parse_scalar("0x11be4b396567dc3aef3f8e3e9a621aaedb507d5aa7f8bcc1da64d28b8e22e811");
+        test_proof_chip_2::<1>(
+            Proof::<Scalar, Scalar, 2, 1>::from_compressed(0.into(), left, root_hash, &[right])
+                .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_2_1_right() {
+        let root_hash =
+            parse_scalar("0x000cf5091385528d99c45837cd4b13f421b2e26eeff75b0778c2406d6f5392c7");
+        let left =
+            parse_scalar("0x649911b84fd6fceb1314d8eda893ee60abb4f55d52ef2a7a88491587dd432c24");
+        let right =
+            parse_scalar("0x11be4b396567dc3aef3f8e3e9a621aaedb507d5aa7f8bcc1da64d28b8e22e811");
+        test_proof_chip_2::<1>(
+            Proof::<Scalar, Scalar, 2, 1>::from_compressed(1.into(), right, root_hash, &[left])
+                .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_2_2_00() {
+        let root_hash =
+            parse_scalar("0x5a1980613c5057fa1f6006e1379240cf07bc6d8dc9be6e10ce166c250de838be");
+        let value =
+            parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
+        let sister1 =
+            parse_scalar("0x539b16757d586f847a0821b28d3177a484457451b4f90fe9b51c96348de51d53");
+        let sister2 =
+            parse_scalar("0x6ab45fd4070883dc5ea816a1b4919223f4e7e23a321f58ae9f4adc4ba92f56c1");
+        test_proof_chip_2::<2>(
+            Proof::<Scalar, Scalar, 2, 2>::from_compressed(
+                0.into(),
+                value,
+                root_hash,
+                &[sister1, sister2],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_2_2_01() {
+        let root_hash =
+            parse_scalar("0x69b867d1f4aa3a347936175a1cd8103e579829bd300e665c8e03beaf028b8305");
+        let value =
+            parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
+        let sister1 =
+            parse_scalar("0x539b16757d586f847a0821b28d3177a484457451b4f90fe9b51c96348de51d53");
+        let sister2 =
+            parse_scalar("0x6ab45fd4070883dc5ea816a1b4919223f4e7e23a321f58ae9f4adc4ba92f56c1");
+        test_proof_chip_2::<2>(
+            Proof::<Scalar, Scalar, 2, 2>::from_compressed(
+                1.into(),
+                value,
+                root_hash,
+                &[sister1, sister2],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_2_2_10() {
+        let root_hash =
+            parse_scalar("0x125404153950625bd625c3e3f348ff32c04bedaebcd4690424ca2b264b9330ac");
+        let value =
+            parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
+        let sister1 =
+            parse_scalar("0x539b16757d586f847a0821b28d3177a484457451b4f90fe9b51c96348de51d53");
+        let sister2 =
+            parse_scalar("0x6ab45fd4070883dc5ea816a1b4919223f4e7e23a321f58ae9f4adc4ba92f56c1");
+        test_proof_chip_2::<2>(
+            Proof::<Scalar, Scalar, 2, 2>::from_compressed(
+                2.into(),
+                value,
+                root_hash,
+                &[sister1, sister2],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_2_2_11() {
+        let root_hash =
+            parse_scalar("0x54e26b16fef5cb4a2090df164e23bae47c91080f407d2d7b54dd4706eadbf240");
+        let value =
+            parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
+        let sister1 =
+            parse_scalar("0x539b16757d586f847a0821b28d3177a484457451b4f90fe9b51c96348de51d53");
+        let sister2 =
+            parse_scalar("0x6ab45fd4070883dc5ea816a1b4919223f4e7e23a321f58ae9f4adc4ba92f56c1");
+        test_proof_chip_2::<2>(
+            Proof::<Scalar, Scalar, 2, 2>::from_compressed(
+                3.into(),
+                value,
+                root_hash,
+                &[sister1, sister2],
+            )
+            .unwrap(),
         );
     }
 
