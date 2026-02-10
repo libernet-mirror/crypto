@@ -1311,5 +1311,228 @@ mod tests {
         );
     }
 
-    // TODO
+    #[test]
+    fn test_proof_chip_3_2_00() {
+        let root_hash =
+            parse_scalar("0x3436ad7d0b7c8d99348e2c43296694575ce3f19793fec9ca8dd9bb82ff2a4a5c");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        test_proof_chip_3::<2>(
+            Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+                0.into(),
+                value,
+                root_hash,
+                &[[sister1, sister2], [sister3, sister4]],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_3_2_01() {
+        let root_hash =
+            parse_scalar("0x13ab7daad7f19c70a918b81a2349c79320be6f9d028d1687249f081134a4e416");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        test_proof_chip_3::<2>(
+            Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+                1.into(),
+                value,
+                root_hash,
+                &[[sister1, sister2], [sister3, sister4]],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_3_2_02() {
+        let root_hash =
+            parse_scalar("0x1263d54213c5907c81ec0590180913e06d54b40c43771e67f6e6b51c24bb0a68");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        test_proof_chip_3::<2>(
+            Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+                2.into(),
+                value,
+                root_hash,
+                &[[sister1, sister2], [sister3, sister4]],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_3_2_10() {
+        let root_hash =
+            parse_scalar("0x62e18e49f564dc9b07d9804428b10be6c58b41f6381885611f57874ce4e0130f");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        test_proof_chip_3::<2>(
+            Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+                3.into(),
+                value,
+                root_hash,
+                &[[sister1, sister2], [sister3, sister4]],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_3_2_11() {
+        let root_hash =
+            parse_scalar("0x6c8ccd34d8d80f823087bf3d52a2fe98d54252709d6ed895dbc26101ccdc20b9");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        test_proof_chip_3::<2>(
+            Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+                4.into(),
+                value,
+                root_hash,
+                &[[sister1, sister2], [sister3, sister4]],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_3_2_12() {
+        let root_hash =
+            parse_scalar("0x4a6f725adc006b8fb95a60051fcadf142cd5e8ba0dcf0fc47ec5e2488b809b78");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        test_proof_chip_3::<2>(
+            Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+                5.into(),
+                value,
+                root_hash,
+                &[[sister1, sister2], [sister3, sister4]],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_3_2_20() {
+        let root_hash =
+            parse_scalar("0x15135b9c3d546fb4b9ff39043d885d027f12e0695cf489bce65ae045481eb6a7");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        test_proof_chip_3::<2>(
+            Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+                6.into(),
+                value,
+                root_hash,
+                &[[sister1, sister2], [sister3, sister4]],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_3_2_21() {
+        let root_hash =
+            parse_scalar("0x6391cfad1b5e7c678f11d2920c0c63d867c7b83c27c03fba301b833efe70894e");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        test_proof_chip_3::<2>(
+            Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+                7.into(),
+                value,
+                root_hash,
+                &[[sister1, sister2], [sister3, sister4]],
+            )
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_proof_chip_3_2_22() {
+        let root_hash =
+            parse_scalar("0x253f43a45777ed346db8607ca88f1884a0528506c2beac32857c1a8443218a95");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        test_proof_chip_3::<2>(
+            Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+                8.into(),
+                value,
+                root_hash,
+                &[[sister1, sister2], [sister3, sister4]],
+            )
+            .unwrap(),
+        );
+    }
 }
