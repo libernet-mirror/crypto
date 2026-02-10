@@ -680,7 +680,7 @@ mod tests {
         let proof = circuit.prove(witness).unwrap();
         assert_eq!(
             circuit.verify(&proof).unwrap(),
-            BTreeMap::from_iter(std::iter::once((result_wire, result)))
+            BTreeMap::from([(result_wire, result)])
         );
     }
 

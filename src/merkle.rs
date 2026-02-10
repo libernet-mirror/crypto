@@ -451,7 +451,8 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<2, H> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plonk::{Chip, CircuitBuilder, Witness};
+    use crate::plonk::{Chip, CircuitBuilder};
+    use std::collections::BTreeMap;
     use utils::testing::parse_scalar;
 
     #[test]
@@ -983,11 +984,23 @@ mod tests {
             .unwrap()
             .to_lookup_chip();
         let mut builder = CircuitBuilder::default();
-        let input = builder.add_const_gate(value);
-        let output = chip.build(&mut builder, [Some(input)]).unwrap();
-        builder.declare_public_inputs([input, output[0].unwrap()]);
+        let input_wire = builder.add_const_gate(value);
+        let output_wire = chip.build(&mut builder, [Some(input_wire)]).unwrap()[0].unwrap();
+        builder.declare_public_inputs([input_wire, output_wire]);
+        let mut witness = plonk::Witness::new(builder.len());
+        witness.assert_constant(value);
+        assert!(
+            chip.witness(&mut witness, [plonk::WireOrUnconstrained::Wire(input_wire)])
+                .is_ok()
+        );
+        assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let witness = Witness::new(circuit.size());
-        // TODO
+        let proof = circuit.prove(witness).unwrap();
+        assert_eq!(
+            circuit.verify(&proof).unwrap(),
+            BTreeMap::from([(input_wire, value), (output_wire, root_hash)])
+        );
     }
+
+    // TODO
 }
