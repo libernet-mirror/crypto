@@ -1320,6 +1320,27 @@ mod tests {
         test_witness_sub_impl(78, 34, 44);
     }
 
+    fn test_witness_unconstrained_sub_impl(lhs: u64, rhs: u64, out: u64) {
+        let mut witness = Witness::new(1);
+        assert_eq!(
+            witness.sub(
+                WireOrUnconstrained::Unconstrained(lhs.into()),
+                WireOrUnconstrained::Unconstrained(rhs.into())
+            ),
+            Wire::Out(0)
+        );
+        assert_eq!(witness.get(Wire::LeftIn(0)), lhs.into());
+        assert_eq!(witness.get(Wire::RightIn(0)), rhs.into());
+        assert_eq!(witness.get(Wire::Out(0)), out.into());
+    }
+
+    #[test]
+    fn test_witness_unconstrained_sub() {
+        test_witness_unconstrained_sub_impl(34, 12, 22);
+        test_witness_unconstrained_sub_impl(78, 56, 22);
+        test_witness_unconstrained_sub_impl(78, 34, 44);
+    }
+
     fn test_witness_sub_const_impl(lhs: u64, rhs: u64, out: u64) {
         let mut witness = Witness::new(1);
         witness.pop_gate();
@@ -1338,6 +1359,25 @@ mod tests {
         test_witness_sub_const_impl(34, 12, 22);
         test_witness_sub_const_impl(78, 56, 22);
         test_witness_sub_const_impl(78, 34, 44);
+    }
+
+    fn test_witness_unconstrained_sub_const_impl(lhs: u64, rhs: u64, out: u64) {
+        let mut witness = Witness::new(1);
+        witness.set(Wire::LeftIn(0), lhs.into());
+        assert_eq!(
+            witness.sub_const(WireOrUnconstrained::Unconstrained(lhs.into()), rhs.into()),
+            Wire::Out(0)
+        );
+        assert_eq!(witness.get(Wire::LeftIn(0)), lhs.into());
+        assert_eq!(witness.get(Wire::RightIn(0)), lhs.into());
+        assert_eq!(witness.get(Wire::Out(0)), out.into());
+    }
+
+    #[test]
+    fn test_witness_unconstrained_sub_const() {
+        test_witness_unconstrained_sub_const_impl(34, 12, 22);
+        test_witness_unconstrained_sub_const_impl(78, 56, 22);
+        test_witness_unconstrained_sub_const_impl(78, 34, 44);
     }
 
     fn test_witness_sub_from_const_impl(lhs: u64, rhs: u64, out: u64) {
@@ -1360,6 +1400,25 @@ mod tests {
         test_witness_sub_from_const_impl(78, 34, 44);
     }
 
+    fn test_witness_unconstrained_sub_from_const_impl(lhs: u64, rhs: u64, out: u64) {
+        let mut witness = Witness::new(1);
+        witness.set(Wire::LeftIn(0), lhs.into());
+        assert_eq!(
+            witness.sub_from_const(lhs.into(), WireOrUnconstrained::Unconstrained(rhs.into())),
+            Wire::Out(0)
+        );
+        assert_eq!(witness.get(Wire::LeftIn(0)), rhs.into());
+        assert_eq!(witness.get(Wire::RightIn(0)), rhs.into());
+        assert_eq!(witness.get(Wire::Out(0)), out.into());
+    }
+
+    #[test]
+    fn test_witness_unconstrained_sub_from_const() {
+        test_witness_unconstrained_sub_from_const_impl(34, 12, 22);
+        test_witness_unconstrained_sub_from_const_impl(78, 56, 22);
+        test_witness_unconstrained_sub_from_const_impl(78, 34, 44);
+    }
+
     fn test_witness_mul_impl(lhs: u64, rhs: u64, out: u64) {
         let mut witness = Witness::new(1);
         witness.pop_gate();
@@ -1379,6 +1438,27 @@ mod tests {
         test_witness_mul_impl(12, 34, 408);
         test_witness_mul_impl(34, 12, 408);
         test_witness_mul_impl(56, 78, 4368);
+    }
+
+    fn test_witness_unconstrained_mul_impl(lhs: u64, rhs: u64, out: u64) {
+        let mut witness = Witness::new(1);
+        assert_eq!(
+            witness.mul(
+                WireOrUnconstrained::Unconstrained(lhs.into()),
+                WireOrUnconstrained::Unconstrained(rhs.into())
+            ),
+            Wire::Out(0)
+        );
+        assert_eq!(witness.get(Wire::LeftIn(0)), lhs.into());
+        assert_eq!(witness.get(Wire::RightIn(0)), rhs.into());
+        assert_eq!(witness.get(Wire::Out(0)), out.into());
+    }
+
+    #[test]
+    fn test_witness_unconstrained_mul() {
+        test_witness_unconstrained_mul_impl(12, 34, 408);
+        test_witness_unconstrained_mul_impl(34, 12, 408);
+        test_witness_unconstrained_mul_impl(56, 78, 4368);
     }
 
     fn test_witness_square_impl(input: u64, output: u64) {
