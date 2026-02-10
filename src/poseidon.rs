@@ -1,5 +1,5 @@
 use crate::plonk::{Chip as PlonkChip, CircuitBuilder, Wire, WireOrUnconstrained, Witness};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use blstrs::Scalar;
 use ff::Field;
 use std::sync::LazyLock;
@@ -185,17 +185,14 @@ pub fn hash_t4(inputs: &[Scalar]) -> Scalar {
 pub struct Chip<const T: usize, const I: usize> {}
 
 impl<const T: usize, const I: usize> Chip<T, I> {
-    fn build_absorb(
+    fn build_absorb_first(
         &self,
         builder: &mut CircuitBuilder,
-        mut state: [Option<Wire>; T],
         chunk: &[Option<Wire>],
     ) -> [Option<Wire>; T] {
+        let mut state: [Option<Wire>; T] = [None; T];
         for i in 0..chunk.len() {
-            state[i] = match state[i] {
-                Some(wire) => Some(builder.add_sum_gate(wire.into(), chunk[i])),
-                None => chunk[i],
-            };
+            state[i] = chunk[i];
         }
         for i in chunk.len()..T {
             state[i] = Some(builder.add_const_gate(Scalar::ZERO));
@@ -203,23 +200,43 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         state
     }
 
+    fn witness_absorb_first(
+        &self,
+        witness: &mut Witness,
+        chunk: &[WireOrUnconstrained],
+    ) -> [WireOrUnconstrained; T] {
+        let mut state = [WireOrUnconstrained::Unconstrained(Scalar::ZERO); T];
+        for i in 0..chunk.len() {
+            state[i] = chunk[i];
+        }
+        for i in chunk.len()..T {
+            state[i] = witness.assert_constant(Scalar::ZERO).into();
+        }
+        state
+    }
+
+    fn build_absorb(
+        &self,
+        builder: &mut CircuitBuilder,
+        mut state: [Wire; T],
+        chunk: &[Option<Wire>],
+    ) -> [Wire; T] {
+        for i in 0..chunk.len() {
+            state[i] = builder.add_sum_gate(state[i].into(), chunk[i]);
+        }
+        state
+    }
+
     fn witness_absorb(
         &self,
         witness: &mut Witness,
-        state: [Option<WireOrUnconstrained>; T],
+        mut state: [Wire; T],
         chunk: &[WireOrUnconstrained],
-    ) -> [WireOrUnconstrained; T] {
-        let mut new_state = [WireOrUnconstrained::Unconstrained(Scalar::ZERO); T];
+    ) -> [Wire; T] {
         for i in 0..chunk.len() {
-            new_state[i] = match state[i] {
-                Some(wire) => witness.add(wire, chunk[i]).into(),
-                None => chunk[i],
-            };
+            state[i] = witness.add(state[i].into(), chunk[i]);
         }
-        for i in chunk.len()..T {
-            new_state[i] = witness.assert_constant(Scalar::ZERO).into();
-        }
-        new_state
+        state
     }
 
     fn build_sbox(&self, builder: &mut CircuitBuilder, wire: Wire) -> Wire {
@@ -380,6 +397,34 @@ impl<const T: usize, const I: usize> Chip<T, I> {
 
         self.witness_mds(witness, state)
     }
+
+    fn build_permutation(
+        &self,
+        builder: &mut CircuitBuilder,
+        state: [Option<Wire>; T],
+    ) -> [Wire; T] {
+        let mut state = self.build_round(builder, state, 0);
+        for i in 1..Constants::<T>::num_total_rounds() {
+            state = self.build_round(builder, state.map(|wire| Some(wire)), i);
+        }
+        state
+    }
+
+    fn witness_permutation(
+        &self,
+        witness: &mut Witness,
+        state: [WireOrUnconstrained; T],
+    ) -> [Wire; T] {
+        let mut state = self.witness_round(witness, state, 0);
+        for i in 1..Constants::<T>::num_total_rounds() {
+            state = self.witness_round(
+                witness,
+                state.map(|wire| WireOrUnconstrained::Wire(wire)),
+                i,
+            );
+        }
+        state
+    }
 }
 
 impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I> {
@@ -388,14 +433,20 @@ impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I> {
         builder: &mut CircuitBuilder,
         inputs: [Option<Wire>; I],
     ) -> Result<[Option<Wire>; 1]> {
-        let mut state: [Option<Wire>; T] = [None; T];
-        for chunk in inputs.chunks(T - 1) {
+        let mut chunks = inputs.chunks(T - 1);
+        let state = self.build_absorb_first(
+            builder,
+            match chunks.next() {
+                Some(chunk) => chunk,
+                None => return Err(anyhow!("at least one input scalar is required")),
+            },
+        );
+        let mut state = self.build_permutation(builder, state);
+        while let Some(chunk) = chunks.next() {
             state = self.build_absorb(builder, state, chunk);
-            for i in 0..Constants::<T>::num_total_rounds() {
-                state = self.build_round(builder, state, i).map(|state| Some(state));
-            }
+            state = self.build_permutation(builder, state.map(|wire| Some(wire)));
         }
-        Ok([state[0]])
+        Ok([Some(state[0])])
     }
 
     fn witness(
@@ -403,18 +454,21 @@ impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I> {
         witness: &mut Witness,
         inputs: [WireOrUnconstrained; I],
     ) -> Result<[WireOrUnconstrained; 1]> {
-        // TODO: simplify this crap.
-        let mut state = [None; T];
-        for chunk in inputs.chunks(T - 1) {
-            let mut new_state = self.witness_absorb(witness, state, chunk);
-            for i in 0..Constants::<T>::num_total_rounds() {
-                new_state = self
-                    .witness_round(witness, new_state, i)
-                    .map(|wire| WireOrUnconstrained::Wire(wire));
-            }
-            state = new_state.map(|state| Some(state));
+        let mut chunks = inputs.chunks(T - 1);
+        let state = self.witness_absorb_first(
+            witness,
+            match chunks.next() {
+                Some(chunk) => chunk,
+                None => return Err(anyhow!("at least one input scalar is required")),
+            },
+        );
+        let mut state = self.witness_permutation(witness, state);
+        while let Some(chunk) = chunks.next() {
+            state = self.witness_absorb(witness, state, chunk);
+            state = self
+                .witness_permutation(witness, state.map(|wire| WireOrUnconstrained::Wire(wire)));
         }
-        Ok([state[0].unwrap()])
+        Ok([WireOrUnconstrained::Wire(state[0])])
     }
 }
 
@@ -523,8 +577,8 @@ mod tests {
         }
         assert_eq!(
             chip.witness(&mut witness, input_wires.map(|wire| wire.into()))
-                .unwrap()[0],
-            WireOrUnconstrained::Wire(result_wire)
+                .unwrap(),
+            [WireOrUnconstrained::Wire(result_wire)]
         );
         assert_eq!(witness.get(result_wire), result);
         assert!(builder.check_witness(&witness).is_ok());
@@ -595,6 +649,94 @@ mod tests {
         test_hash_chip::<4, 5>(
             [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
             2584,
+        );
+    }
+
+    fn test_preimage_chip<const T: usize, const I: usize>(
+        inputs: [Scalar; I],
+        expected_circuit_size: usize,
+    ) {
+        let result = hash::<T>(&inputs);
+        let mut builder = CircuitBuilder::default();
+        let chip = Chip::<T, I>::default();
+        let result_wire = chip
+            .build(&mut builder, std::array::from_fn(|_| None))
+            .unwrap()[0]
+            .unwrap();
+        builder.declare_public_inputs([result_wire]);
+        let mut witness = Witness::new(builder.len());
+        assert_eq!(
+            chip.witness(
+                &mut witness,
+                inputs.map(|input| WireOrUnconstrained::Unconstrained(input))
+            )
+            .unwrap(),
+            [WireOrUnconstrained::Wire(result_wire)]
+        );
+        assert_eq!(witness.get(result_wire), result);
+        assert!(builder.check_witness(&witness).is_ok());
+        let circuit = builder.build();
+        assert_eq!(circuit.size(), expected_circuit_size);
+        let proof = circuit.prove(witness).unwrap();
+        assert_eq!(
+            circuit.verify(&proof).unwrap(),
+            BTreeMap::from_iter(std::iter::once((result_wire, result)))
+        );
+    }
+
+    #[test]
+    fn test_preimage_chip_t3_1() {
+        test_preimage_chip::<3, 1>([42.into()], 830);
+    }
+
+    #[test]
+    fn test_preimage_chip_t3_2() {
+        test_preimage_chip::<3, 2>([1.into(), 2.into()], 829);
+    }
+
+    #[test]
+    fn test_preimage_chip_t3_3() {
+        test_preimage_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1658);
+    }
+
+    #[test]
+    fn test_preimage_chip_t3_4() {
+        test_preimage_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1659);
+    }
+
+    #[test]
+    fn test_preimage_chip_t3_5() {
+        test_preimage_chip::<3, 5>(
+            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+            2488,
+        );
+    }
+
+    #[test]
+    fn test_preimage_chip_t4_1() {
+        test_preimage_chip::<4, 1>([42.into()], 1291);
+    }
+
+    #[test]
+    fn test_preimage_chip_t4_2() {
+        test_preimage_chip::<4, 2>([1.into(), 2.into()], 1290);
+    }
+
+    #[test]
+    fn test_preimage_chip_t4_3() {
+        test_preimage_chip::<4, 3>([3.into(), 4.into(), 5.into()], 1289);
+    }
+
+    #[test]
+    fn test_preimage_chip_t4_4() {
+        test_preimage_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 2578);
+    }
+
+    #[test]
+    fn test_preimage_chip_t4_5() {
+        test_preimage_chip::<4, 5>(
+            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+            2579,
         );
     }
 }
