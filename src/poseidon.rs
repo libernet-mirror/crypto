@@ -254,22 +254,16 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     fn build_mds3(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
         let mds = Constants::<3>::get_mds_matrix();
         std::array::from_fn(|i| {
-            let lhs = builder.add_binary_gate(
+            let lhs = builder.add_linear_combination_gate(
                 mds[i * 3 + 0],
-                mds[i * 3 + 1],
-                -Scalar::from(1),
-                0.into(),
-                0.into(),
                 state[0].into(),
+                mds[i * 3 + 1],
                 state[1].into(),
             );
-            builder.add_binary_gate(
+            builder.add_linear_combination_gate(
                 1.into(),
-                mds[i * 3 + 2],
-                -Scalar::from(1),
-                0.into(),
-                0.into(),
                 lhs.into(),
+                mds[i * 3 + 2],
                 state[2].into(),
             )
         })
@@ -278,22 +272,16 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     fn build_mds4(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
         let mds = Constants::<4>::get_mds_matrix();
         std::array::from_fn(|i| {
-            let lhs = builder.add_binary_gate(
+            let lhs = builder.add_linear_combination_gate(
                 mds[i * 4 + 0],
-                mds[i * 4 + 1],
-                -Scalar::from(1),
-                0.into(),
-                0.into(),
                 state[0].into(),
+                mds[i * 4 + 1],
                 state[1].into(),
             );
-            let rhs = builder.add_binary_gate(
+            let rhs = builder.add_linear_combination_gate(
                 mds[i * 4 + 2],
-                mds[i * 4 + 3],
-                -Scalar::from(1),
-                0.into(),
-                0.into(),
                 state[2].into(),
+                mds[i * 4 + 3],
                 state[3].into(),
             );
             builder.add_sum_gate(lhs.into(), rhs.into())
@@ -304,17 +292,13 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let mds = Constants::<3>::get_mds_matrix();
         let state = state.map(|wire| witness.get(wire));
         std::array::from_fn(|i| {
-            let gate1 = witness.pop_gate();
-            witness.set(Wire::LeftIn(gate1), state[0]);
-            witness.set(Wire::RightIn(gate1), state[1]);
-            let out1 = Wire::Out(gate1);
-            witness.set(out1, mds[i * 3 + 0] * state[0] + mds[i * 3 + 1] * state[1]);
-            let gate2 = witness.pop_gate();
-            let out1 = witness.copy(out1.into(), Wire::LeftIn(gate2));
-            witness.set(Wire::RightIn(gate2), state[2]);
-            let out2 = Wire::Out(gate2);
-            witness.set(out2, out1 + mds[i * 3 + 2] * state[2]);
-            out2
+            let lhs = witness.combine(
+                mds[i * 3 + 0],
+                state[0].into(),
+                mds[i * 3 + 1],
+                state[1].into(),
+            );
+            witness.combine(1.into(), lhs.into(), mds[i * 3 + 2], state[2].into())
         })
     }
 
@@ -322,16 +306,18 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let mds = Constants::<4>::get_mds_matrix();
         let state = state.map(|wire| witness.get(wire));
         std::array::from_fn(|i| {
-            let gate = witness.pop_gate();
-            witness.set(Wire::LeftIn(gate), state[0]);
-            witness.set(Wire::RightIn(gate), state[1]);
-            let lhs = Wire::Out(gate);
-            witness.set(lhs, mds[i * 4 + 0] * state[0] + mds[i * 4 + 1] * state[1]);
-            let gate = witness.pop_gate();
-            witness.set(Wire::LeftIn(gate), state[2]);
-            witness.set(Wire::RightIn(gate), state[3]);
-            let rhs = Wire::Out(gate);
-            witness.set(rhs, mds[i * 4 + 2] * state[2] + mds[i * 4 + 3] * state[3]);
+            let lhs = witness.combine(
+                mds[i * 4 + 0],
+                state[0].into(),
+                mds[i * 4 + 1],
+                state[1].into(),
+            );
+            let rhs = witness.combine(
+                mds[i * 4 + 2],
+                state[2].into(),
+                mds[i * 4 + 3],
+                state[3].into(),
+            );
             witness.add(lhs.into(), rhs.into())
         })
     }
