@@ -327,6 +327,12 @@ impl Witness {
         out
     }
 
+    pub fn assert_bool(&mut self, input: Wire) {
+        let gate = self.pop_gate();
+        self.copy(input.into(), Wire::LeftIn(gate));
+        self.copy(input.into(), Wire::RightIn(gate));
+    }
+
     pub fn not(&mut self, input: WireOrUnconstrained) -> Wire {
         let gate = self.pop_gate();
         self.copy(input, Wire::LeftIn(gate));
@@ -1526,6 +1532,21 @@ mod tests {
         test_witness_combine_impl(34, 12, 56, 78, 4776);
         test_witness_combine_impl(12, 34, 78, 56, 4776);
         test_witness_combine_impl(56, 78, 12, 34, 4776);
+    }
+
+    fn test_witness_assert_bool_impl(input: Scalar) {
+        let mut witness = Witness::new(1);
+        witness.pop_gate();
+        witness.set(Wire::LeftIn(0), input.into());
+        witness.assert_bool(Wire::LeftIn(0));
+        assert_eq!(witness.get(Wire::LeftIn(1)), input.into());
+        assert_eq!(witness.get(Wire::RightIn(1)), input.into());
+    }
+
+    #[test]
+    fn test_witness_assert_bool() {
+        test_witness_assert_bool_impl(0.into());
+        test_witness_assert_bool_impl(1.into());
     }
 
     fn test_witness_not_impl(input: Scalar, output: Scalar) {

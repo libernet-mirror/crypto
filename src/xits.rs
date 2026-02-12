@@ -50,15 +50,9 @@ impl<const N: usize> plonk::Chip<1, N> for BitDecompositionChip<N> {
             builder.add_bool_assertion_gate(bit);
             bit
         });
-        builder.add_binary_gate(
-            1.into(),
-            -Scalar::from(1),
-            0.into(),
-            0.into(),
-            0.into(),
-            sum.into(),
-            inputs[0],
-        );
+        if let Some(input) = inputs[0] {
+            builder.connect(sum, input);
+        }
         Ok(bits)
     }
 
@@ -78,17 +72,10 @@ impl<const N: usize> plonk::Chip<1, N> for BitDecompositionChip<N> {
             input = shr1(input);
             sum = witness.combine(1.into(), sum.into(), power, bit.into());
             power = power.double();
-            let bit = plonk::Wire::RightIn(sum.gate()).into();
-            let check_bit = witness.pop_gate();
-            witness.copy(bit, plonk::Wire::LeftIn(check_bit));
-            witness.copy(bit, plonk::Wire::RightIn(check_bit));
-            bit
+            let bit = plonk::Wire::RightIn(sum.gate());
+            witness.assert_bool(bit);
+            bit.into()
         });
-        {
-            let gate = witness.pop_gate();
-            witness.copy(sum.into(), plonk::Wire::LeftIn(gate));
-            witness.copy(inputs[0], plonk::Wire::RightIn(gate));
-        }
         Ok(bits)
     }
 }
@@ -288,8 +275,7 @@ mod tests {
         let mut witness = plonk::Witness::new(builder.len());
         let input = witness.assert_constant(value.into());
         assert!(chip.witness(&mut witness, [input.into()]).is_ok());
-        // assert!(builder.check_witness(&witness).is_ok());
-        builder.check_witness(&witness).unwrap();
+        assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
         let proof = circuit.prove(witness).unwrap();
         assert!(circuit.verify(&proof).is_ok());
