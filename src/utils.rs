@@ -3,13 +3,14 @@ use blstrs::{G1Affine, G2Affine, Scalar};
 use curve25519_dalek::{
     Scalar as Scalar25519, edwards::CompressedEdwardsY, edwards::EdwardsPoint as Point25519,
 };
-use dusk_bls12_381::BlsScalar as DuskScalar;
 use ecdsa::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
+use ff::PrimeField;
 use fixed_hash::construct_fixed_hash;
 use group::GroupEncoding;
 use p256::AffinePoint as PointP256;
 use primitive_types::{H256, H384, H512, H768, U256, U512};
 use sha3::{self, Digest};
+use std::sync::LazyLock;
 
 pub fn get_random_bytes() -> H512 {
     let mut bytes = [0u8; 64];
@@ -18,10 +19,13 @@ pub fn get_random_bytes() -> H512 {
 }
 
 pub fn h512_to_scalar(h512: H512) -> Scalar {
-    let scalar = DuskScalar::from_bytes_wide(&h512.to_fixed_bytes());
-    Scalar::from_bytes_le(&scalar.to_bytes())
-        .into_option()
-        .unwrap()
+    static MODULUS: LazyLock<U512> = LazyLock::new(|| Scalar::MODULUS.parse().unwrap());
+    let dividend = U512::from_little_endian(h512.as_bytes());
+    let quotient = dividend / *MODULUS;
+    let remainder = dividend - quotient * *MODULUS;
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&remainder.to_little_endian()[0..32]);
+    Scalar::from_repr_vartime(bytes).unwrap()
 }
 
 pub fn hash_to_scalar(message: &[u8]) -> Scalar {
@@ -228,6 +232,20 @@ mod tests {
         assert_ne!(get_random_bytes(), get_random_bytes());
         assert_ne!(get_random_bytes(), get_random_bytes());
         assert_ne!(get_random_bytes(), get_random_bytes());
+    }
+
+    #[test]
+    fn test_hash_to_scalar() {
+        assert_eq!(
+            hash_to_scalar(b"lorem ipsum dolor sit amet"),
+            parse_scalar("0x2e153f5d15640c364521222297d2406f547ac0976a9cc5c1f4c42c0b20ff6d30")
+                .unwrap()
+        );
+        assert_eq!(
+            hash_to_scalar(b"sator arepo tenet opera rotas"),
+            parse_scalar("0x1fdb6bf666ad555ca1a740f680d59736b736aa58ccd139eafe8889370196aa24")
+                .unwrap()
+        );
     }
 
     #[test]
