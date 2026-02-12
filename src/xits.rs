@@ -110,6 +110,76 @@ pub fn decompose_scalar_trits<const N: usize>(value: Scalar) -> [Scalar; N] {
     decompose_trits::<N>(utils::scalar_to_u256(value))
 }
 
+#[derive(Debug, Default)]
+pub struct TritDecompositionChip<const N: usize> {}
+
+impl<const N: usize> TritDecompositionChip<N> {
+    fn add_trit_assertion_gates(builder: &mut plonk::CircuitBuilder, trit: Option<plonk::Wire>) {
+        let lhs = builder.add_poly2_gate(1.into(), -Scalar::from(3), 2.into(), trit);
+        builder.add_binary_gate(
+            0.into(),
+            0.into(),
+            0.into(),
+            1.into(),
+            0.into(),
+            lhs.into(),
+            trit,
+        );
+    }
+
+    fn assert_trit(witness: &mut plonk::Witness, trit: plonk::Wire) {
+        let lhs = witness.poly2(1.into(), -Scalar::from(3), 2.into(), trit.into());
+        let gate = witness.pop_gate();
+        witness.copy(lhs.into(), plonk::Wire::LeftIn(gate));
+        witness.copy(trit.into(), plonk::Wire::RightIn(gate));
+    }
+}
+
+impl<const N: usize> plonk::Chip<1, N> for TritDecompositionChip<N> {
+    fn build(
+        &self,
+        builder: &mut plonk::CircuitBuilder,
+        inputs: [Option<plonk::Wire>; 1],
+    ) -> Result<[Option<plonk::Wire>; N]> {
+        let mut sum = builder.add_const_gate(Scalar::ZERO);
+        let mut power = Scalar::from(1);
+        let trits = std::array::from_fn(|_| {
+            sum = builder.add_linear_combination_gate(1.into(), sum.into(), power, None);
+            power = power.double() + power;
+            let trit = Some(plonk::Wire::RightIn(sum.gate()));
+            Self::add_trit_assertion_gates(builder, trit);
+            trit
+        });
+        if let Some(input) = inputs[0] {
+            builder.connect(sum, input);
+        }
+        Ok(trits)
+    }
+
+    fn witness(
+        &self,
+        witness: &mut plonk::Witness,
+        inputs: [plonk::WireOrUnconstrained; 1],
+    ) -> Result<[plonk::WireOrUnconstrained; N]> {
+        let mut input = match inputs[0] {
+            plonk::WireOrUnconstrained::Wire(wire) => witness.get(wire),
+            plonk::WireOrUnconstrained::Unconstrained(value) => value,
+        };
+        let mut sum = witness.assert_constant(Scalar::ZERO);
+        let mut power = Scalar::from(1);
+        let trits = std::array::from_fn(|_| {
+            let trit = mod3(input);
+            input = div3(input);
+            sum = witness.combine(1.into(), sum.into(), power, trit.into());
+            power = power.double() + power;
+            let trit = plonk::Wire::RightIn(sum.gate());
+            Self::assert_trit(witness, trit);
+            trit.into()
+        });
+        Ok(trits)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,5 +535,71 @@ mod tests {
             decompose_scalar_trits::<3>(8.into()),
             [2.into(), 2.into(), 0.into()]
         );
+    }
+
+    fn test_trit_decomposition_chip<const N: usize>(value: u64) {
+        let mut builder = plonk::CircuitBuilder::default();
+        let input = builder.add_const_gate(value.into());
+        let chip = TritDecompositionChip::<N>::default();
+        assert!(chip.build(&mut builder, [Some(input)]).is_ok());
+        let mut witness = plonk::Witness::new(builder.len());
+        let input = witness.assert_constant(value.into());
+        assert!(chip.witness(&mut witness, [input.into()]).is_ok());
+        // assert!(builder.check_witness(&witness).is_ok());
+        builder.check_witness(&witness).unwrap();
+        let circuit = builder.build();
+        let proof = circuit.prove(witness).unwrap();
+        assert!(circuit.verify(&proof).is_ok());
+    }
+
+    #[test]
+    fn test_trit_decomposition_chip_1() {
+        test_trit_decomposition_chip::<1>(0);
+        test_trit_decomposition_chip::<1>(1);
+        test_trit_decomposition_chip::<1>(2);
+    }
+
+    #[test]
+    fn test_trit_decomposition_chip_2() {
+        test_trit_decomposition_chip::<2>(0);
+        test_trit_decomposition_chip::<2>(1);
+        test_trit_decomposition_chip::<2>(2);
+        test_trit_decomposition_chip::<2>(3);
+        test_trit_decomposition_chip::<2>(4);
+        test_trit_decomposition_chip::<2>(5);
+        test_trit_decomposition_chip::<2>(6);
+        test_trit_decomposition_chip::<2>(7);
+        test_trit_decomposition_chip::<2>(8);
+    }
+
+    #[test]
+    fn test_trit_decomposition_chip_3() {
+        test_trit_decomposition_chip::<3>(0);
+        test_trit_decomposition_chip::<3>(1);
+        test_trit_decomposition_chip::<3>(2);
+        test_trit_decomposition_chip::<3>(3);
+        test_trit_decomposition_chip::<3>(4);
+        test_trit_decomposition_chip::<3>(5);
+        test_trit_decomposition_chip::<3>(6);
+        test_trit_decomposition_chip::<3>(7);
+        test_trit_decomposition_chip::<3>(8);
+        test_trit_decomposition_chip::<3>(9);
+        test_trit_decomposition_chip::<3>(10);
+        test_trit_decomposition_chip::<3>(11);
+        test_trit_decomposition_chip::<3>(12);
+        test_trit_decomposition_chip::<3>(13);
+        test_trit_decomposition_chip::<3>(14);
+        test_trit_decomposition_chip::<3>(15);
+        test_trit_decomposition_chip::<3>(16);
+        test_trit_decomposition_chip::<3>(17);
+        test_trit_decomposition_chip::<3>(18);
+        test_trit_decomposition_chip::<3>(19);
+        test_trit_decomposition_chip::<3>(20);
+        test_trit_decomposition_chip::<3>(21);
+        test_trit_decomposition_chip::<3>(22);
+        test_trit_decomposition_chip::<3>(23);
+        test_trit_decomposition_chip::<3>(24);
+        test_trit_decomposition_chip::<3>(25);
+        test_trit_decomposition_chip::<3>(26);
     }
 }
