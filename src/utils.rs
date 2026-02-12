@@ -173,11 +173,6 @@ pub fn shuffle<T>(elements: &mut [T]) {
     }
 }
 
-/// Makes a type hashable with Poseidon.
-pub trait PoseidonHash {
-    fn poseidon_hash(&self) -> Scalar;
-}
-
 /// Hashes a G1 point to the scalar field.
 ///
 /// TODO: find a way to make this algorithm algebraic and zk-SNARK-friendly. We use it in several
