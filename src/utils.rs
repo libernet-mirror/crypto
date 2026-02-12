@@ -231,6 +231,20 @@ mod tests {
     }
 
     #[test]
+    fn test_hash_to_scalar() {
+        assert_eq!(
+            hash_to_scalar(b"lorem ipsum dolor sit amet"),
+            parse_scalar("0x2e153f5d15640c364521222297d2406f547ac0976a9cc5c1f4c42c0b20ff6d30")
+                .unwrap()
+        );
+        assert_eq!(
+            hash_to_scalar(b"sator arepo tenet opera rotas"),
+            parse_scalar("0x1fdb6bf666ad555ca1a740f680d59736b736aa58ccd139eafe8889370196aa24")
+                .unwrap()
+        );
+    }
+
+    #[test]
     fn test_random_scalar() {
         assert_ne!(get_random_scalar(), get_random_scalar());
         assert_ne!(get_random_scalar(), get_random_scalar());
