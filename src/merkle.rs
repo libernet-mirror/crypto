@@ -377,20 +377,11 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<2, H> {
         inputs: [Option<plonk::Wire>; 1],
     ) -> Result<[Option<plonk::Wire>; 1]> {
         let mut key = self.key;
-        let mut hash = self.leaf;
         let mut wire = inputs[0];
-        for children in self.path {
+        for _ in 0..H {
             let bit = xits::and1(key);
             let bit = bit.to_bytes_le()[0] as usize;
-            if hash != children[bit] {
-                return Err(anyhow!(
-                    "hash mismatch: got {}, want {}",
-                    utils::format_scalar(children[bit]),
-                    utils::format_scalar(hash),
-                ));
-            }
             key = xits::shr1(key);
-            hash = poseidon::hash_t3(&children);
             wire = poseidon::Chip::<3, 2>::default().build(
                 builder,
                 match bit {
@@ -398,13 +389,6 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<2, H> {
                     _ => [None, wire],
                 },
             )?[0];
-        }
-        if hash != self.root_hash {
-            return Err(anyhow!(
-                "final hash mismatch: got {}, want {}",
-                utils::format_scalar(self.root_hash),
-                utils::format_scalar(hash),
-            ));
         }
         Ok([wire])
     }
@@ -455,20 +439,11 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<3, H> {
         inputs: [Option<plonk::Wire>; 1],
     ) -> Result<[Option<plonk::Wire>; 1]> {
         let mut key = self.key;
-        let mut hash = self.leaf;
         let mut wire = inputs[0];
-        for children in self.path {
+        for _ in 0..H {
             let trit = xits::mod3(key);
             let trit = trit.to_bytes_le()[0] as usize;
-            if hash != children[trit] {
-                return Err(anyhow!(
-                    "hash mismatch: got {}, want {}",
-                    utils::format_scalar(children[trit]),
-                    utils::format_scalar(hash),
-                ));
-            }
             key = xits::div3(key);
-            hash = poseidon::hash_t4(&children);
             wire = poseidon::Chip::<4, 3>::default().build(
                 builder,
                 match trit {
@@ -477,13 +452,6 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<3, H> {
                     _ => [None, None, wire],
                 },
             )?[0];
-        }
-        if hash != self.root_hash {
-            return Err(anyhow!(
-                "final hash mismatch: got {}, want {}",
-                utils::format_scalar(self.root_hash),
-                utils::format_scalar(hash),
-            ));
         }
         Ok([wire])
     }
