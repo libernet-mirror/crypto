@@ -183,7 +183,7 @@ impl<const N: usize> plonk::Chip<1, N> for TritDecompositionChip<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plonk::Chip;
+    use crate::plonk::{Chip, WireOrUnconstrained};
     use utils::testing::parse_scalar;
 
     #[test]
@@ -344,7 +344,14 @@ mod tests {
         assert!(chip.build(&mut builder, [Some(input)]).is_ok());
         let mut witness = plonk::Witness::new(builder.len());
         let input = witness.assert_constant(value.into());
-        assert!(chip.witness(&mut witness, [input.into()]).is_ok());
+        let bits = chip
+            .witness(&mut witness, [input.into()])
+            .unwrap()
+            .map(|bit| match bit {
+                WireOrUnconstrained::Wire(wire) => witness.get(wire),
+                _ => panic!("the output bits must be constrained"),
+            });
+        assert_eq!(bits, decompose_bits::<N>(value.into())[0..N]);
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
         let proof = circuit.prove(witness).unwrap();
@@ -544,9 +551,15 @@ mod tests {
         assert!(chip.build(&mut builder, [Some(input)]).is_ok());
         let mut witness = plonk::Witness::new(builder.len());
         let input = witness.assert_constant(value.into());
-        assert!(chip.witness(&mut witness, [input.into()]).is_ok());
-        // assert!(builder.check_witness(&witness).is_ok());
-        builder.check_witness(&witness).unwrap();
+        let trits = chip
+            .witness(&mut witness, [input.into()])
+            .unwrap()
+            .map(|trit| match trit {
+                WireOrUnconstrained::Wire(wire) => witness.get(wire),
+                _ => panic!("the output trits must be constrained"),
+            });
+        assert_eq!(trits, decompose_trits::<N>(value.into())[0..N]);
+        assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
         let proof = circuit.prove(witness).unwrap();
         assert!(circuit.verify(&proof).is_ok());
