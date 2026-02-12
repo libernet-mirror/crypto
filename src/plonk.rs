@@ -61,7 +61,7 @@ pub enum Wire {
 }
 
 impl Wire {
-    fn gate(&self) -> u32 {
+    pub fn gate(&self) -> u32 {
         match *self {
             Self::LeftIn(gate) => gate,
             Self::RightIn(gate) => gate,
@@ -327,6 +327,27 @@ impl Witness {
         out
     }
 
+    pub fn poly2(
+        &mut self,
+        c1: Scalar,
+        c2: Scalar,
+        c3: Scalar,
+        input: WireOrUnconstrained,
+    ) -> Wire {
+        let gate = self.pop_gate();
+        self.copy(input, Wire::LeftIn(gate));
+        let input = self.copy(input, Wire::RightIn(gate));
+        let out = Wire::Out(gate);
+        self.set(out, c1 * input.square() + c2 * input + c3);
+        out
+    }
+
+    pub fn assert_bool(&mut self, input: Wire) {
+        let gate = self.pop_gate();
+        self.copy(input.into(), Wire::LeftIn(gate));
+        self.copy(input.into(), Wire::RightIn(gate));
+    }
+
     pub fn not(&mut self, input: WireOrUnconstrained) -> Wire {
         let gate = self.pop_gate();
         self.copy(input, Wire::LeftIn(gate));
@@ -519,6 +540,16 @@ impl CircuitBuilder {
         rhs: Option<Wire>,
     ) -> Wire {
         self.add_binary_gate(c1, c2, -Scalar::from(1), 0.into(), 0.into(), lhs, rhs)
+    }
+
+    pub fn add_poly2_gate(
+        &mut self,
+        c1: Scalar,
+        c2: Scalar,
+        c3: Scalar,
+        input: Option<Wire>,
+    ) -> Wire {
+        self.add_unary_gate(c2, 0.into(), -Scalar::from(1), c1, c3, input)
     }
 
     pub fn add_bool_assertion_gate(&mut self, input: Option<Wire>) {
@@ -1528,6 +1559,40 @@ mod tests {
         test_witness_combine_impl(56, 78, 12, 34, 4776);
     }
 
+    fn test_witness_poly2_impl(input: Scalar, output: Scalar) {
+        let mut witness = Witness::new(1);
+        witness.pop_gate();
+        witness.set(Wire::LeftIn(0), input.into());
+        assert_eq!(
+            witness.poly2(12.into(), 34.into(), 56.into(), input.into()),
+            Wire::Out(1)
+        );
+        assert_eq!(witness.get(Wire::LeftIn(1)), input.into());
+        assert_eq!(witness.get(Wire::RightIn(1)), input.into());
+        assert_eq!(witness.get(Wire::Out(1)), output.into());
+    }
+
+    #[test]
+    fn test_witness_poly2() {
+        test_witness_poly2_impl(42.into(), 22652.into());
+        test_witness_poly2_impl(43.into(), 23706.into());
+    }
+
+    fn test_witness_assert_bool_impl(input: Scalar) {
+        let mut witness = Witness::new(1);
+        witness.pop_gate();
+        witness.set(Wire::LeftIn(0), input.into());
+        witness.assert_bool(Wire::LeftIn(0));
+        assert_eq!(witness.get(Wire::LeftIn(1)), input.into());
+        assert_eq!(witness.get(Wire::RightIn(1)), input.into());
+    }
+
+    #[test]
+    fn test_witness_assert_bool() {
+        test_witness_assert_bool_impl(0.into());
+        test_witness_assert_bool_impl(1.into());
+    }
+
     fn test_witness_not_impl(input: Scalar, output: Scalar) {
         let mut witness = Witness::new(1);
         witness.pop_gate();
@@ -2099,6 +2164,28 @@ mod tests {
         let circuit = builder.build();
         assert!(test_connected_binary_gate(&circuit, 34, 78, 4776).is_ok());
         assert!(test_connected_binary_gate(&circuit, 34, 78, 7647).is_err());
+    }
+
+    #[test]
+    fn test_poly2_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_poly2_gate(12.into(), 34.into(), 56.into(), None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 42, 42, 22652).is_ok());
+        assert!(test_gate(&circuit, 78, 42, 22652).is_err());
+        assert!(test_gate(&circuit, 42, 78, 22652).is_err());
+        assert!(test_gate(&circuit, 42, 42, 78).is_err());
+    }
+
+    #[test]
+    fn test_connected_poly2_gate() {
+        let mut builder = CircuitBuilder::default();
+        let input = builder.add_const_gate(43.into());
+        builder.add_poly2_gate(34.into(), 56.into(), 78.into(), input.into());
+        let circuit = builder.build();
+        assert!(test_connected_unary_gate(&circuit, 43, 65352).is_ok());
+        assert!(test_connected_unary_gate(&circuit, 43, 22652).is_err());
+        assert!(test_connected_unary_gate(&circuit, 43, 23706).is_err());
     }
 
     #[test]
