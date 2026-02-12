@@ -1,4 +1,6 @@
+use crate::plonk;
 use crate::utils;
+use anyhow::Result;
 use blstrs::Scalar;
 use ff::Field;
 use primitive_types::U256;
@@ -28,6 +30,67 @@ pub fn decompose_bits<const N: usize>(mut value: U256) -> [Scalar; N] {
 
 pub fn decompose_scalar_bits<const N: usize>(value: Scalar) -> [Scalar; N] {
     decompose_bits::<N>(utils::scalar_to_u256(value))
+}
+
+#[derive(Debug, Default)]
+pub struct BitDecompositionChip<const N: usize> {}
+
+impl<const N: usize> plonk::Chip<1, N> for BitDecompositionChip<N> {
+    fn build(
+        &self,
+        builder: &mut plonk::CircuitBuilder,
+        inputs: [Option<plonk::Wire>; 1],
+    ) -> Result<[Option<plonk::Wire>; N]> {
+        let mut sum = builder.add_const_gate(Scalar::ZERO);
+        let mut power = Scalar::from(1);
+        let bits = std::array::from_fn(|_| {
+            sum = builder.add_linear_combination_gate(1.into(), sum.into(), power, None);
+            power = power.double();
+            let bit = Some(plonk::Wire::RightIn(sum.gate()));
+            builder.add_bool_assertion_gate(bit);
+            bit
+        });
+        builder.add_binary_gate(
+            1.into(),
+            -Scalar::from(1),
+            0.into(),
+            0.into(),
+            0.into(),
+            sum.into(),
+            inputs[0],
+        );
+        Ok(bits)
+    }
+
+    fn witness(
+        &self,
+        witness: &mut plonk::Witness,
+        inputs: [plonk::WireOrUnconstrained; 1],
+    ) -> Result<[plonk::WireOrUnconstrained; N]> {
+        let mut input = match inputs[0] {
+            plonk::WireOrUnconstrained::Wire(wire) => witness.get(wire),
+            plonk::WireOrUnconstrained::Unconstrained(value) => value,
+        };
+        let mut sum = witness.assert_constant(Scalar::ZERO);
+        let mut power = Scalar::from(1);
+        let bits = std::array::from_fn(|_| {
+            let bit = and1(input);
+            input = shr1(input);
+            sum = witness.combine(1.into(), sum.into(), power, bit.into());
+            power = power.double();
+            let bit = plonk::Wire::RightIn(sum.gate()).into();
+            let check_bit = witness.pop_gate();
+            witness.copy(bit, plonk::Wire::LeftIn(check_bit));
+            witness.copy(bit, plonk::Wire::RightIn(check_bit));
+            bit
+        });
+        {
+            let gate = witness.pop_gate();
+            witness.copy(sum.into(), plonk::Wire::LeftIn(gate));
+            witness.copy(inputs[0], plonk::Wire::RightIn(gate));
+        }
+        Ok(bits)
+    }
 }
 
 pub fn div_pow3(value: Scalar, exp: u8) -> Scalar {
@@ -63,6 +126,7 @@ pub fn decompose_scalar_trits<const N: usize>(value: Scalar) -> [Scalar; N] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plonk::Chip;
     use utils::testing::parse_scalar;
 
     #[test]
@@ -214,6 +278,47 @@ mod tests {
             decompose_scalar_bits::<3>(7.into()),
             [1.into(), 1.into(), 1.into()]
         );
+    }
+
+    fn test_bit_decomposition_chip<const N: usize>(value: u64) {
+        let mut builder = plonk::CircuitBuilder::default();
+        let input = builder.add_const_gate(value.into());
+        let chip = BitDecompositionChip::<N>::default();
+        assert!(chip.build(&mut builder, [Some(input)]).is_ok());
+        let mut witness = plonk::Witness::new(builder.len());
+        let input = witness.assert_constant(value.into());
+        assert!(chip.witness(&mut witness, [input.into()]).is_ok());
+        // assert!(builder.check_witness(&witness).is_ok());
+        builder.check_witness(&witness).unwrap();
+        let circuit = builder.build();
+        let proof = circuit.prove(witness).unwrap();
+        assert!(circuit.verify(&proof).is_ok());
+    }
+
+    #[test]
+    fn test_bit_decomposition_chip_1() {
+        test_bit_decomposition_chip::<1>(0);
+        test_bit_decomposition_chip::<1>(1);
+    }
+
+    #[test]
+    fn test_bit_decomposition_chip_2() {
+        test_bit_decomposition_chip::<2>(0);
+        test_bit_decomposition_chip::<2>(1);
+        test_bit_decomposition_chip::<2>(2);
+        test_bit_decomposition_chip::<2>(3);
+    }
+
+    #[test]
+    fn test_bit_decomposition_chip_3() {
+        test_bit_decomposition_chip::<3>(0);
+        test_bit_decomposition_chip::<3>(1);
+        test_bit_decomposition_chip::<3>(2);
+        test_bit_decomposition_chip::<3>(3);
+        test_bit_decomposition_chip::<3>(4);
+        test_bit_decomposition_chip::<3>(5);
+        test_bit_decomposition_chip::<3>(6);
+        test_bit_decomposition_chip::<3>(7);
     }
 
     #[test]

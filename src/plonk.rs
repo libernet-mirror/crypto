@@ -61,7 +61,7 @@ pub enum Wire {
 }
 
 impl Wire {
-    fn gate(&self) -> u32 {
+    pub fn gate(&self) -> u32 {
         match *self {
             Self::LeftIn(gate) => gate,
             Self::RightIn(gate) => gate,
