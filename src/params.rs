@@ -6,16 +6,16 @@ use std::sync::LazyLock;
 static G1_BYTES: &[u8] = include_bytes!("../params/g1.bin");
 static G2_BYTES: &[u8] = include_bytes!("../params/g2.bin");
 
-static G1: LazyLock<Vec<H384>> = LazyLock::new(|| {
-    let (params, _) =
-        bincode::serde::decode_from_slice(G1_BYTES, bincode::config::standard()).unwrap();
-    params
+const NUM_POINTS: usize = 65536;
+
+static G1: LazyLock<&'static [H384]> = LazyLock::new(|| {
+    assert_eq!(G1_BYTES.len(), NUM_POINTS * 48);
+    unsafe { std::slice::from_raw_parts(G1_BYTES.as_ptr() as *const H384, NUM_POINTS) }
 });
 
-static G2: LazyLock<Vec<H768>> = LazyLock::new(|| {
-    let (params, _) =
-        bincode::serde::decode_from_slice(G2_BYTES, bincode::config::standard()).unwrap();
-    params
+static G2: LazyLock<&'static [H768]> = LazyLock::new(|| {
+    assert_eq!(G2_BYTES.len(), NUM_POINTS * 96);
+    unsafe { std::slice::from_raw_parts(G2_BYTES.as_ptr() as *const H768, NUM_POINTS) }
 });
 
 /// Returns the i-th parameter of the KZG SRS.
@@ -48,9 +48,9 @@ mod tests {
 
     #[test]
     fn test_g1() {
-        assert_eq!(G1.len(), 65536);
+        assert_eq!(G1.len(), NUM_POINTS);
         assert_eq!(g1(0), G1Affine::generator());
-        let mut g1 = G1.clone();
+        let mut g1 = Vec::<H384>::from(*G1);
         g1.sort();
         for i in 1..g1.len() {
             assert_ne!(g1[i], g1[i - 1]);
@@ -59,9 +59,9 @@ mod tests {
 
     #[test]
     fn test_g2() {
-        assert_eq!(G2.len(), 65536);
+        assert_eq!(G2.len(), NUM_POINTS);
         assert_eq!(g2(0), G2Affine::generator());
-        let mut g2 = G2.clone();
+        let mut g2 = Vec::<H768>::from(*G2);
         g2.sort();
         for i in 1..g2.len() {
             assert_ne!(g2[i], g2[i - 1]);
