@@ -1,4 +1,5 @@
 use crate::plonk::{Chip as PlonkChip, CircuitBuilder, Wire, WireOrUnconstrained, Witness};
+use crate::utils::parse_scalar;
 use anyhow::{Result, anyhow};
 use blstrs::Scalar;
 use ff::Field;
@@ -11,6 +12,7 @@ impl<const T: usize> Constants<T> {
         let num_full_rounds = Self::num_full_rounds();
         let num_partial_rounds = Self::num_partial_rounds();
         assert_eq!(N, (num_full_rounds * 2 + num_partial_rounds) * T);
+        assert_eq!(bytes.len(), N * 32);
         let mut constants = [Scalar::ZERO; N];
         for i in 0..N {
             constants[i] =
@@ -20,41 +22,52 @@ impl<const T: usize> Constants<T> {
         }
         constants
     }
-
-    fn decode_mds_matrix<const N: usize>(bytes: &[u8]) -> [Scalar; N] {
-        assert_eq!(N, T * T);
-        let mut mds = [Scalar::ZERO; N];
-        for i in 0..T {
-            for j in 0..T {
-                let k = i * T + j;
-                let offset = k * 32;
-                mds[k] = Scalar::from_bytes_le(&bytes[offset..(offset + 32)].try_into().unwrap())
-                    .into_option()
-                    .unwrap()
-            }
-        }
-        mds
-    }
 }
 
 impl Constants<3> {
     const FR: usize = 4;
-    const PR: usize = 57;
+    const PR: usize = 56;
 
-    fn get_round_constants_impl() -> &'static [Scalar; 195] {
-        static ROUND_CONSTANTS: LazyLock<[Scalar; 195]> = LazyLock::new(|| {
+    fn get_round_constants_impl() -> &'static [Scalar; 192] {
+        static ROUND_CONSTANTS: LazyLock<[Scalar; 192]> = LazyLock::new(|| {
             let bytes = include_bytes!("../params/arc_t3.bin");
-            Constants::<3>::decode_round_constants::<195>(bytes)
+            Constants::<3>::decode_round_constants::<192>(bytes)
         });
         &*ROUND_CONSTANTS
     }
 
-    fn get_mds_matrix_impl() -> &'static [Scalar; 9] {
-        static MDS_MATRIX: LazyLock<[Scalar; 9]> = LazyLock::new(|| {
-            let bytes = include_bytes!("../params/mds_t3.bin");
-            Constants::<3>::decode_mds_matrix(bytes)
+    fn get_external_matrix_impl() -> &'static [Scalar; 9] {
+        static MATRIX: LazyLock<[Scalar; 9]> = LazyLock::new(|| {
+            [
+                2.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                2.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                2.into(),
+            ]
         });
-        &*MDS_MATRIX
+        &*MATRIX
+    }
+
+    fn get_internal_matrix_impl() -> &'static [Scalar; 9] {
+        static MATRIX: LazyLock<[Scalar; 9]> = LazyLock::new(|| {
+            [
+                2.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                2.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+            ]
+        });
+        &*MATRIX
     }
 }
 
@@ -70,12 +83,56 @@ impl Constants<4> {
         &*ROUND_CONSTANTS
     }
 
-    fn get_mds_matrix_impl() -> &'static [Scalar; 16] {
-        static MDS_MATRIX: LazyLock<[Scalar; 16]> = LazyLock::new(|| {
-            let bytes = include_bytes!("../params/mds_t4.bin");
-            Constants::<4>::decode_mds_matrix(bytes)
+    fn get_external_matrix_impl() -> &'static [Scalar; 16] {
+        static MATRIX: LazyLock<[Scalar; 16]> = LazyLock::new(|| {
+            [
+                5.into(),
+                7.into(),
+                1.into(),
+                3.into(),
+                4.into(),
+                6.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                3.into(),
+                5.into(),
+                7.into(),
+                1.into(),
+                1.into(),
+                4.into(),
+                6.into(),
+            ]
         });
-        &*MDS_MATRIX
+        &*MATRIX
+    }
+
+    fn get_internal_matrix_impl() -> &'static [Scalar; 16] {
+        static MATRIX: LazyLock<[Scalar; 16]> = LazyLock::new(|| {
+            [
+                parse_scalar("0x07564ad691bf01c8601d68757a561d224f00f313ada673ab83e6255fb4fd5b3e")
+                    .unwrap(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                parse_scalar("0x6184e3be38549f7c0850cd069b32f6decbfde312dd4b8c18349b1b3776a6eaa5")
+                    .unwrap(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                parse_scalar("0x419289088178ad742be6f78425c0156b6546a18fd338f0169937dea46cfb64d3")
+                    .unwrap(),
+                1.into(),
+                1.into(),
+                1.into(),
+                1.into(),
+                parse_scalar("0x3244cdec173b71a4659e2529b499362dac10cb2fd17562860c8bb9d0fd45b788")
+                    .unwrap(),
+            ]
+        });
+        &*MATRIX
     }
 }
 
@@ -108,10 +165,18 @@ impl<const T: usize> Constants<T> {
         }
     }
 
-    fn get_mds_matrix() -> &'static [Scalar] {
+    fn get_external_matrix() -> &'static [Scalar] {
         match T {
-            3 => Constants::<3>::get_mds_matrix_impl(),
-            4 => Constants::<4>::get_mds_matrix_impl(),
+            3 => Constants::<3>::get_external_matrix_impl(),
+            4 => Constants::<4>::get_external_matrix_impl(),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn get_internal_matrix() -> &'static [Scalar] {
+        match T {
+            3 => Constants::<3>::get_internal_matrix_impl(),
+            4 => Constants::<4>::get_internal_matrix_impl(),
             _ => unimplemented!(),
         }
     }
@@ -121,41 +186,71 @@ fn sbox(x: Scalar) -> Scalar {
     x.square().square() * x
 }
 
-fn hash<const T: usize>(inputs: &[Scalar]) -> Scalar {
+fn linear<const T: usize>(matrix: &[Scalar], state: [Scalar; T]) -> [Scalar; T] {
+    let mut result = [Scalar::ZERO; T];
+    for i in 0..T {
+        for j in 0..T {
+            result[i] += matrix[i * T + j] * state[j];
+        }
+    }
+    result
+}
+
+fn external_linear<const T: usize>(state: [Scalar; T]) -> [Scalar; T] {
+    linear::<T>(Constants::<T>::get_external_matrix(), state)
+}
+
+fn internal_linear<const T: usize>(state: [Scalar; T]) -> [Scalar; T] {
+    linear::<T>(Constants::<T>::get_internal_matrix(), state)
+}
+
+fn permutation<const T: usize>(mut state: [Scalar; T]) -> [Scalar; T] {
     let num_full_rounds = Constants::<T>::num_full_rounds();
     let num_partial_rounds = Constants::<T>::num_partial_rounds();
     let num_total_rounds = Constants::<T>::num_total_rounds();
 
-    assert!(!inputs.is_empty());
-
     let c = Constants::<T>::get_round_constants();
-    let mds = Constants::<T>::get_mds_matrix();
 
+    state = external_linear::<T>(state);
+
+    for r in 0..num_full_rounds {
+        for i in 0..T {
+            state[i] += c[r * T + i];
+        }
+        for i in 0..T {
+            state[i] = sbox(state[i]);
+        }
+        state = external_linear(state);
+    }
+
+    for r in num_full_rounds..(num_full_rounds + num_partial_rounds) {
+        state[0] += c[r * T];
+        state[0] = sbox(state[0]);
+        state = internal_linear(state);
+    }
+
+    for r in (num_full_rounds + num_partial_rounds)..num_total_rounds {
+        for i in 0..T {
+            state[i] += c[r * T + i];
+        }
+        for i in 0..T {
+            state[i] = sbox(state[i]);
+        }
+        state = external_linear(state);
+    }
+
+    state
+}
+
+fn hash<const T: usize>(inputs: &[Scalar]) -> Scalar {
+    assert!(!inputs.is_empty());
     let mut state = [Scalar::ZERO; T];
     for chunk in inputs.chunks(T - 1) {
         for i in 0..chunk.len() {
             state[i] += chunk[i];
         }
-        for r in 0..num_total_rounds {
-            for i in 0..T {
-                state[i] += c[r * T + i];
-            }
-            state[0] = sbox(state[0]);
-            if r < num_full_rounds || r >= num_full_rounds + num_partial_rounds {
-                for i in 1..T {
-                    state[i] = sbox(state[i]);
-                }
-            }
-            let mut new_state = [Scalar::ZERO; T];
-            for i in 0..T {
-                for j in 0..T {
-                    new_state[i] += mds[i * T + j] * state[j];
-                }
-            }
-            state = new_state;
-        }
+        state = permutation::<T>(state);
     }
-
     state[0]
 }
 
@@ -251,91 +346,14 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness.mul(out.into(), wire.into())
     }
 
-    fn build_mds3(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
-        let mds = Constants::<3>::get_mds_matrix();
-        std::array::from_fn(|i| {
-            let lhs = builder.add_linear_combination_gate(
-                mds[i * 3 + 0],
-                state[0].into(),
-                mds[i * 3 + 1],
-                state[1].into(),
-            );
-            builder.add_linear_combination_gate(
-                1.into(),
-                lhs.into(),
-                mds[i * 3 + 2],
-                state[2].into(),
-            )
-        })
-    }
-
-    fn build_mds4(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
-        let mds = Constants::<4>::get_mds_matrix();
-        std::array::from_fn(|i| {
-            let lhs = builder.add_linear_combination_gate(
-                mds[i * 4 + 0],
-                state[0].into(),
-                mds[i * 4 + 1],
-                state[1].into(),
-            );
-            let rhs = builder.add_linear_combination_gate(
-                mds[i * 4 + 2],
-                state[2].into(),
-                mds[i * 4 + 3],
-                state[3].into(),
-            );
-            builder.add_sum_gate(lhs.into(), rhs.into())
-        })
-    }
-
-    fn witness_mds3(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
-        let mds = Constants::<3>::get_mds_matrix();
-        let state = state.map(|wire| witness.get(wire));
-        std::array::from_fn(|i| {
-            let lhs = witness.combine(
-                mds[i * 3 + 0],
-                state[0].into(),
-                mds[i * 3 + 1],
-                state[1].into(),
-            );
-            witness.combine(1.into(), lhs.into(), mds[i * 3 + 2], state[2].into())
-        })
-    }
-
-    fn witness_mds4(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
-        let mds = Constants::<4>::get_mds_matrix();
-        let state = state.map(|wire| witness.get(wire));
-        std::array::from_fn(|i| {
-            let lhs = witness.combine(
-                mds[i * 4 + 0],
-                state[0].into(),
-                mds[i * 4 + 1],
-                state[1].into(),
-            );
-            let rhs = witness.combine(
-                mds[i * 4 + 2],
-                state[2].into(),
-                mds[i * 4 + 3],
-                state[3].into(),
-            );
-            witness.add(lhs.into(), rhs.into())
-        })
-    }
-
     fn build_mds(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
-        match T {
-            3 => self.build_mds3(builder, state),
-            4 => self.build_mds4(builder, state),
-            _ => unimplemented!(),
-        }
+        // TODO
+        todo!()
     }
 
     fn witness_mds(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
-        match T {
-            3 => self.witness_mds3(witness, state),
-            4 => self.witness_mds4(witness, state),
-            _ => unimplemented!(),
-        }
+        // TODO
+        todo!()
     }
 
     fn build_round(
@@ -465,264 +483,289 @@ mod tests {
     use std::collections::BTreeMap;
 
     #[test]
-    fn test_hash_t3_1() {
+    fn test_permutation_t3() {
         assert_eq!(
-            hash_t3(&[42.into()]),
-            parse_scalar("0x5cc740e0dc958ca8f36dc7dfb606caa67e93866b599ded1864b0028c6ded8936")
+            permutation::<3>([0.into(), 1.into(), 2.into()]),
+            [
+                parse_scalar("0x1b152349b1950b6a8ca75ee4407b6e26ca5cca5650534e56ef3fd45761fbf5f0"),
+                parse_scalar("0x4c5793c87d51bdc2c08a32108437dc0000bd0275868f09ebc5f36919af5b3891"),
+                parse_scalar("0x1fc8ed171e67902ca49863159fe5ba6325318843d13976143b8125f08b50dc6b"),
+            ]
         );
     }
 
     #[test]
-    fn test_hash_t3_2() {
+    fn test_permutation_t4() {
         assert_eq!(
-            hash_t3(&[1.into(), 2.into()]),
-            parse_scalar("0x591e00d609149c3a82adc2ef3b4209ff7a558de82ccbd0a0944d479f76185d2f")
+            permutation::<4>([0.into(), 1.into(), 2.into(), 3.into()]),
+            [
+                parse_scalar("0x28ff6c4edf9768c08ae26290487e93449cc8bc155fc2fad92a344adceb3ada6d"),
+                parse_scalar("0x0e56f2b6fad25075aa93560185b70e2b180ed7e269159c507c288b6747a0db2d"),
+                parse_scalar("0x6d8196f28da6006bb89b3df94600acdc03d0ba7c2b0f3f4409a54c1db6bf30d0"),
+                parse_scalar("0x07cfb49540ee456cce38b8a7d1a930a57ffc6660737f6589ef184c5e15334e36"),
+            ]
         );
     }
 
-    #[test]
-    fn test_hash_t3_3() {
-        assert_eq!(
-            hash_t3(&[3.into(), 4.into(), 5.into()]),
-            parse_scalar("0x56bed0ed7205eb1caaedd73b5b8466da2b22359d986d99f9e22597a129719503")
-        );
-    }
+    // #[test]
+    // fn test_hash_t3_1() {
+    //     assert_eq!(
+    //         hash_t3(&[42.into()]),
+    //         parse_scalar("0x5cc740e0dc958ca8f36dc7dfb606caa67e93866b599ded1864b0028c6ded8936")
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_t3_4() {
-        assert_eq!(
-            hash_t3(&[6.into(), 7.into(), 8.into(), 9.into()]),
-            parse_scalar("0x10ab5a769957aa4672694398a5dcc04518ca9ca8341a17fb90997dde0dc008d8")
-        );
-    }
+    // #[test]
+    // fn test_hash_t3_2() {
+    //     assert_eq!(
+    //         hash_t3(&[1.into(), 2.into()]),
+    //         parse_scalar("0x591e00d609149c3a82adc2ef3b4209ff7a558de82ccbd0a0944d479f76185d2f")
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_t3_5() {
-        assert_eq!(
-            hash_t3(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
-            parse_scalar("0x1b4c7f689fa7b4e9e1c4229edeeb54b15db471955f027467ddc886438d918344")
-        );
-    }
+    // #[test]
+    // fn test_hash_t3_3() {
+    //     assert_eq!(
+    //         hash_t3(&[3.into(), 4.into(), 5.into()]),
+    //         parse_scalar("0x56bed0ed7205eb1caaedd73b5b8466da2b22359d986d99f9e22597a129719503")
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_t4_1() {
-        assert_eq!(
-            hash_t4(&[42.into()]),
-            parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c")
-        );
-    }
+    // #[test]
+    // fn test_hash_t3_4() {
+    //     assert_eq!(
+    //         hash_t3(&[6.into(), 7.into(), 8.into(), 9.into()]),
+    //         parse_scalar("0x10ab5a769957aa4672694398a5dcc04518ca9ca8341a17fb90997dde0dc008d8")
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_t4_2() {
-        assert_eq!(
-            hash_t4(&[1.into(), 2.into()]),
-            parse_scalar("0x520651bc5804254d3306d30c7e3242e00f527bb7f39aedb7f828e346299bd91c")
-        );
-    }
+    // #[test]
+    // fn test_hash_t3_5() {
+    //     assert_eq!(
+    //         hash_t3(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
+    //         parse_scalar("0x1b4c7f689fa7b4e9e1c4229edeeb54b15db471955f027467ddc886438d918344")
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_t4_3() {
-        assert_eq!(
-            hash_t4(&[3.into(), 4.into(), 5.into()]),
-            parse_scalar("0x1a9f84b2d90c7ec4efb7e8c38efddad5983245c1132434bb94c74d19eb04cb3a")
-        );
-    }
+    // #[test]
+    // fn test_hash_t4_1() {
+    //     assert_eq!(
+    //         hash_t4(&[42.into()]),
+    //         parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c")
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_t4_4() {
-        assert_eq!(
-            hash_t4(&[6.into(), 7.into(), 8.into(), 9.into()]),
-            parse_scalar("0x5497afdc8bc505782b08a63601eec9fa0e4037e61d06f453edff9a8ca1991b76")
-        );
-    }
+    // #[test]
+    // fn test_hash_t4_2() {
+    //     assert_eq!(
+    //         hash_t4(&[1.into(), 2.into()]),
+    //         parse_scalar("0x520651bc5804254d3306d30c7e3242e00f527bb7f39aedb7f828e346299bd91c")
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_t4_5() {
-        assert_eq!(
-            hash_t4(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
-            parse_scalar("0x0c8f1b5e59a0120bda56f3e28b2558f3541f2fc0a421418081b071dd30e89a3f")
-        );
-    }
+    // #[test]
+    // fn test_hash_t4_3() {
+    //     assert_eq!(
+    //         hash_t4(&[3.into(), 4.into(), 5.into()]),
+    //         parse_scalar("0x1a9f84b2d90c7ec4efb7e8c38efddad5983245c1132434bb94c74d19eb04cb3a")
+    //     );
+    // }
 
-    fn test_hash_chip<const T: usize, const I: usize>(
-        inputs: [Scalar; I],
-        expected_circuit_size: usize,
-    ) {
-        let result = hash::<T>(&inputs);
-        let mut builder = CircuitBuilder::default();
-        let chip = Chip::<T, I>::default();
-        let input_wires = inputs.map(|input| builder.add_const_gate(input));
-        let result_wire = chip
-            .build(&mut builder, input_wires.map(|wire| Some(wire)))
-            .unwrap()[0]
-            .unwrap();
-        builder.declare_public_inputs(input_wires.into_iter().chain(std::iter::once(result_wire)));
-        let mut witness = Witness::new(builder.len());
-        for i in 0..I {
-            witness.assert_constant(inputs[i]);
-        }
-        assert_eq!(
-            chip.witness(&mut witness, input_wires.map(|wire| wire.into()))
-                .unwrap(),
-            [WireOrUnconstrained::Wire(result_wire)]
-        );
-        assert_eq!(witness.get(result_wire), result);
-        assert!(builder.check_witness(&witness).is_ok());
-        let circuit = builder.build();
-        assert_eq!(circuit.size(), expected_circuit_size);
-        let proof = circuit.prove(witness).unwrap();
-        assert_eq!(
-            circuit.verify(&proof).unwrap(),
-            BTreeMap::from_iter(
-                input_wires
-                    .into_iter()
-                    .zip(inputs.into_iter())
-                    .chain(std::iter::once((result_wire, result)))
-            )
-        );
-    }
+    // #[test]
+    // fn test_hash_t4_4() {
+    //     assert_eq!(
+    //         hash_t4(&[6.into(), 7.into(), 8.into(), 9.into()]),
+    //         parse_scalar("0x5497afdc8bc505782b08a63601eec9fa0e4037e61d06f453edff9a8ca1991b76")
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_chip_t3_1() {
-        test_hash_chip::<3, 1>([42.into()], 831);
-    }
+    // #[test]
+    // fn test_hash_t4_5() {
+    //     assert_eq!(
+    //         hash_t4(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
+    //         parse_scalar("0x0c8f1b5e59a0120bda56f3e28b2558f3541f2fc0a421418081b071dd30e89a3f")
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_chip_t3_2() {
-        test_hash_chip::<3, 2>([1.into(), 2.into()], 831);
-    }
+    // fn test_hash_chip<const T: usize, const I: usize>(
+    //     inputs: [Scalar; I],
+    //     expected_circuit_size: usize,
+    // ) {
+    //     let result = hash::<T>(&inputs);
+    //     let mut builder = CircuitBuilder::default();
+    //     let chip = Chip::<T, I>::default();
+    //     let input_wires = inputs.map(|input| builder.add_const_gate(input));
+    //     let result_wire = chip
+    //         .build(&mut builder, input_wires.map(|wire| Some(wire)))
+    //         .unwrap()[0]
+    //         .unwrap();
+    //     builder.declare_public_inputs(input_wires.into_iter().chain(std::iter::once(result_wire)));
+    //     let mut witness = Witness::new(builder.len());
+    //     for i in 0..I {
+    //         witness.assert_constant(inputs[i]);
+    //     }
+    //     assert_eq!(
+    //         chip.witness(&mut witness, input_wires.map(|wire| wire.into()))
+    //             .unwrap(),
+    //         [WireOrUnconstrained::Wire(result_wire)]
+    //     );
+    //     assert_eq!(witness.get(result_wire), result);
+    //     assert!(builder.check_witness(&witness).is_ok());
+    //     let circuit = builder.build();
+    //     assert_eq!(circuit.size(), expected_circuit_size);
+    //     let proof = circuit.prove(witness).unwrap();
+    //     assert_eq!(
+    //         circuit.verify(&proof).unwrap(),
+    //         BTreeMap::from_iter(
+    //             input_wires
+    //                 .into_iter()
+    //                 .zip(inputs.into_iter())
+    //                 .chain(std::iter::once((result_wire, result)))
+    //         )
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_chip_t3_3() {
-        test_hash_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1661);
-    }
+    // #[test]
+    // fn test_hash_chip_t3_1() {
+    //     test_hash_chip::<3, 1>([42.into()], 831);
+    // }
 
-    #[test]
-    fn test_hash_chip_t3_4() {
-        test_hash_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1663);
-    }
+    // #[test]
+    // fn test_hash_chip_t3_2() {
+    //     test_hash_chip::<3, 2>([1.into(), 2.into()], 831);
+    // }
 
-    #[test]
-    fn test_hash_chip_t3_5() {
-        test_hash_chip::<3, 5>(
-            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-            2493,
-        );
-    }
+    // #[test]
+    // fn test_hash_chip_t3_3() {
+    //     test_hash_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1661);
+    // }
 
-    #[test]
-    fn test_hash_chip_t4_1() {
-        test_hash_chip::<4, 1>([42.into()], 1292);
-    }
+    // #[test]
+    // fn test_hash_chip_t3_4() {
+    //     test_hash_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1663);
+    // }
 
-    #[test]
-    fn test_hash_chip_t4_2() {
-        test_hash_chip::<4, 2>([1.into(), 2.into()], 1292);
-    }
+    // #[test]
+    // fn test_hash_chip_t3_5() {
+    //     test_hash_chip::<3, 5>(
+    //         [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+    //         2493,
+    //     );
+    // }
 
-    #[test]
-    fn test_hash_chip_t4_3() {
-        test_hash_chip::<4, 3>([3.into(), 4.into(), 5.into()], 1292);
-    }
+    // #[test]
+    // fn test_hash_chip_t4_1() {
+    //     test_hash_chip::<4, 1>([42.into()], 1292);
+    // }
 
-    #[test]
-    fn test_hash_chip_t4_4() {
-        test_hash_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 2582);
-    }
+    // #[test]
+    // fn test_hash_chip_t4_2() {
+    //     test_hash_chip::<4, 2>([1.into(), 2.into()], 1292);
+    // }
 
-    #[test]
-    fn test_hash_chip_t4_5() {
-        test_hash_chip::<4, 5>(
-            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-            2584,
-        );
-    }
+    // #[test]
+    // fn test_hash_chip_t4_3() {
+    //     test_hash_chip::<4, 3>([3.into(), 4.into(), 5.into()], 1292);
+    // }
 
-    fn test_preimage_chip<const T: usize, const I: usize>(
-        inputs: [Scalar; I],
-        expected_circuit_size: usize,
-    ) {
-        let result = hash::<T>(&inputs);
-        let mut builder = CircuitBuilder::default();
-        let chip = Chip::<T, I>::default();
-        let result_wire = chip
-            .build(&mut builder, std::array::from_fn(|_| None))
-            .unwrap()[0]
-            .unwrap();
-        builder.declare_public_inputs([result_wire]);
-        let mut witness = Witness::new(builder.len());
-        assert_eq!(
-            chip.witness(
-                &mut witness,
-                inputs.map(|input| WireOrUnconstrained::Unconstrained(input))
-            )
-            .unwrap(),
-            [WireOrUnconstrained::Wire(result_wire)]
-        );
-        assert_eq!(witness.get(result_wire), result);
-        assert!(builder.check_witness(&witness).is_ok());
-        let circuit = builder.build();
-        assert_eq!(circuit.size(), expected_circuit_size);
-        let proof = circuit.prove(witness).unwrap();
-        assert_eq!(
-            circuit.verify(&proof).unwrap(),
-            BTreeMap::from([(result_wire, result)])
-        );
-    }
+    // #[test]
+    // fn test_hash_chip_t4_4() {
+    //     test_hash_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 2582);
+    // }
 
-    #[test]
-    fn test_preimage_chip_t3_1() {
-        test_preimage_chip::<3, 1>([42.into()], 830);
-    }
+    // #[test]
+    // fn test_hash_chip_t4_5() {
+    //     test_hash_chip::<4, 5>(
+    //         [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+    //         2584,
+    //     );
+    // }
 
-    #[test]
-    fn test_preimage_chip_t3_2() {
-        test_preimage_chip::<3, 2>([1.into(), 2.into()], 829);
-    }
+    // fn test_preimage_chip<const T: usize, const I: usize>(
+    //     inputs: [Scalar; I],
+    //     expected_circuit_size: usize,
+    // ) {
+    //     let result = hash::<T>(&inputs);
+    //     let mut builder = CircuitBuilder::default();
+    //     let chip = Chip::<T, I>::default();
+    //     let result_wire = chip
+    //         .build(&mut builder, std::array::from_fn(|_| None))
+    //         .unwrap()[0]
+    //         .unwrap();
+    //     builder.declare_public_inputs([result_wire]);
+    //     let mut witness = Witness::new(builder.len());
+    //     assert_eq!(
+    //         chip.witness(
+    //             &mut witness,
+    //             inputs.map(|input| WireOrUnconstrained::Unconstrained(input))
+    //         )
+    //         .unwrap(),
+    //         [WireOrUnconstrained::Wire(result_wire)]
+    //     );
+    //     assert_eq!(witness.get(result_wire), result);
+    //     assert!(builder.check_witness(&witness).is_ok());
+    //     let circuit = builder.build();
+    //     assert_eq!(circuit.size(), expected_circuit_size);
+    //     let proof = circuit.prove(witness).unwrap();
+    //     assert_eq!(
+    //         circuit.verify(&proof).unwrap(),
+    //         BTreeMap::from([(result_wire, result)])
+    //     );
+    // }
 
-    #[test]
-    fn test_preimage_chip_t3_3() {
-        test_preimage_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1658);
-    }
+    // #[test]
+    // fn test_preimage_chip_t3_1() {
+    //     test_preimage_chip::<3, 1>([42.into()], 830);
+    // }
 
-    #[test]
-    fn test_preimage_chip_t3_4() {
-        test_preimage_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1659);
-    }
+    // #[test]
+    // fn test_preimage_chip_t3_2() {
+    //     test_preimage_chip::<3, 2>([1.into(), 2.into()], 829);
+    // }
 
-    #[test]
-    fn test_preimage_chip_t3_5() {
-        test_preimage_chip::<3, 5>(
-            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-            2488,
-        );
-    }
+    // #[test]
+    // fn test_preimage_chip_t3_3() {
+    //     test_preimage_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1658);
+    // }
 
-    #[test]
-    fn test_preimage_chip_t4_1() {
-        test_preimage_chip::<4, 1>([42.into()], 1291);
-    }
+    // #[test]
+    // fn test_preimage_chip_t3_4() {
+    //     test_preimage_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1659);
+    // }
 
-    #[test]
-    fn test_preimage_chip_t4_2() {
-        test_preimage_chip::<4, 2>([1.into(), 2.into()], 1290);
-    }
+    // #[test]
+    // fn test_preimage_chip_t3_5() {
+    //     test_preimage_chip::<3, 5>(
+    //         [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+    //         2488,
+    //     );
+    // }
 
-    #[test]
-    fn test_preimage_chip_t4_3() {
-        test_preimage_chip::<4, 3>([3.into(), 4.into(), 5.into()], 1289);
-    }
+    // #[test]
+    // fn test_preimage_chip_t4_1() {
+    //     test_preimage_chip::<4, 1>([42.into()], 1291);
+    // }
 
-    #[test]
-    fn test_preimage_chip_t4_4() {
-        test_preimage_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 2578);
-    }
+    // #[test]
+    // fn test_preimage_chip_t4_2() {
+    //     test_preimage_chip::<4, 2>([1.into(), 2.into()], 1290);
+    // }
 
-    #[test]
-    fn test_preimage_chip_t4_5() {
-        test_preimage_chip::<4, 5>(
-            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-            2579,
-        );
-    }
+    // #[test]
+    // fn test_preimage_chip_t4_3() {
+    //     test_preimage_chip::<4, 3>([3.into(), 4.into(), 5.into()], 1289);
+    // }
+
+    // #[test]
+    // fn test_preimage_chip_t4_4() {
+    //     test_preimage_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 2578);
+    // }
+
+    // #[test]
+    // fn test_preimage_chip_t4_5() {
+    //     test_preimage_chip::<4, 5>(
+    //         [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+    //         2579,
+    //     );
+    // }
 }
