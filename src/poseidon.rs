@@ -80,6 +80,11 @@ impl Constants<4> {
             let bytes = include_bytes!("../params/arc_t4.bin");
             Constants::<4>::decode_round_constants::<256>(bytes)
         });
+        assert_eq!(
+            ROUND_CONSTANTS[0],
+            parse_scalar("0x1a3bdcbfc11dabfb6ed0dd5f5a9b38191488bce9eecd811c10f9378b32db8c61")
+                .unwrap()
+        );
         &*ROUND_CONSTANTS
     }
 
