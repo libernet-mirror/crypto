@@ -346,7 +346,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness.mul(out.into(), wire.into())
     }
 
-    fn build_first_external_linear_t3(
+    fn build_external_linear_t3_impl(
         &self,
         builder: &mut CircuitBuilder,
         state: [Option<Wire>; T],
@@ -356,7 +356,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         std::array::from_fn(|i| builder.add_sum_gate(state[i], sum.into()))
     }
 
-    fn witness_first_external_linear_t3(
+    fn witness_external_linear_t3_impl(
         &self,
         witness: &mut Witness,
         state: [WireOrUnconstrained; T],
@@ -366,7 +366,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         std::array::from_fn(|i| witness.add(state[i], sum.into()))
     }
 
-    fn build_first_external_linear_t4(
+    fn build_external_linear_t4_impl(
         &self,
         builder: &mut CircuitBuilder,
         state: [Option<Wire>; T],
@@ -375,13 +375,45 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         todo!()
     }
 
-    fn witness_first_external_linear_t4(
+    fn witness_external_linear_t4_impl(
         &self,
         witness: &mut Witness,
         state: [WireOrUnconstrained; T],
     ) -> [Wire; T] {
         // TODO
         todo!()
+    }
+
+    fn build_first_external_linear_t3(
+        &self,
+        builder: &mut CircuitBuilder,
+        state: [Option<Wire>; T],
+    ) -> [Wire; T] {
+        self.build_external_linear_t3_impl(builder, state)
+    }
+
+    fn witness_first_external_linear_t3(
+        &self,
+        witness: &mut Witness,
+        state: [WireOrUnconstrained; T],
+    ) -> [Wire; T] {
+        self.witness_external_linear_t3_impl(witness, state)
+    }
+
+    fn build_first_external_linear_t4(
+        &self,
+        builder: &mut CircuitBuilder,
+        state: [Option<Wire>; T],
+    ) -> [Wire; T] {
+        self.build_external_linear_t4_impl(builder, state)
+    }
+
+    fn witness_first_external_linear_t4(
+        &self,
+        witness: &mut Witness,
+        state: [WireOrUnconstrained; T],
+    ) -> [Wire; T] {
+        self.witness_external_linear_t4_impl(witness, state)
     }
 
     fn build_first_external_linear(
@@ -413,15 +445,11 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         builder: &mut CircuitBuilder,
         state: [Wire; T],
     ) -> [Wire; T] {
-        let sum = builder.add_sum_gate(state[0].into(), state[1].into());
-        let sum = builder.add_sum_gate(sum.into(), state[2].into());
-        std::array::from_fn(|i| builder.add_sum_gate(state[i].into(), sum.into()))
+        self.build_external_linear_t3_impl(builder, state.map(|state| state.into()))
     }
 
     fn witness_external_linear_t3(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
-        let sum = witness.add(state[0].into(), state[1].into());
-        let sum = witness.add(sum.into(), state[2].into());
-        std::array::from_fn(|i| witness.add(state[i].into(), sum.into()))
+        self.witness_external_linear_t3_impl(witness, state.map(|state| state.into()))
     }
 
     fn build_external_linear_t4(
@@ -429,13 +457,11 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         builder: &mut CircuitBuilder,
         state: [Wire; T],
     ) -> [Wire; T] {
-        // TODO
-        todo!()
+        self.build_external_linear_t4_impl(builder, state.map(|state| state.into()))
     }
 
     fn witness_external_linear_t4(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
-        // TODO
-        todo!()
+        self.witness_external_linear_t4_impl(witness, state.map(|state| state.into()))
     }
 
     fn build_external_linear(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
