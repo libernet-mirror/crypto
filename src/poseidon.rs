@@ -346,60 +346,96 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness.mul(out.into(), wire.into())
     }
 
-    fn build_mds(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
-        // TODO
-        todo!()
-    }
-
-    fn witness_mds(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
-        // TODO
-        todo!()
-    }
-
-    fn build_round(
+    fn build_first_external_linear(
         &self,
         builder: &mut CircuitBuilder,
         state: [Option<Wire>; T],
-        r: usize,
     ) -> [Wire; T] {
-        let num_full_rounds = Constants::<T>::num_full_rounds();
-        let num_partial_rounds = Constants::<T>::num_partial_rounds();
-
-        let c = Constants::<T>::get_round_constants();
-        let mut state: [Wire; T] =
-            std::array::from_fn(|i| builder.add_sum_with_const_gate(state[i], c[r * T + i]));
-
-        state[0] = self.build_sbox(builder, state[0]);
-        if r < num_full_rounds || r >= num_full_rounds + num_partial_rounds {
-            for i in 1..T {
-                state[i] = self.build_sbox(builder, state[i]);
-            }
-        }
-
-        self.build_mds(builder, state)
+        // TODO
+        todo!()
     }
 
-    fn witness_round(
+    fn witness_first_external_linear(
         &self,
         witness: &mut Witness,
         state: [WireOrUnconstrained; T],
+    ) -> [Wire; T] {
+        // TODO
+        todo!()
+    }
+
+    fn build_external_linear(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
+        // TODO
+        todo!()
+    }
+
+    fn witness_external_linear(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
+        // TODO
+        todo!()
+    }
+
+    fn build_internal_linear(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
+        // TODO
+        todo!()
+    }
+
+    fn witness_internal_linear(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
+        // TODO
+        todo!()
+    }
+
+    fn build_full_round(
+        &self,
+        builder: &mut CircuitBuilder,
+        state: [Wire; T],
         r: usize,
     ) -> [Wire; T] {
-        let num_full_rounds = Constants::<T>::num_full_rounds();
-        let num_partial_rounds = Constants::<T>::num_partial_rounds();
-
         let c = Constants::<T>::get_round_constants();
         let mut state: [Wire; T] =
-            std::array::from_fn(|i| witness.add_const(state[i], c[r * T + i].into()));
+            std::array::from_fn(|i| builder.add_sum_with_const_gate(Some(state[i]), c[r * T + i]));
 
-        state[0] = self.witness_sbox(witness, state[0]);
-        if r < num_full_rounds || r >= num_full_rounds + num_partial_rounds {
-            for i in 1..T {
-                state[i] = self.witness_sbox(witness, state[i]);
-            }
+        for i in 0..T {
+            state[i] = self.build_sbox(builder, state[i]);
         }
 
-        self.witness_mds(witness, state)
+        self.build_external_linear(builder, state)
+    }
+
+    fn witness_full_round(&self, witness: &mut Witness, state: [Wire; T], r: usize) -> [Wire; T] {
+        let c = Constants::<T>::get_round_constants();
+        let mut state: [Wire; T] = std::array::from_fn(|i| {
+            witness.add_const(WireOrUnconstrained::Wire(state[i]), c[r * T + i].into())
+        });
+
+        for i in 0..T {
+            state[i] = self.witness_sbox(witness, state[i]);
+        }
+
+        self.witness_external_linear(witness, state)
+    }
+
+    fn build_partial_round(
+        &self,
+        builder: &mut CircuitBuilder,
+        mut state: [Wire; T],
+        r: usize,
+    ) -> [Wire; T] {
+        let c = Constants::<T>::get_round_constants();
+        state[0] = builder.add_sum_with_const_gate(Some(state[0]), c[r * T]);
+        state[0] = self.build_sbox(builder, state[0]);
+        self.build_internal_linear(builder, state)
+    }
+
+    fn witness_partial_round(
+        &self,
+        witness: &mut Witness,
+        mut state: [Wire; T],
+        r: usize,
+    ) -> [Wire; T] {
+        let c = Constants::<T>::get_round_constants();
+        state[0] = witness.add_const(WireOrUnconstrained::Wire(state[0]), c[r * T].into());
+        state[0] = self.witness_sbox(witness, state[0]);
+        self.witness_external_linear(witness, state)
     }
 
     fn build_permutation(
@@ -407,9 +443,17 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         builder: &mut CircuitBuilder,
         state: [Option<Wire>; T],
     ) -> [Wire; T] {
-        let mut state = self.build_round(builder, state, 0);
-        for i in 1..Constants::<T>::num_total_rounds() {
-            state = self.build_round(builder, state.map(|wire| Some(wire)), i);
+        let num_full_rounds = Constants::<T>::num_full_rounds();
+        let num_partial_rounds = Constants::<T>::num_partial_rounds();
+        let mut state = self.build_first_external_linear(builder, state);
+        for i in 0..num_full_rounds {
+            state = self.build_full_round(builder, state, i);
+        }
+        for i in 0..num_partial_rounds {
+            state = self.build_partial_round(builder, state, num_full_rounds + i);
+        }
+        for i in 0..num_full_rounds {
+            state = self.build_full_round(builder, state, num_full_rounds + num_partial_rounds + i);
         }
         state
     }
@@ -419,13 +463,18 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness: &mut Witness,
         state: [WireOrUnconstrained; T],
     ) -> [Wire; T] {
-        let mut state = self.witness_round(witness, state, 0);
-        for i in 1..Constants::<T>::num_total_rounds() {
-            state = self.witness_round(
-                witness,
-                state.map(|wire| WireOrUnconstrained::Wire(wire)),
-                i,
-            );
+        let num_full_rounds = Constants::<T>::num_full_rounds();
+        let num_partial_rounds = Constants::<T>::num_partial_rounds();
+        let mut state = self.witness_first_external_linear(witness, state);
+        for i in 0..num_full_rounds {
+            state = self.witness_full_round(witness, state, i);
+        }
+        for i in 0..num_partial_rounds {
+            state = self.witness_partial_round(witness, state, num_full_rounds + i);
+        }
+        for i in 0..num_full_rounds {
+            state =
+                self.witness_full_round(witness, state, num_full_rounds + num_partial_rounds + i);
         }
         state
     }
@@ -587,43 +636,43 @@ mod tests {
         );
     }
 
-    // fn test_hash_chip<const T: usize, const I: usize>(
-    //     inputs: [Scalar; I],
-    //     expected_circuit_size: usize,
-    // ) {
-    //     let result = hash::<T>(&inputs);
-    //     let mut builder = CircuitBuilder::default();
-    //     let chip = Chip::<T, I>::default();
-    //     let input_wires = inputs.map(|input| builder.add_const_gate(input));
-    //     let result_wire = chip
-    //         .build(&mut builder, input_wires.map(|wire| Some(wire)))
-    //         .unwrap()[0]
-    //         .unwrap();
-    //     builder.declare_public_inputs(input_wires.into_iter().chain(std::iter::once(result_wire)));
-    //     let mut witness = Witness::new(builder.len());
-    //     for i in 0..I {
-    //         witness.assert_constant(inputs[i]);
-    //     }
-    //     assert_eq!(
-    //         chip.witness(&mut witness, input_wires.map(|wire| wire.into()))
-    //             .unwrap(),
-    //         [WireOrUnconstrained::Wire(result_wire)]
-    //     );
-    //     assert_eq!(witness.get(result_wire), result);
-    //     assert!(builder.check_witness(&witness).is_ok());
-    //     let circuit = builder.build();
-    //     assert_eq!(circuit.size(), expected_circuit_size);
-    //     let proof = circuit.prove(witness).unwrap();
-    //     assert_eq!(
-    //         circuit.verify(&proof).unwrap(),
-    //         BTreeMap::from_iter(
-    //             input_wires
-    //                 .into_iter()
-    //                 .zip(inputs.into_iter())
-    //                 .chain(std::iter::once((result_wire, result)))
-    //         )
-    //     );
-    // }
+    fn test_hash_chip<const T: usize, const I: usize>(
+        inputs: [Scalar; I],
+        expected_circuit_size: usize,
+    ) {
+        let result = hash::<T>(&inputs);
+        let mut builder = CircuitBuilder::default();
+        let chip = Chip::<T, I>::default();
+        let input_wires = inputs.map(|input| builder.add_const_gate(input));
+        let result_wire = chip
+            .build(&mut builder, input_wires.map(|wire| Some(wire)))
+            .unwrap()[0]
+            .unwrap();
+        builder.declare_public_inputs(input_wires.into_iter().chain(std::iter::once(result_wire)));
+        let mut witness = Witness::new(builder.len());
+        for i in 0..I {
+            witness.assert_constant(inputs[i]);
+        }
+        assert_eq!(
+            chip.witness(&mut witness, input_wires.map(|wire| wire.into()))
+                .unwrap(),
+            [WireOrUnconstrained::Wire(result_wire)]
+        );
+        assert_eq!(witness.get(result_wire), result);
+        assert!(builder.check_witness(&witness).is_ok());
+        let circuit = builder.build();
+        assert_eq!(circuit.size(), expected_circuit_size);
+        let proof = circuit.prove(witness).unwrap();
+        assert_eq!(
+            circuit.verify(&proof).unwrap(),
+            BTreeMap::from_iter(
+                input_wires
+                    .into_iter()
+                    .zip(inputs.into_iter())
+                    .chain(std::iter::once((result_wire, result)))
+            )
+        );
+    }
 
     // #[test]
     // fn test_hash_chip_t3_1() {
@@ -681,37 +730,37 @@ mod tests {
     //     );
     // }
 
-    // fn test_preimage_chip<const T: usize, const I: usize>(
-    //     inputs: [Scalar; I],
-    //     expected_circuit_size: usize,
-    // ) {
-    //     let result = hash::<T>(&inputs);
-    //     let mut builder = CircuitBuilder::default();
-    //     let chip = Chip::<T, I>::default();
-    //     let result_wire = chip
-    //         .build(&mut builder, std::array::from_fn(|_| None))
-    //         .unwrap()[0]
-    //         .unwrap();
-    //     builder.declare_public_inputs([result_wire]);
-    //     let mut witness = Witness::new(builder.len());
-    //     assert_eq!(
-    //         chip.witness(
-    //             &mut witness,
-    //             inputs.map(|input| WireOrUnconstrained::Unconstrained(input))
-    //         )
-    //         .unwrap(),
-    //         [WireOrUnconstrained::Wire(result_wire)]
-    //     );
-    //     assert_eq!(witness.get(result_wire), result);
-    //     assert!(builder.check_witness(&witness).is_ok());
-    //     let circuit = builder.build();
-    //     assert_eq!(circuit.size(), expected_circuit_size);
-    //     let proof = circuit.prove(witness).unwrap();
-    //     assert_eq!(
-    //         circuit.verify(&proof).unwrap(),
-    //         BTreeMap::from([(result_wire, result)])
-    //     );
-    // }
+    fn test_preimage_chip<const T: usize, const I: usize>(
+        inputs: [Scalar; I],
+        expected_circuit_size: usize,
+    ) {
+        let result = hash::<T>(&inputs);
+        let mut builder = CircuitBuilder::default();
+        let chip = Chip::<T, I>::default();
+        let result_wire = chip
+            .build(&mut builder, std::array::from_fn(|_| None))
+            .unwrap()[0]
+            .unwrap();
+        builder.declare_public_inputs([result_wire]);
+        let mut witness = Witness::new(builder.len());
+        assert_eq!(
+            chip.witness(
+                &mut witness,
+                inputs.map(|input| WireOrUnconstrained::Unconstrained(input))
+            )
+            .unwrap(),
+            [WireOrUnconstrained::Wire(result_wire)]
+        );
+        assert_eq!(witness.get(result_wire), result);
+        assert!(builder.check_witness(&witness).is_ok());
+        let circuit = builder.build();
+        assert_eq!(circuit.size(), expected_circuit_size);
+        let proof = circuit.prove(witness).unwrap();
+        assert_eq!(
+            circuit.verify(&proof).unwrap(),
+            BTreeMap::from([(result_wire, result)])
+        );
+    }
 
     // #[test]
     // fn test_preimage_chip_t3_1() {
