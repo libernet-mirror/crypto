@@ -346,7 +346,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness.mul(out.into(), wire.into())
     }
 
-    fn build_external_linear_t3_impl(
+    fn build_external_linear_t3(
         &self,
         builder: &mut CircuitBuilder,
         state: [Option<Wire>; T],
@@ -356,7 +356,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         std::array::from_fn(|i| builder.add_sum_gate(state[i], sum.into()))
     }
 
-    fn witness_external_linear_t3_impl(
+    fn witness_external_linear_t3(
         &self,
         witness: &mut Witness,
         state: [WireOrUnconstrained; T],
@@ -366,105 +366,29 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         std::array::from_fn(|i| witness.add(state[i], sum.into()))
     }
 
-    fn build_external_linear_t4_impl(
-        &self,
-        builder: &mut CircuitBuilder,
-        state: [Option<Wire>; T],
-    ) -> [Wire; T] {
-        // TODO
-        todo!()
-    }
-
-    fn witness_external_linear_t4_impl(
-        &self,
-        witness: &mut Witness,
-        state: [WireOrUnconstrained; T],
-    ) -> [Wire; T] {
-        // TODO
-        todo!()
-    }
-
-    fn build_first_external_linear_t3(
-        &self,
-        builder: &mut CircuitBuilder,
-        state: [Option<Wire>; T],
-    ) -> [Wire; T] {
-        self.build_external_linear_t3_impl(builder, state)
-    }
-
-    fn witness_first_external_linear_t3(
-        &self,
-        witness: &mut Witness,
-        state: [WireOrUnconstrained; T],
-    ) -> [Wire; T] {
-        self.witness_external_linear_t3_impl(witness, state)
-    }
-
-    fn build_first_external_linear_t4(
-        &self,
-        builder: &mut CircuitBuilder,
-        state: [Option<Wire>; T],
-    ) -> [Wire; T] {
-        self.build_external_linear_t4_impl(builder, state)
-    }
-
-    fn witness_first_external_linear_t4(
-        &self,
-        witness: &mut Witness,
-        state: [WireOrUnconstrained; T],
-    ) -> [Wire; T] {
-        self.witness_external_linear_t4_impl(witness, state)
-    }
-
-    fn build_first_external_linear(
-        &self,
-        builder: &mut CircuitBuilder,
-        state: [Option<Wire>; T],
-    ) -> [Wire; T] {
-        match T {
-            3 => self.build_first_external_linear_t3(builder, state),
-            4 => self.build_first_external_linear_t4(builder, state),
-            _ => unimplemented!(),
-        }
-    }
-
-    fn witness_first_external_linear(
-        &self,
-        witness: &mut Witness,
-        state: [WireOrUnconstrained; T],
-    ) -> [Wire; T] {
-        match T {
-            3 => self.witness_first_external_linear_t3(witness, state),
-            4 => self.witness_first_external_linear_t4(witness, state),
-            _ => unimplemented!(),
-        }
-    }
-
-    fn build_external_linear_t3(
-        &self,
-        builder: &mut CircuitBuilder,
-        state: [Wire; T],
-    ) -> [Wire; T] {
-        self.build_external_linear_t3_impl(builder, state.map(|state| state.into()))
-    }
-
-    fn witness_external_linear_t3(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
-        self.witness_external_linear_t3_impl(witness, state.map(|state| state.into()))
-    }
-
     fn build_external_linear_t4(
         &self,
         builder: &mut CircuitBuilder,
-        state: [Wire; T],
+        state: [Option<Wire>; T],
     ) -> [Wire; T] {
-        self.build_external_linear_t4_impl(builder, state.map(|state| state.into()))
+        // TODO
+        todo!()
     }
 
-    fn witness_external_linear_t4(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
-        self.witness_external_linear_t4_impl(witness, state.map(|state| state.into()))
+    fn witness_external_linear_t4(
+        &self,
+        witness: &mut Witness,
+        state: [WireOrUnconstrained; T],
+    ) -> [Wire; T] {
+        // TODO
+        todo!()
     }
 
-    fn build_external_linear(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
+    fn build_external_linear(
+        &self,
+        builder: &mut CircuitBuilder,
+        state: [Option<Wire>; T],
+    ) -> [Wire; T] {
         match T {
             3 => self.build_external_linear_t3(builder, state),
             4 => self.build_external_linear_t4(builder, state),
@@ -472,7 +396,11 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         }
     }
 
-    fn witness_external_linear(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
+    fn witness_external_linear(
+        &self,
+        witness: &mut Witness,
+        state: [WireOrUnconstrained; T],
+    ) -> [Wire; T] {
         match T {
             3 => self.witness_external_linear_t3(witness, state),
             4 => self.witness_external_linear_t4(witness, state),
@@ -545,7 +473,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         for i in 0..T {
             state[i] = self.build_sbox(builder, state[i]);
         }
-        self.build_external_linear(builder, state)
+        self.build_external_linear(builder, state.map(|state| state.into()))
     }
 
     fn witness_full_round(&self, witness: &mut Witness, state: [Wire; T], r: usize) -> [Wire; T] {
@@ -556,7 +484,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         for i in 0..T {
             state[i] = self.witness_sbox(witness, state[i]);
         }
-        self.witness_external_linear(witness, state)
+        self.witness_external_linear(witness, state.map(|state| state.into()))
     }
 
     fn build_partial_round(
@@ -590,7 +518,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     ) -> [Wire; T] {
         let num_full_rounds = Constants::<T>::num_full_rounds();
         let num_partial_rounds = Constants::<T>::num_partial_rounds();
-        let mut state = self.build_first_external_linear(builder, state);
+        let mut state = self.build_external_linear(builder, state);
         for i in 0..num_full_rounds {
             state = self.build_full_round(builder, state, i);
         }
@@ -610,7 +538,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     ) -> [Wire; T] {
         let num_full_rounds = Constants::<T>::num_full_rounds();
         let num_partial_rounds = Constants::<T>::num_partial_rounds();
-        let mut state = self.witness_first_external_linear(witness, state);
+        let mut state = self.witness_external_linear(witness, state);
         for i in 0..num_full_rounds {
             state = self.witness_full_round(witness, state, i);
         }
