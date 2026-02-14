@@ -340,11 +340,6 @@ impl<
         for children in self.path {
             let trit = xits::mod3(key).to_bytes_le()[0] as usize;
             if hash != children[trit] {
-                println!(
-                    "hash mismatch: got {}, want {}",
-                    utils::format_scalar(children[trit]),
-                    utils::format_scalar(hash),
-                );
                 return Err(anyhow!(
                     "hash mismatch: got {}, want {}",
                     utils::format_scalar(children[trit]),
@@ -355,11 +350,6 @@ impl<
             hash = poseidon::hash_t4(&children);
         }
         if hash != self.root_hash {
-            println!(
-                "final hash mismatch: got {}, want {}",
-                utils::format_scalar(self.root_hash),
-                utils::format_scalar(hash),
-            );
             return Err(anyhow!(
                 "final hash mismatch: got {}, want {}",
                 utils::format_scalar(self.root_hash),
