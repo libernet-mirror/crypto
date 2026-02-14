@@ -346,7 +346,27 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness.mul(out.into(), wire.into())
     }
 
-    fn build_first_external_linear(
+    fn build_first_external_linear_t3(
+        &self,
+        builder: &mut CircuitBuilder,
+        state: [Option<Wire>; T],
+    ) -> [Wire; T] {
+        let sum = builder.add_sum_gate(state[0], state[1]);
+        let sum = builder.add_sum_gate(sum.into(), state[2]);
+        std::array::from_fn(|i| builder.add_sum_gate(state[i], sum.into()))
+    }
+
+    fn witness_first_external_linear_t3(
+        &self,
+        witness: &mut Witness,
+        state: [WireOrUnconstrained; T],
+    ) -> [Wire; T] {
+        let sum = witness.add(state[0], state[1]);
+        let sum = witness.add(sum.into(), state[2]);
+        std::array::from_fn(|i| witness.add(state[i], sum.into()))
+    }
+
+    fn build_first_external_linear_t4(
         &self,
         builder: &mut CircuitBuilder,
         state: [Option<Wire>; T],
@@ -355,7 +375,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         todo!()
     }
 
-    fn witness_first_external_linear(
+    fn witness_first_external_linear_t4(
         &self,
         witness: &mut Witness,
         state: [WireOrUnconstrained; T],
@@ -364,24 +384,127 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         todo!()
     }
 
-    fn build_external_linear(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
+    fn build_first_external_linear(
+        &self,
+        builder: &mut CircuitBuilder,
+        state: [Option<Wire>; T],
+    ) -> [Wire; T] {
+        match T {
+            3 => self.build_first_external_linear_t3(builder, state),
+            4 => self.build_first_external_linear_t4(builder, state),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn witness_first_external_linear(
+        &self,
+        witness: &mut Witness,
+        state: [WireOrUnconstrained; T],
+    ) -> [Wire; T] {
+        match T {
+            3 => self.witness_first_external_linear_t3(witness, state),
+            4 => self.witness_first_external_linear_t4(witness, state),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn build_external_linear_t3(
+        &self,
+        builder: &mut CircuitBuilder,
+        state: [Wire; T],
+    ) -> [Wire; T] {
+        let sum = builder.add_sum_gate(state[0].into(), state[1].into());
+        let sum = builder.add_sum_gate(sum.into(), state[2].into());
+        std::array::from_fn(|i| builder.add_sum_gate(state[i].into(), sum.into()))
+    }
+
+    fn witness_external_linear_t3(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
+        let sum = witness.add(state[0].into(), state[1].into());
+        let sum = witness.add(sum.into(), state[2].into());
+        std::array::from_fn(|i| witness.add(state[i].into(), sum.into()))
+    }
+
+    fn build_external_linear_t4(
+        &self,
+        builder: &mut CircuitBuilder,
+        state: [Wire; T],
+    ) -> [Wire; T] {
         // TODO
         todo!()
     }
 
+    fn witness_external_linear_t4(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
+        // TODO
+        todo!()
+    }
+
+    fn build_external_linear(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
+        match T {
+            3 => self.build_external_linear_t3(builder, state),
+            4 => self.build_external_linear_t4(builder, state),
+            _ => unimplemented!(),
+        }
+    }
+
     fn witness_external_linear(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
+        match T {
+            3 => self.witness_external_linear_t3(witness, state),
+            4 => self.witness_external_linear_t4(witness, state),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn build_internal_linear_t3(
+        &self,
+        builder: &mut CircuitBuilder,
+        mut state: [Wire; T],
+    ) -> [Wire; T] {
+        let sum = builder.add_sum_gate(state[0].into(), state[1].into());
+        let sum = builder.add_sum_gate(sum.into(), state[2].into());
+        state[0] = builder.add_sum_gate(state[0].into(), sum.into());
+        state[1] = builder.add_sum_gate(state[1].into(), sum.into());
+        state[2] =
+            builder.add_linear_combination_gate(2.into(), state[2].into(), 1.into(), sum.into());
+        state
+    }
+
+    fn witness_internal_linear_t3(&self, witness: &mut Witness, mut state: [Wire; T]) -> [Wire; T] {
+        let sum = witness.add(state[0].into(), state[1].into());
+        let sum = witness.add(sum.into(), state[2].into());
+        state[0] = witness.add(state[0].into(), sum.into());
+        state[1] = witness.add(state[1].into(), sum.into());
+        state[2] = witness.combine(2.into(), state[2].into(), 1.into(), sum.into());
+        state
+    }
+
+    fn build_internal_linear_t4(
+        &self,
+        builder: &mut CircuitBuilder,
+        state: [Wire; T],
+    ) -> [Wire; T] {
+        // TODO
+        todo!()
+    }
+
+    fn witness_internal_linear_t4(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
         // TODO
         todo!()
     }
 
     fn build_internal_linear(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
-        // TODO
-        todo!()
+        match T {
+            3 => self.build_internal_linear_t3(builder, state),
+            4 => self.build_internal_linear_t4(builder, state),
+            _ => unimplemented!(),
+        }
     }
 
     fn witness_internal_linear(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
-        // TODO
-        todo!()
+        match T {
+            3 => self.witness_internal_linear_t3(witness, state),
+            4 => self.witness_internal_linear_t4(witness, state),
+            _ => unimplemented!(),
+        }
     }
 
     fn build_full_round(
@@ -393,11 +516,9 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let c = Constants::<T>::get_round_constants();
         let mut state: [Wire; T] =
             std::array::from_fn(|i| builder.add_sum_with_const_gate(Some(state[i]), c[r * T + i]));
-
         for i in 0..T {
             state[i] = self.build_sbox(builder, state[i]);
         }
-
         self.build_external_linear(builder, state)
     }
 
@@ -406,11 +527,9 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let mut state: [Wire; T] = std::array::from_fn(|i| {
             witness.add_const(WireOrUnconstrained::Wire(state[i]), c[r * T + i].into())
         });
-
         for i in 0..T {
             state[i] = self.witness_sbox(witness, state[i]);
         }
-
         self.witness_external_linear(witness, state)
     }
 
@@ -435,7 +554,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let c = Constants::<T>::get_round_constants();
         state[0] = witness.add_const(WireOrUnconstrained::Wire(state[0]), c[r * T].into());
         state[0] = self.witness_sbox(witness, state[0]);
-        self.witness_external_linear(witness, state)
+        self.witness_internal_linear(witness, state)
     }
 
     fn build_permutation(
@@ -674,33 +793,33 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_hash_chip_t3_1() {
-    //     test_hash_chip::<3, 1>([42.into()], 831);
-    // }
+    #[test]
+    fn test_hash_chip_t3_1() {
+        test_hash_chip::<3, 1>([42.into()], 648);
+    }
 
-    // #[test]
-    // fn test_hash_chip_t3_2() {
-    //     test_hash_chip::<3, 2>([1.into(), 2.into()], 831);
-    // }
+    #[test]
+    fn test_hash_chip_t3_2() {
+        test_hash_chip::<3, 2>([1.into(), 2.into()], 648);
+    }
 
-    // #[test]
-    // fn test_hash_chip_t3_3() {
-    //     test_hash_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1661);
-    // }
+    #[test]
+    fn test_hash_chip_t3_3() {
+        test_hash_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1295);
+    }
 
-    // #[test]
-    // fn test_hash_chip_t3_4() {
-    //     test_hash_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1663);
-    // }
+    #[test]
+    fn test_hash_chip_t3_4() {
+        test_hash_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1297);
+    }
 
-    // #[test]
-    // fn test_hash_chip_t3_5() {
-    //     test_hash_chip::<3, 5>(
-    //         [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-    //         2493,
-    //     );
-    // }
+    #[test]
+    fn test_hash_chip_t3_5() {
+        test_hash_chip::<3, 5>(
+            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+            1944,
+        );
+    }
 
     // #[test]
     // fn test_hash_chip_t4_1() {
