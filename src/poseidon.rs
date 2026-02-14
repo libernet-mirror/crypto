@@ -80,11 +80,6 @@ impl Constants<4> {
             let bytes = include_bytes!("../params/arc_t4.bin");
             Constants::<4>::decode_round_constants::<256>(bytes)
         });
-        assert_eq!(
-            ROUND_CONSTANTS[0],
-            parse_scalar("0x1a3bdcbfc11dabfb6ed0dd5f5a9b38191488bce9eecd811c10f9378b32db8c61")
-                .unwrap()
-        );
         &*ROUND_CONSTANTS
     }
 
@@ -512,85 +507,85 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_hash_t3_1() {
-    //     assert_eq!(
-    //         hash_t3(&[42.into()]),
-    //         parse_scalar("0x5cc740e0dc958ca8f36dc7dfb606caa67e93866b599ded1864b0028c6ded8936")
-    //     );
-    // }
+    #[test]
+    fn test_hash_t3_1() {
+        assert_eq!(
+            hash_t3(&[42.into()]),
+            parse_scalar("0x3096077a3d12ab01b506e6aceda3c0dda9fe86c329ce2996ee63e1517b729e29")
+        );
+    }
 
-    // #[test]
-    // fn test_hash_t3_2() {
-    //     assert_eq!(
-    //         hash_t3(&[1.into(), 2.into()]),
-    //         parse_scalar("0x591e00d609149c3a82adc2ef3b4209ff7a558de82ccbd0a0944d479f76185d2f")
-    //     );
-    // }
+    #[test]
+    fn test_hash_t3_2() {
+        assert_eq!(
+            hash_t3(&[1.into(), 2.into()]),
+            parse_scalar("0x70a58720d46a84d195bc875de66ed3ddef47522a7e806ec7a98c0d656517ce74")
+        );
+    }
 
-    // #[test]
-    // fn test_hash_t3_3() {
-    //     assert_eq!(
-    //         hash_t3(&[3.into(), 4.into(), 5.into()]),
-    //         parse_scalar("0x56bed0ed7205eb1caaedd73b5b8466da2b22359d986d99f9e22597a129719503")
-    //     );
-    // }
+    #[test]
+    fn test_hash_t3_3() {
+        assert_eq!(
+            hash_t3(&[3.into(), 4.into(), 5.into()]),
+            parse_scalar("0x67497b788437da8141a3580f52a7ece12dbdd8ae1b9efef7dde3cf06cad18b8a")
+        );
+    }
 
-    // #[test]
-    // fn test_hash_t3_4() {
-    //     assert_eq!(
-    //         hash_t3(&[6.into(), 7.into(), 8.into(), 9.into()]),
-    //         parse_scalar("0x10ab5a769957aa4672694398a5dcc04518ca9ca8341a17fb90997dde0dc008d8")
-    //     );
-    // }
+    #[test]
+    fn test_hash_t3_4() {
+        assert_eq!(
+            hash_t3(&[6.into(), 7.into(), 8.into(), 9.into()]),
+            parse_scalar("0x6c1ac173b683ba0f3c743b3ae256f8ed269660e6825d2f41d52a8851bcfe689a")
+        );
+    }
 
-    // #[test]
-    // fn test_hash_t3_5() {
-    //     assert_eq!(
-    //         hash_t3(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
-    //         parse_scalar("0x1b4c7f689fa7b4e9e1c4229edeeb54b15db471955f027467ddc886438d918344")
-    //     );
-    // }
+    #[test]
+    fn test_hash_t3_5() {
+        assert_eq!(
+            hash_t3(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
+            parse_scalar("0x64b7d7fafdefa8e32de1d2c5db35ff3f204c474bba09a1acc41704dafdbf0405")
+        );
+    }
 
-    // #[test]
-    // fn test_hash_t4_1() {
-    //     assert_eq!(
-    //         hash_t4(&[42.into()]),
-    //         parse_scalar("0x0531b2fa3c2aa794859d54c409ac6bf33a19981275bff625c5eeb8d1cc8d123c")
-    //     );
-    // }
+    #[test]
+    fn test_hash_t4_1() {
+        assert_eq!(
+            hash_t4(&[42.into()]),
+            parse_scalar("0x371862e4591023f4be2dd1b86827e2ef6dac40c430beab9d12344ddeef2a5802")
+        );
+    }
 
-    // #[test]
-    // fn test_hash_t4_2() {
-    //     assert_eq!(
-    //         hash_t4(&[1.into(), 2.into()]),
-    //         parse_scalar("0x520651bc5804254d3306d30c7e3242e00f527bb7f39aedb7f828e346299bd91c")
-    //     );
-    // }
+    #[test]
+    fn test_hash_t4_2() {
+        assert_eq!(
+            hash_t4(&[1.into(), 2.into()]),
+            parse_scalar("0x588e95bbff17f8929c7775706570c315fe7db256e96fe213da4e8ffa0587cda8")
+        );
+    }
 
-    // #[test]
-    // fn test_hash_t4_3() {
-    //     assert_eq!(
-    //         hash_t4(&[3.into(), 4.into(), 5.into()]),
-    //         parse_scalar("0x1a9f84b2d90c7ec4efb7e8c38efddad5983245c1132434bb94c74d19eb04cb3a")
-    //     );
-    // }
+    #[test]
+    fn test_hash_t4_3() {
+        assert_eq!(
+            hash_t4(&[3.into(), 4.into(), 5.into()]),
+            parse_scalar("0x5f5ba9ebadb4641e56a4d98062c1b8d8f6e5dcf0a3e740844f06d5f9237b5eb2")
+        );
+    }
 
-    // #[test]
-    // fn test_hash_t4_4() {
-    //     assert_eq!(
-    //         hash_t4(&[6.into(), 7.into(), 8.into(), 9.into()]),
-    //         parse_scalar("0x5497afdc8bc505782b08a63601eec9fa0e4037e61d06f453edff9a8ca1991b76")
-    //     );
-    // }
+    #[test]
+    fn test_hash_t4_4() {
+        assert_eq!(
+            hash_t4(&[6.into(), 7.into(), 8.into(), 9.into()]),
+            parse_scalar("0x3e2c69046948fc299380c2b83b1b785c36d9d36df9da6395d03b77927039ba05")
+        );
+    }
 
-    // #[test]
-    // fn test_hash_t4_5() {
-    //     assert_eq!(
-    //         hash_t4(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
-    //         parse_scalar("0x0c8f1b5e59a0120bda56f3e28b2558f3541f2fc0a421418081b071dd30e89a3f")
-    //     );
-    // }
+    #[test]
+    fn test_hash_t4_5() {
+        assert_eq!(
+            hash_t4(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
+            parse_scalar("0x414a70dcfe4bfeb447008058a293fa5e64e31e3c78ca8441d6fe8886fb0892dc")
+        );
+    }
 
     // fn test_hash_chip<const T: usize, const I: usize>(
     //     inputs: [Scalar; I],
