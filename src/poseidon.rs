@@ -371,8 +371,22 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         builder: &mut CircuitBuilder,
         state: [Option<Wire>; T],
     ) -> [Wire; T] {
-        // TODO
-        todo!()
+        let m = Constants::<4>::get_external_matrix();
+        std::array::from_fn(|i| {
+            let lhs = builder.add_linear_combination_gate(
+                m[i * T + 0],
+                state[0].into(),
+                m[i * T + 1],
+                state[1].into(),
+            );
+            let rhs = builder.add_linear_combination_gate(
+                m[i * T + 2],
+                state[2].into(),
+                m[i * T + 3],
+                state[3].into(),
+            );
+            builder.add_sum_gate(lhs.into(), rhs.into())
+        })
     }
 
     fn witness_external_linear_t4(
@@ -380,8 +394,12 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness: &mut Witness,
         state: [WireOrUnconstrained; T],
     ) -> [Wire; T] {
-        // TODO
-        todo!()
+        let m = Constants::<4>::get_external_matrix();
+        std::array::from_fn(|i| {
+            let lhs = witness.combine(m[i * T + 0], state[0].into(), m[i * T + 1], state[1].into());
+            let rhs = witness.combine(m[i * T + 2], state[2].into(), m[i * T + 3], state[3].into());
+            witness.add(lhs.into(), rhs.into())
+        })
     }
 
     fn build_external_linear(
@@ -436,13 +454,33 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         builder: &mut CircuitBuilder,
         state: [Wire; T],
     ) -> [Wire; T] {
-        // TODO
-        todo!()
+        let lhs = builder.add_sum_gate(state[0].into(), state[1].into());
+        let rhs = builder.add_sum_gate(state[2].into(), state[3].into());
+        let sum = builder.add_sum_gate(lhs.into(), rhs.into());
+        let m = Constants::<4>::get_internal_matrix();
+        std::array::from_fn(|i| {
+            builder.add_linear_combination_gate(
+                m[i * 5] - Scalar::from(1),
+                state[i].into(),
+                1.into(),
+                sum.into(),
+            )
+        })
     }
 
     fn witness_internal_linear_t4(&self, witness: &mut Witness, state: [Wire; T]) -> [Wire; T] {
-        // TODO
-        todo!()
+        let lhs = witness.add(state[0].into(), state[1].into());
+        let rhs = witness.add(state[2].into(), state[3].into());
+        let sum = witness.add(lhs.into(), rhs.into());
+        let m = Constants::<4>::get_internal_matrix();
+        std::array::from_fn(|i| {
+            witness.combine(
+                m[i * 5] - Scalar::from(1),
+                state[i].into(),
+                1.into(),
+                sum.into(),
+            )
+        })
     }
 
     fn build_internal_linear(&self, builder: &mut CircuitBuilder, state: [Wire; T]) -> [Wire; T] {
@@ -775,33 +813,33 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_hash_chip_t4_1() {
-    //     test_hash_chip::<4, 1>([42.into()], 1292);
-    // }
+    #[test]
+    fn test_hash_chip_t4_1() {
+        test_hash_chip::<4, 1>([42.into()], 856);
+    }
 
-    // #[test]
-    // fn test_hash_chip_t4_2() {
-    //     test_hash_chip::<4, 2>([1.into(), 2.into()], 1292);
-    // }
+    #[test]
+    fn test_hash_chip_t4_2() {
+        test_hash_chip::<4, 2>([1.into(), 2.into()], 856);
+    }
 
-    // #[test]
-    // fn test_hash_chip_t4_3() {
-    //     test_hash_chip::<4, 3>([3.into(), 4.into(), 5.into()], 1292);
-    // }
+    #[test]
+    fn test_hash_chip_t4_3() {
+        test_hash_chip::<4, 3>([3.into(), 4.into(), 5.into()], 856);
+    }
 
-    // #[test]
-    // fn test_hash_chip_t4_4() {
-    //     test_hash_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 2582);
-    // }
+    #[test]
+    fn test_hash_chip_t4_4() {
+        test_hash_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1710);
+    }
 
-    // #[test]
-    // fn test_hash_chip_t4_5() {
-    //     test_hash_chip::<4, 5>(
-    //         [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-    //         2584,
-    //     );
-    // }
+    #[test]
+    fn test_hash_chip_t4_5() {
+        test_hash_chip::<4, 5>(
+            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+            1712,
+        );
+    }
 
     fn test_preimage_chip<const T: usize, const I: usize>(
         inputs: [Scalar; I],
@@ -863,31 +901,31 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_preimage_chip_t4_1() {
-    //     test_preimage_chip::<4, 1>([42.into()], 1291);
-    // }
+    #[test]
+    fn test_preimage_chip_t4_1() {
+        test_preimage_chip::<4, 1>([42.into()], 855);
+    }
 
-    // #[test]
-    // fn test_preimage_chip_t4_2() {
-    //     test_preimage_chip::<4, 2>([1.into(), 2.into()], 1290);
-    // }
+    #[test]
+    fn test_preimage_chip_t4_2() {
+        test_preimage_chip::<4, 2>([1.into(), 2.into()], 854);
+    }
 
-    // #[test]
-    // fn test_preimage_chip_t4_3() {
-    //     test_preimage_chip::<4, 3>([3.into(), 4.into(), 5.into()], 1289);
-    // }
+    #[test]
+    fn test_preimage_chip_t4_3() {
+        test_preimage_chip::<4, 3>([3.into(), 4.into(), 5.into()], 853);
+    }
 
-    // #[test]
-    // fn test_preimage_chip_t4_4() {
-    //     test_preimage_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 2578);
-    // }
+    #[test]
+    fn test_preimage_chip_t4_4() {
+        test_preimage_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1706);
+    }
 
-    // #[test]
-    // fn test_preimage_chip_t4_5() {
-    //     test_preimage_chip::<4, 5>(
-    //         [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-    //         2579,
-    //     );
-    // }
+    #[test]
+    fn test_preimage_chip_t4_5() {
+        test_preimage_chip::<4, 5>(
+            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+            1707,
+        );
+    }
 }
