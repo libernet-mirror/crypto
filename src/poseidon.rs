@@ -881,33 +881,33 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_preimage_chip_t3_1() {
-    //     test_preimage_chip::<3, 1>([42.into()], 830);
-    // }
+    #[test]
+    fn test_preimage_chip_t3_1() {
+        test_preimage_chip::<3, 1>([42.into()], 647);
+    }
 
-    // #[test]
-    // fn test_preimage_chip_t3_2() {
-    //     test_preimage_chip::<3, 2>([1.into(), 2.into()], 829);
-    // }
+    #[test]
+    fn test_preimage_chip_t3_2() {
+        test_preimage_chip::<3, 2>([1.into(), 2.into()], 646);
+    }
 
-    // #[test]
-    // fn test_preimage_chip_t3_3() {
-    //     test_preimage_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1658);
-    // }
+    #[test]
+    fn test_preimage_chip_t3_3() {
+        test_preimage_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1292);
+    }
 
-    // #[test]
-    // fn test_preimage_chip_t3_4() {
-    //     test_preimage_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1659);
-    // }
+    #[test]
+    fn test_preimage_chip_t3_4() {
+        test_preimage_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1293);
+    }
 
-    // #[test]
-    // fn test_preimage_chip_t3_5() {
-    //     test_preimage_chip::<3, 5>(
-    //         [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-    //         2488,
-    //     );
-    // }
+    #[test]
+    fn test_preimage_chip_t3_5() {
+        test_preimage_chip::<3, 5>(
+            [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
+            1939,
+        );
+    }
 
     // #[test]
     // fn test_preimage_chip_t4_1() {
