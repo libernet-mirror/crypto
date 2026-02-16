@@ -96,10 +96,7 @@ impl<const N: usize> BitComparatorChip<N> {
         utils::u256_to_scalar((self.rhs >> i) & 1.into()).unwrap()
     }
 
-    fn add_logical_not_gate(
-        builder: &mut plonk::CircuitBuilder,
-        input: plonk::Wire,
-    ) -> plonk::Wire {
+    fn build_logical_not(builder: &mut plonk::CircuitBuilder, input: plonk::Wire) -> plonk::Wire {
         builder.add_unary_gate(
             0.into(),
             0.into(),
@@ -110,7 +107,7 @@ impl<const N: usize> BitComparatorChip<N> {
         )
     }
 
-    fn logical_not(witness: &mut plonk::Witness, input: plonk::Wire) -> plonk::Wire {
+    fn witness_logical_not(witness: &mut plonk::Witness, input: plonk::Wire) -> plonk::Wire {
         let gate = witness.pop_gate();
         witness.copy(input.into(), plonk::Wire::LeftIn(gate));
         let input = witness.copy(input.into(), plonk::Wire::RightIn(gate));
@@ -130,7 +127,7 @@ impl<const N: usize> plonk::Chip<N, 1> for BitComparatorChip<N> {
         let mut cmp = builder.add_sub_const_gate(inputs[N - 1], self.get_rhs_bit(N - 1));
         for i in (0..(N - 1)).rev() {
             let cmp2 = builder.add_sub_const_gate(inputs[i], self.get_rhs_bit(i));
-            let not = Self::add_logical_not_gate(builder, cmp);
+            let not = Self::build_logical_not(builder, cmp);
             let rhs = builder.add_mul_gate(cmp2.into(), not.into());
             cmp = builder.add_sum_gate(cmp.into(), rhs.into());
         }
@@ -146,7 +143,7 @@ impl<const N: usize> plonk::Chip<N, 1> for BitComparatorChip<N> {
         let mut cmp = witness.sub_const(inputs[N - 1], self.get_rhs_bit(N - 1));
         for i in (0..(N - 1)).rev() {
             let cmp2 = witness.sub_const(inputs[i], self.get_rhs_bit(i));
-            let not = Self::logical_not(witness, cmp);
+            let not = Self::witness_logical_not(witness, cmp);
             let rhs = witness.mul(cmp2.into(), not.into());
             cmp = witness.add(cmp.into(), rhs.into());
         }
@@ -229,6 +226,112 @@ impl<const N: usize> plonk::Chip<1, N> for TritDecomposerChip<N> {
             trit
         });
         Ok(trits)
+    }
+}
+
+#[derive(Debug)]
+pub struct TritComparatorChip<const N: usize> {
+    rhs: U256,
+}
+
+impl<const N: usize> TritComparatorChip<N> {
+    pub fn new(rhs: U256) -> Self {
+        Self { rhs }
+    }
+
+    fn get_rhs_trit(&self, i: usize) -> Scalar {
+        let three = U256::from(3);
+        utils::u256_to_scalar((self.rhs / three.pow(i.into())) % three).unwrap()
+    }
+
+    fn build_logical_not(builder: &mut plonk::CircuitBuilder, input: plonk::Wire) -> plonk::Wire {
+        builder.add_unary_gate(
+            0.into(),
+            0.into(),
+            -Scalar::from(1),
+            -Scalar::from(1),
+            1.into(),
+            input.into(),
+        )
+    }
+
+    fn witness_logical_not(witness: &mut plonk::Witness, input: plonk::Wire) -> plonk::Wire {
+        let gate = witness.pop_gate();
+        witness.copy(input.into(), plonk::Wire::LeftIn(gate));
+        let input = witness.copy(input.into(), plonk::Wire::RightIn(gate));
+        let out = plonk::Wire::Out(gate);
+        witness.set(out, Scalar::from(1) - input.square());
+        out
+    }
+
+    fn build_compare_trits(
+        builder: &mut plonk::CircuitBuilder,
+        lhs: Option<plonk::Wire>,
+        rhs: Scalar,
+    ) -> plonk::Wire {
+        let sub = builder.add_sub_const_gate(lhs, rhs);
+        let square = builder.add_square_gate(sub.into());
+        let cube = builder.add_mul_gate(sub.into(), square.into());
+        builder.add_binary_gate(
+            -Scalar::from(1),
+            7.into(),
+            -Scalar::from(6),
+            0.into(),
+            0.into(),
+            cube.into(),
+            sub.into(),
+        )
+    }
+
+    fn witness_compare_trits(
+        witness: &mut plonk::Witness,
+        lhs: plonk::WireOrUnconstrained,
+        rhs: Scalar,
+    ) -> plonk::Wire {
+        let sub = witness.sub_const(lhs, rhs);
+        let square = witness.square(sub.into());
+        let cube = witness.mul(sub.into(), square.into());
+        let gate = witness.pop_gate();
+        let lhs = witness.copy(cube.into(), plonk::Wire::LeftIn(gate).into());
+        let rhs = witness.copy(sub.into(), plonk::Wire::RightIn(gate).into());
+        let out = plonk::Wire::Out(gate);
+        let div6 = Scalar::from(6).invert().into_option().unwrap();
+        witness.set(out, (-lhs + rhs * Scalar::from(7)) * div6);
+        out
+    }
+}
+
+impl<const N: usize> plonk::Chip<N, 1> for TritComparatorChip<N> {
+    fn build(
+        &self,
+        builder: &mut plonk::CircuitBuilder,
+        inputs: [Option<plonk::Wire>; N],
+    ) -> Result<[Option<plonk::Wire>; 1]> {
+        assert!(N > 0);
+        let mut cmp = Self::build_compare_trits(builder, inputs[N - 1], self.get_rhs_trit(N - 1));
+        for i in (0..(N - 1)).rev() {
+            let cmp2 = Self::build_compare_trits(builder, inputs[i], self.get_rhs_trit(i));
+            let not = Self::build_logical_not(builder, cmp);
+            let rhs = builder.add_mul_gate(cmp2.into(), not.into());
+            cmp = builder.add_sum_gate(cmp.into(), rhs.into());
+        }
+        Ok([Some(cmp)])
+    }
+
+    fn witness(
+        &self,
+        witness: &mut plonk::Witness,
+        inputs: [plonk::WireOrUnconstrained; N],
+    ) -> Result<[plonk::WireOrUnconstrained; 1]> {
+        assert!(N > 0);
+        let mut cmp = Self::witness_compare_trits(witness, inputs[N - 1], self.get_rhs_trit(N - 1));
+        for i in (0..(N - 1)).rev() {
+            let cmp2 = Self::witness_compare_trits(witness, inputs[i], self.get_rhs_trit(i));
+            let not = Self::witness_logical_not(witness, cmp);
+            let rhs = witness.mul(cmp2.into(), not.into());
+            cmp = witness.add(cmp.into(), rhs.into());
+        }
+        Ok([cmp.into()])
     }
 }
 
@@ -729,5 +832,60 @@ mod tests {
         test_trit_decomposer_chip::<3>(24);
         test_trit_decomposer_chip::<3>(25);
         test_trit_decomposer_chip::<3>(26);
+    }
+
+    fn test_trit_comparator_chip<const N: usize>(lhs: u64, rhs: u64) {
+        let mut builder = plonk::CircuitBuilder::default();
+        let input = builder.add_const_gate(lhs.into());
+        let decomposer_chip = TritDecomposerChip::<N>::default();
+        let trits = decomposer_chip.build(&mut builder, [input.into()]).unwrap();
+        let comparator_chip = TritComparatorChip::<N>::new(rhs.into());
+        let cmp = comparator_chip.build(&mut builder, trits).unwrap()[0].unwrap();
+        builder.declare_public_inputs([input, cmp]);
+        let mut witness = plonk::Witness::new(builder.len());
+        let input = witness.assert_constant(lhs.into());
+        let trits = decomposer_chip
+            .witness(&mut witness, [input.into()])
+            .unwrap();
+        assert!(comparator_chip.witness(&mut witness, trits).is_ok());
+        assert!(builder.check_witness(&witness).is_ok());
+        let circuit = builder.build();
+        let proof = circuit.prove(witness).unwrap();
+        assert_eq!(
+            circuit.verify(&proof).unwrap(),
+            BTreeMap::from([
+                (input, lhs.into()),
+                (
+                    cmp,
+                    match lhs.cmp(&rhs) {
+                        Ordering::Less => -Scalar::from(1),
+                        Ordering::Equal => 0.into(),
+                        Ordering::Greater => 1.into(),
+                    }
+                )
+            ])
+        );
+    }
+
+    #[test]
+    fn test_trit_comparator_chip_1() {
+        test_trit_comparator_chip::<1>(0, 0);
+        test_trit_comparator_chip::<1>(0, 1);
+        test_trit_comparator_chip::<1>(0, 2);
+        test_trit_comparator_chip::<1>(1, 0);
+        test_trit_comparator_chip::<1>(1, 1);
+        test_trit_comparator_chip::<1>(1, 2);
+        test_trit_comparator_chip::<1>(2, 0);
+        test_trit_comparator_chip::<1>(2, 1);
+        test_trit_comparator_chip::<1>(2, 2);
+    }
+
+    #[test]
+    fn test_trit_comparator_chip_2() {
+        for lhs in 0..9 {
+            for rhs in 0..9 {
+                test_trit_comparator_chip::<2>(lhs, rhs);
+            }
+        }
     }
 }
