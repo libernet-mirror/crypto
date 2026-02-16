@@ -5,6 +5,46 @@ use blstrs::Scalar;
 use ff::Field;
 use primitive_types::U256;
 
+/// Calculates (1 - X^2).
+///
+/// Not an actual "logical NOT", it can only NOT the (-1,0,1) signals we use in the comparator
+/// chips. `LogicalNotChip` is for internal use by those chips.
+#[derive(Debug, Default)]
+struct LogicalNotChip {}
+
+impl plonk::Chip<1, 1> for LogicalNotChip {
+    fn build(
+        &self,
+        builder: &mut plonk::CircuitBuilder,
+        inputs: [Option<plonk::Wire>; 1],
+    ) -> Result<[Option<plonk::Wire>; 1]> {
+        Ok([builder
+            .add_unary_gate(
+                0.into(),
+                0.into(),
+                -Scalar::from(1),
+                -Scalar::from(1),
+                1.into(),
+                inputs[0],
+            )
+            .into()])
+    }
+
+    fn witness(
+        &self,
+        witness: &mut plonk::Witness,
+        inputs: [plonk::WireOrUnconstrained; 1],
+    ) -> Result<[plonk::WireOrUnconstrained; 1]> {
+        let input = inputs[0];
+        let gate = witness.pop_gate();
+        witness.copy(input.into(), plonk::Wire::LeftIn(gate));
+        let input = witness.copy(input.into(), plonk::Wire::RightIn(gate));
+        let out = plonk::Wire::Out(gate);
+        witness.set(out, Scalar::from(1) - input.square());
+        Ok([out.into()])
+    }
+}
+
 pub fn and1(value: Scalar) -> Scalar {
     let lsb = value.to_bytes_le()[0];
     Scalar::from((lsb & 1) as u64)
@@ -32,6 +72,12 @@ pub fn decompose_scalar_bits<const N: usize>(value: Scalar) -> [Scalar; N] {
     decompose_bits::<N>(utils::scalar_to_u256(value))
 }
 
+/// Decomposes the input signal into N bits.
+///
+/// WARNING: this chip is unsafe to use with 255 or 256 bits because it doesn't guard against
+/// aliasing. Use the `FullBitDecomposerChip` for a full decomposition into 256 bits (note that the
+/// MSB will always be zero because BLS12-381 scalars don't cover the upper half of the 256 bit
+/// range).
 #[derive(Debug, Default)]
 pub struct BitDecomposerChip<const N: usize> {}
 
@@ -80,40 +126,31 @@ impl<const N: usize> plonk::Chip<1, N> for BitDecomposerChip<N> {
     }
 }
 
+/// Compares the number represented by the input bits against a specified constant scalar.
+///
+/// The returned signal is:
+///
+///  * -1 if the input value is strictly less than the constant,
+///  * 0 if the input value is equal to the constant,
+///  * 1 if the input value is strictly greater than the constant.
 #[derive(Debug)]
 pub struct BitComparatorChip<const N: usize> {
     rhs: U256,
+    logical_not: LogicalNotChip,
 }
 
 impl<const N: usize> BitComparatorChip<N> {
     pub fn new(rhs: U256) -> Self {
-        Self { rhs }
+        Self {
+            rhs,
+            logical_not: LogicalNotChip::default(),
+        }
     }
 }
 
 impl<const N: usize> BitComparatorChip<N> {
     fn get_rhs_bit(&self, i: usize) -> Scalar {
         utils::u256_to_scalar((self.rhs >> i) & 1.into()).unwrap()
-    }
-
-    fn build_logical_not(builder: &mut plonk::CircuitBuilder, input: plonk::Wire) -> plonk::Wire {
-        builder.add_unary_gate(
-            0.into(),
-            0.into(),
-            -Scalar::from(1),
-            -Scalar::from(1),
-            1.into(),
-            input.into(),
-        )
-    }
-
-    fn witness_logical_not(witness: &mut plonk::Witness, input: plonk::Wire) -> plonk::Wire {
-        let gate = witness.pop_gate();
-        witness.copy(input.into(), plonk::Wire::LeftIn(gate));
-        let input = witness.copy(input.into(), plonk::Wire::RightIn(gate));
-        let out = plonk::Wire::Out(gate);
-        witness.set(out, Scalar::from(1) - input.square());
-        out
     }
 }
 
@@ -127,8 +164,8 @@ impl<const N: usize> plonk::Chip<N, 1> for BitComparatorChip<N> {
         let mut cmp = builder.add_sub_const_gate(inputs[N - 1], self.get_rhs_bit(N - 1));
         for i in (0..(N - 1)).rev() {
             let cmp2 = builder.add_sub_const_gate(inputs[i], self.get_rhs_bit(i));
-            let not = Self::build_logical_not(builder, cmp);
-            let rhs = builder.add_mul_gate(cmp2.into(), not.into());
+            let not = self.logical_not.build(builder, [cmp.into()])?[0];
+            let rhs = builder.add_mul_gate(cmp2.into(), not);
             cmp = builder.add_sum_gate(cmp.into(), rhs.into());
         }
         Ok([Some(cmp)])
@@ -143,8 +180,8 @@ impl<const N: usize> plonk::Chip<N, 1> for BitComparatorChip<N> {
         let mut cmp = witness.sub_const(inputs[N - 1], self.get_rhs_bit(N - 1));
         for i in (0..(N - 1)).rev() {
             let cmp2 = witness.sub_const(inputs[i], self.get_rhs_bit(i));
-            let not = Self::witness_logical_not(witness, cmp);
-            let rhs = witness.mul(cmp2.into(), not.into());
+            let not = self.logical_not.witness(witness, [cmp.into()])?[0];
+            let rhs = witness.mul(cmp2.into(), not);
             cmp = witness.add(cmp.into(), rhs.into());
         }
         Ok([cmp.into()])
@@ -181,6 +218,10 @@ pub fn decompose_scalar_trits<const N: usize>(value: Scalar) -> [Scalar; N] {
     decompose_trits::<N>(utils::scalar_to_u256(value))
 }
 
+/// Decomposes the input signal into N trits.
+///
+/// WARNING: this chip is unsafe to use with 160 or 161 trits because it doesn't guard against
+/// aliasing. Use the `FullTritDecomposerChip` for a full decomposition into 161 trits.
 #[derive(Debug, Default)]
 pub struct TritDecomposerChip<const N: usize> {}
 
@@ -229,39 +270,30 @@ impl<const N: usize> plonk::Chip<1, N> for TritDecomposerChip<N> {
     }
 }
 
+/// Compares the number represented by the input trits against a specified constant scalar.
+///
+/// The returned signal is:
+///
+///  * -1 if the input value is strictly less than the constant,
+///  * 0 if the input value is equal to the constant,
+///  * 1 if the input value is strictly greater than the constant.
 #[derive(Debug)]
 pub struct TritComparatorChip<const N: usize> {
     rhs: U256,
+    logical_not: LogicalNotChip,
 }
 
 impl<const N: usize> TritComparatorChip<N> {
     pub fn new(rhs: U256) -> Self {
-        Self { rhs }
+        Self {
+            rhs,
+            logical_not: LogicalNotChip::default(),
+        }
     }
 
     fn get_rhs_trit(&self, i: usize) -> Scalar {
         let three = U256::from(3);
         utils::u256_to_scalar((self.rhs / three.pow(i.into())) % three).unwrap()
-    }
-
-    fn build_logical_not(builder: &mut plonk::CircuitBuilder, input: plonk::Wire) -> plonk::Wire {
-        builder.add_unary_gate(
-            0.into(),
-            0.into(),
-            -Scalar::from(1),
-            -Scalar::from(1),
-            1.into(),
-            input.into(),
-        )
-    }
-
-    fn witness_logical_not(witness: &mut plonk::Witness, input: plonk::Wire) -> plonk::Wire {
-        let gate = witness.pop_gate();
-        witness.copy(input.into(), plonk::Wire::LeftIn(gate));
-        let input = witness.copy(input.into(), plonk::Wire::RightIn(gate));
-        let out = plonk::Wire::Out(gate);
-        witness.set(out, Scalar::from(1) - input.square());
-        out
     }
 
     fn build_compare_trits(
@@ -311,8 +343,8 @@ impl<const N: usize> plonk::Chip<N, 1> for TritComparatorChip<N> {
         let mut cmp = Self::build_compare_trits(builder, inputs[N - 1], self.get_rhs_trit(N - 1));
         for i in (0..(N - 1)).rev() {
             let cmp2 = Self::build_compare_trits(builder, inputs[i], self.get_rhs_trit(i));
-            let not = Self::build_logical_not(builder, cmp);
-            let rhs = builder.add_mul_gate(cmp2.into(), not.into());
+            let not = self.logical_not.build(builder, [cmp.into()])?[0];
+            let rhs = builder.add_mul_gate(cmp2.into(), not);
             cmp = builder.add_sum_gate(cmp.into(), rhs.into());
         }
         Ok([Some(cmp)])
@@ -327,8 +359,8 @@ impl<const N: usize> plonk::Chip<N, 1> for TritComparatorChip<N> {
         let mut cmp = Self::witness_compare_trits(witness, inputs[N - 1], self.get_rhs_trit(N - 1));
         for i in (0..(N - 1)).rev() {
             let cmp2 = Self::witness_compare_trits(witness, inputs[i], self.get_rhs_trit(i));
-            let not = Self::witness_logical_not(witness, cmp);
-            let rhs = witness.mul(cmp2.into(), not.into());
+            let not = self.logical_not.witness(witness, [cmp.into()])?[0];
+            let rhs = witness.mul(cmp2.into(), not);
             cmp = witness.add(cmp.into(), rhs.into());
         }
         Ok([cmp.into()])
