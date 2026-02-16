@@ -342,10 +342,17 @@ impl Witness {
         out
     }
 
-    pub fn assert_bool(&mut self, input: Wire) {
+    pub fn assert_bit(&mut self, input: WireOrUnconstrained) {
         let gate = self.pop_gate();
-        self.copy(input.into(), Wire::LeftIn(gate));
-        self.copy(input.into(), Wire::RightIn(gate));
+        self.copy(input, Wire::LeftIn(gate));
+        self.copy(input, Wire::RightIn(gate));
+    }
+
+    pub fn assert_trit(&mut self, input: WireOrUnconstrained) {
+        let lhs = self.poly2(1.into(), -Scalar::from(3), 2.into(), input);
+        let gate = self.pop_gate();
+        self.copy(lhs.into(), Wire::LeftIn(gate));
+        self.copy(input, Wire::RightIn(gate));
     }
 
     pub fn not(&mut self, input: WireOrUnconstrained) -> Wire {
@@ -552,13 +559,26 @@ impl CircuitBuilder {
         self.add_unary_gate(c2, 0.into(), -Scalar::from(1), c1, c3, input)
     }
 
-    pub fn add_bool_assertion_gate(&mut self, input: Option<Wire>) {
+    pub fn add_bit_assertion_gate(&mut self, input: Option<Wire>) {
         self.add_unary_gate(
             1.into(),
             0.into(),
             0.into(),
             -Scalar::from(1),
             0.into(),
+            input,
+        );
+    }
+
+    pub fn add_trit_assertion_gate(&mut self, input: Option<Wire>) {
+        let lhs = self.add_poly2_gate(1.into(), -Scalar::from(3), 2.into(), input);
+        self.add_binary_gate(
+            0.into(),
+            0.into(),
+            0.into(),
+            1.into(),
+            0.into(),
+            lhs.into(),
             input,
         );
     }
@@ -1292,7 +1312,7 @@ mod tests {
     }
 
     fn test_witness_add_const_impl(lhs: u64, rhs: u64, out: u64) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), lhs.into());
         assert_eq!(
@@ -1373,7 +1393,7 @@ mod tests {
     }
 
     fn test_witness_sub_const_impl(lhs: u64, rhs: u64, out: u64) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), lhs.into());
         assert_eq!(
@@ -1412,7 +1432,7 @@ mod tests {
     }
 
     fn test_witness_sub_from_const_impl(lhs: u64, rhs: u64, out: u64) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::RightIn(0), rhs.into());
         assert_eq!(
@@ -1451,7 +1471,7 @@ mod tests {
     }
 
     fn test_witness_mul_impl(lhs: u64, rhs: u64, out: u64) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), lhs.into());
         witness.set(Wire::RightIn(0), rhs.into());
@@ -1493,7 +1513,7 @@ mod tests {
     }
 
     fn test_witness_square_impl(input: u64, output: u64) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), input.into());
         assert_eq!(witness.square(Wire::LeftIn(0).into()), Wire::Out(1));
@@ -1511,7 +1531,7 @@ mod tests {
     }
 
     fn test_witness_mul_by_const_impl(lhs: u64, rhs: u64, out: u64) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), lhs.into());
         assert_eq!(
@@ -1531,7 +1551,7 @@ mod tests {
     }
 
     fn test_witness_combine_impl(c1: u64, lhs: u64, c2: u64, rhs: u64, out: u64) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), lhs.into());
         witness.set(Wire::RightIn(0), rhs.into());
@@ -1560,7 +1580,7 @@ mod tests {
     }
 
     fn test_witness_poly2_impl(input: Scalar, output: Scalar) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), input.into());
         assert_eq!(
@@ -1578,23 +1598,39 @@ mod tests {
         test_witness_poly2_impl(43.into(), 23706.into());
     }
 
-    fn test_witness_assert_bool_impl(input: Scalar) {
-        let mut witness = Witness::new(1);
+    fn test_witness_assert_bit_impl(input: Scalar) {
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), input.into());
-        witness.assert_bool(Wire::LeftIn(0));
+        witness.assert_bit(Wire::LeftIn(0).into());
         assert_eq!(witness.get(Wire::LeftIn(1)), input.into());
         assert_eq!(witness.get(Wire::RightIn(1)), input.into());
     }
 
     #[test]
-    fn test_witness_assert_bool() {
-        test_witness_assert_bool_impl(0.into());
-        test_witness_assert_bool_impl(1.into());
+    fn test_witness_assert_bit() {
+        test_witness_assert_bit_impl(0.into());
+        test_witness_assert_bit_impl(1.into());
+    }
+
+    fn test_witness_assert_trit_impl(input: Scalar) {
+        let mut witness = Witness::new(3);
+        witness.pop_gate();
+        witness.set(Wire::LeftIn(0), input.into());
+        witness.assert_trit(Wire::LeftIn(0).into());
+        assert_eq!(witness.get(Wire::LeftIn(1)), input);
+        assert_eq!(witness.get(Wire::RightIn(1)), input);
+    }
+
+    #[test]
+    fn test_witness_assert_trit() {
+        test_witness_assert_trit_impl(0.into());
+        test_witness_assert_trit_impl(1.into());
+        test_witness_assert_trit_impl(2.into());
     }
 
     fn test_witness_not_impl(input: Scalar, output: Scalar) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), input.into());
         assert_eq!(witness.not(input.into()), Wire::Out(1));
@@ -1610,7 +1646,7 @@ mod tests {
     }
 
     fn test_witness_and_impl(lhs: u64, rhs: u64, out: u64) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), lhs.into());
         witness.set(Wire::RightIn(0), rhs.into());
@@ -1632,7 +1668,7 @@ mod tests {
     }
 
     fn test_witness_or_impl(lhs: u64, rhs: u64, out: u64) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), lhs.into());
         witness.set(Wire::RightIn(0), rhs.into());
@@ -1654,7 +1690,7 @@ mod tests {
     }
 
     fn test_witness_xor_impl(lhs: u64, rhs: u64, out: u64) {
-        let mut witness = Witness::new(1);
+        let mut witness = Witness::new(2);
         witness.pop_gate();
         witness.set(Wire::LeftIn(0), lhs.into());
         witness.set(Wire::RightIn(0), rhs.into());
@@ -2189,9 +2225,9 @@ mod tests {
     }
 
     #[test]
-    fn test_bool_assertion_gate() {
+    fn test_bit_assertion_gate() {
         let mut builder = CircuitBuilder::default();
-        builder.add_bool_assertion_gate(None);
+        builder.add_bit_assertion_gate(None);
         let circuit = builder.build();
         assert!(test_gate(&circuit, 0, 0, 0).is_ok());
         assert!(test_gate(&circuit, 0, 1, 0).is_err());
@@ -2203,30 +2239,81 @@ mod tests {
     }
 
     #[test]
-    fn test_connected_bool_assertion_gate1() {
+    fn test_connected_bit_assertion_gate1() {
         let mut builder = CircuitBuilder::default();
         let input = builder.add_const_gate(0.into());
-        builder.add_bool_assertion_gate(input.into());
+        builder.add_bit_assertion_gate(input.into());
         let circuit = builder.build();
         assert!(test_connected_unary_gate(&circuit, 0, 0).is_ok());
     }
 
     #[test]
-    fn test_connected_bool_assertion_gate2() {
+    fn test_connected_bit_assertion_gate2() {
         let mut builder = CircuitBuilder::default();
         let input = builder.add_const_gate(1.into());
-        builder.add_bool_assertion_gate(input.into());
+        builder.add_bit_assertion_gate(input.into());
         let circuit = builder.build();
         assert!(test_connected_unary_gate(&circuit, 1, 0).is_ok());
     }
 
     #[test]
-    fn test_connected_bool_assertion_gate3() {
+    fn test_connected_bit_assertion_gate3() {
         let mut builder = CircuitBuilder::default();
         let input = builder.add_const_gate(2.into());
-        builder.add_bool_assertion_gate(input.into());
+        builder.add_bit_assertion_gate(input.into());
         let circuit = builder.build();
         assert!(test_connected_unary_gate(&circuit, 2, 0).is_err());
+    }
+
+    #[test]
+    fn test_connected_bit_assertion_gate4() {
+        let mut builder = CircuitBuilder::default();
+        let input = builder.add_const_gate(2.into());
+        builder.add_bit_assertion_gate(input.into());
+        let circuit = builder.build();
+        assert!(test_connected_unary_gate(&circuit, 3, 0).is_err());
+    }
+
+    fn test_trit_assertion_gate_impl(value: u64) -> Result<()> {
+        let mut builder = CircuitBuilder::default();
+        builder.add_trit_assertion_gate(None);
+        let circuit = builder.build();
+        let mut witness = Witness::new(circuit.size());
+        witness.assert_trit(WireOrUnconstrained::Unconstrained(value.into()));
+        let proof = circuit.prove(witness)?;
+        circuit.verify(&proof)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_trit_assertion_gate() {
+        assert!(test_trit_assertion_gate_impl(0).is_ok());
+        assert!(test_trit_assertion_gate_impl(1).is_ok());
+        assert!(test_trit_assertion_gate_impl(2).is_ok());
+        assert!(test_trit_assertion_gate_impl(3).is_err());
+        assert!(test_trit_assertion_gate_impl(4).is_err());
+    }
+
+    fn test_connected_trit_assertion_gate_impl(value: u64) -> Result<()> {
+        let mut builder = CircuitBuilder::default();
+        let input = builder.add_const_gate(value.into());
+        builder.add_trit_assertion_gate(input.into());
+        let circuit = builder.build();
+        let mut witness = Witness::new(circuit.size());
+        let input = witness.assert_constant(value.into());
+        witness.assert_trit(input.into());
+        let proof = circuit.prove(witness)?;
+        circuit.verify(&proof)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_connected_trit_assertion_gate() {
+        assert!(test_connected_trit_assertion_gate_impl(0).is_ok());
+        assert!(test_connected_trit_assertion_gate_impl(1).is_ok());
+        assert!(test_connected_trit_assertion_gate_impl(2).is_ok());
+        assert!(test_connected_trit_assertion_gate_impl(3).is_err());
+        assert!(test_connected_trit_assertion_gate_impl(4).is_err());
     }
 
     #[test]
