@@ -3,6 +3,7 @@ use crate::utils;
 use anyhow::Result;
 use blstrs::Scalar;
 use ff::Field;
+use ff::PrimeField;
 use primitive_types::U256;
 
 /// Calculates (1 - X^2).
@@ -185,6 +186,47 @@ impl<const N: usize> plonk::Chip<N, 1> for BitComparatorChip<N> {
             cmp = witness.add(cmp.into(), rhs.into());
         }
         Ok([cmp.into()])
+    }
+}
+
+/// Decomposes an input signal into 256 bits.
+#[derive(Debug)]
+pub struct FullBitDecomposerChip {
+    decomposer: BitDecomposerChip<256>,
+    comparator: BitComparatorChip<256>,
+}
+
+impl Default for FullBitDecomposerChip {
+    fn default() -> Self {
+        Self {
+            decomposer: BitDecomposerChip::default(),
+            comparator: BitComparatorChip::new(Scalar::MODULUS.parse().unwrap()),
+        }
+    }
+}
+
+impl plonk::Chip<1, 256> for FullBitDecomposerChip {
+    fn build(
+        &self,
+        builder: &mut plonk::CircuitBuilder,
+        inputs: [Option<plonk::Wire>; 1],
+    ) -> Result<[Option<plonk::Wire>; 256]> {
+        let bits = self.decomposer.build(builder, inputs)?;
+        let cmp = self.comparator.build(builder, bits)?[0].unwrap();
+        let c = builder.add_const_gate(-Scalar::from(1));
+        builder.connect(cmp, c);
+        Ok(bits)
+    }
+
+    fn witness(
+        &self,
+        witness: &mut plonk::Witness,
+        inputs: [plonk::WireOrUnconstrained; 1],
+    ) -> Result<[plonk::WireOrUnconstrained; 256]> {
+        let bits = self.decomposer.witness(witness, inputs)?;
+        self.comparator.witness(witness, bits)?;
+        witness.assert_constant(-Scalar::from(1));
+        Ok(bits)
     }
 }
 
@@ -571,6 +613,39 @@ mod tests {
         test_bit_decomposer_chip::<3>(5);
         test_bit_decomposer_chip::<3>(6);
         test_bit_decomposer_chip::<3>(7);
+    }
+
+    fn test_full_bit_decomposer_chip_impl(value: u64) {
+        let mut builder = plonk::CircuitBuilder::default();
+        let input = builder.add_const_gate(value.into());
+        let chip = FullBitDecomposerChip::default();
+        assert!(chip.build(&mut builder, [Some(input)]).is_ok());
+        let mut witness = plonk::Witness::new(builder.len());
+        let input = witness.assert_constant(value.into());
+        let bits = chip
+            .witness(&mut witness, [input.into()])
+            .unwrap()
+            .map(|bit| match bit {
+                WireOrUnconstrained::Wire(wire) => witness.get(wire),
+                _ => panic!("the output bits must be constrained"),
+            });
+        assert_eq!(bits, decompose_bits::<256>(value.into()));
+        assert!(builder.check_witness(&witness).is_ok());
+        let circuit = builder.build();
+        let proof = circuit.prove(witness).unwrap();
+        assert!(circuit.verify(&proof).is_ok());
+    }
+
+    #[test]
+    fn test_full_bit_decomposer_chip() {
+        test_full_bit_decomposer_chip_impl(0);
+        test_full_bit_decomposer_chip_impl(1);
+        test_full_bit_decomposer_chip_impl(2);
+        test_full_bit_decomposer_chip_impl(3);
+        test_full_bit_decomposer_chip_impl(4);
+        test_full_bit_decomposer_chip_impl(5);
+        test_full_bit_decomposer_chip_impl(6);
+        test_full_bit_decomposer_chip_impl(7);
     }
 
     fn test_bit_comparator_chip<const N: usize>(lhs: u64, rhs: u64) {
