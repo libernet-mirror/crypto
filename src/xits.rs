@@ -409,6 +409,47 @@ impl<const N: usize> plonk::Chip<N, 1> for TritComparatorChip<N> {
     }
 }
 
+/// Decomposes an input signal into 161 trits.
+#[derive(Debug)]
+pub struct FullTritDecomposerChip {
+    decomposer: TritDecomposerChip<161>,
+    comparator: TritComparatorChip<161>,
+}
+
+impl Default for FullTritDecomposerChip {
+    fn default() -> Self {
+        Self {
+            decomposer: TritDecomposerChip::default(),
+            comparator: TritComparatorChip::new(Scalar::MODULUS.parse().unwrap()),
+        }
+    }
+}
+
+impl plonk::Chip<1, 161> for FullTritDecomposerChip {
+    fn build(
+        &self,
+        builder: &mut plonk::CircuitBuilder,
+        inputs: [Option<plonk::Wire>; 1],
+    ) -> Result<[Option<plonk::Wire>; 161]> {
+        let trits = self.decomposer.build(builder, inputs)?;
+        let cmp = self.comparator.build(builder, trits)?[0].unwrap();
+        let c = builder.add_const_gate(-Scalar::from(1));
+        builder.connect(cmp, c);
+        Ok(trits)
+    }
+
+    fn witness(
+        &self,
+        witness: &mut plonk::Witness,
+        inputs: [plonk::WireOrUnconstrained; 1],
+    ) -> Result<[plonk::WireOrUnconstrained; 161]> {
+        let trits = self.decomposer.witness(witness, inputs)?;
+        self.comparator.witness(witness, trits)?;
+        witness.assert_constant(-Scalar::from(1));
+        Ok(trits)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -615,39 +656,6 @@ mod tests {
         test_bit_decomposer_chip::<3>(7);
     }
 
-    fn test_full_bit_decomposer_chip_impl(value: u64) {
-        let mut builder = plonk::CircuitBuilder::default();
-        let input = builder.add_const_gate(value.into());
-        let chip = FullBitDecomposerChip::default();
-        assert!(chip.build(&mut builder, [Some(input)]).is_ok());
-        let mut witness = plonk::Witness::new(builder.len());
-        let input = witness.assert_constant(value.into());
-        let bits = chip
-            .witness(&mut witness, [input.into()])
-            .unwrap()
-            .map(|bit| match bit {
-                WireOrUnconstrained::Wire(wire) => witness.get(wire),
-                _ => panic!("the output bits must be constrained"),
-            });
-        assert_eq!(bits, decompose_bits::<256>(value.into()));
-        assert!(builder.check_witness(&witness).is_ok());
-        let circuit = builder.build();
-        let proof = circuit.prove(witness).unwrap();
-        assert!(circuit.verify(&proof).is_ok());
-    }
-
-    #[test]
-    fn test_full_bit_decomposer_chip() {
-        test_full_bit_decomposer_chip_impl(0);
-        test_full_bit_decomposer_chip_impl(1);
-        test_full_bit_decomposer_chip_impl(2);
-        test_full_bit_decomposer_chip_impl(3);
-        test_full_bit_decomposer_chip_impl(4);
-        test_full_bit_decomposer_chip_impl(5);
-        test_full_bit_decomposer_chip_impl(6);
-        test_full_bit_decomposer_chip_impl(7);
-    }
-
     fn test_bit_comparator_chip<const N: usize>(lhs: u64, rhs: u64) {
         let mut builder = plonk::CircuitBuilder::default();
         let input = builder.add_const_gate(lhs.into());
@@ -707,6 +715,39 @@ mod tests {
         test_bit_comparator_chip::<2>(1, 3);
         test_bit_comparator_chip::<2>(2, 3);
         test_bit_comparator_chip::<2>(3, 3);
+    }
+
+    fn test_full_bit_decomposer_chip_impl(value: u64) {
+        let mut builder = plonk::CircuitBuilder::default();
+        let input = builder.add_const_gate(value.into());
+        let chip = FullBitDecomposerChip::default();
+        assert!(chip.build(&mut builder, [Some(input)]).is_ok());
+        let mut witness = plonk::Witness::new(builder.len());
+        let input = witness.assert_constant(value.into());
+        let bits = chip
+            .witness(&mut witness, [input.into()])
+            .unwrap()
+            .map(|bit| match bit {
+                WireOrUnconstrained::Wire(wire) => witness.get(wire),
+                _ => panic!("the output bits must be constrained"),
+            });
+        assert_eq!(bits, decompose_bits::<256>(value.into()));
+        assert!(builder.check_witness(&witness).is_ok());
+        let circuit = builder.build();
+        let proof = circuit.prove(witness).unwrap();
+        assert!(circuit.verify(&proof).is_ok());
+    }
+
+    #[test]
+    fn test_full_bit_decomposer_chip() {
+        test_full_bit_decomposer_chip_impl(0);
+        test_full_bit_decomposer_chip_impl(1);
+        test_full_bit_decomposer_chip_impl(2);
+        test_full_bit_decomposer_chip_impl(3);
+        test_full_bit_decomposer_chip_impl(4);
+        test_full_bit_decomposer_chip_impl(5);
+        test_full_bit_decomposer_chip_impl(6);
+        test_full_bit_decomposer_chip_impl(7);
     }
 
     #[test]
@@ -994,5 +1035,65 @@ mod tests {
                 test_trit_comparator_chip::<2>(lhs, rhs);
             }
         }
+    }
+
+    fn test_full_trit_decomposer_chip_impl(value: u64) {
+        let mut builder = plonk::CircuitBuilder::default();
+        let input = builder.add_const_gate(value.into());
+        let chip = FullTritDecomposerChip::default();
+        assert!(chip.build(&mut builder, [Some(input)]).is_ok());
+        let mut witness = plonk::Witness::new(builder.len());
+        let input = witness.assert_constant(value.into());
+        let trits = chip
+            .witness(&mut witness, [input.into()])
+            .unwrap()
+            .map(|trit| match trit {
+                WireOrUnconstrained::Wire(wire) => witness.get(wire),
+                _ => panic!("the output trits must be constrained"),
+            });
+        assert_eq!(trits, decompose_trits::<161>(value.into()));
+        assert!(builder.check_witness(&witness).is_ok());
+        let circuit = builder.build();
+        let proof = circuit.prove(witness).unwrap();
+        assert!(circuit.verify(&proof).is_ok());
+    }
+
+    #[test]
+    fn test_full_trit_decomposer_chip_1() {
+        test_full_trit_decomposer_chip_impl(0);
+        test_full_trit_decomposer_chip_impl(1);
+        test_full_trit_decomposer_chip_impl(2);
+        test_full_trit_decomposer_chip_impl(3);
+        test_full_trit_decomposer_chip_impl(4);
+        test_full_trit_decomposer_chip_impl(5);
+        test_full_trit_decomposer_chip_impl(6);
+        test_full_trit_decomposer_chip_impl(7);
+        test_full_trit_decomposer_chip_impl(8);
+    }
+
+    #[test]
+    fn test_full_trit_decomposer_chip_2() {
+        test_full_trit_decomposer_chip_impl(9);
+        test_full_trit_decomposer_chip_impl(10);
+        test_full_trit_decomposer_chip_impl(11);
+        test_full_trit_decomposer_chip_impl(12);
+        test_full_trit_decomposer_chip_impl(13);
+        test_full_trit_decomposer_chip_impl(14);
+        test_full_trit_decomposer_chip_impl(15);
+        test_full_trit_decomposer_chip_impl(16);
+        test_full_trit_decomposer_chip_impl(17);
+    }
+
+    #[test]
+    fn test_full_trit_decomposer_chip_3() {
+        test_full_trit_decomposer_chip_impl(18);
+        test_full_trit_decomposer_chip_impl(19);
+        test_full_trit_decomposer_chip_impl(20);
+        test_full_trit_decomposer_chip_impl(21);
+        test_full_trit_decomposer_chip_impl(22);
+        test_full_trit_decomposer_chip_impl(23);
+        test_full_trit_decomposer_chip_impl(24);
+        test_full_trit_decomposer_chip_impl(25);
+        test_full_trit_decomposer_chip_impl(26);
     }
 }
