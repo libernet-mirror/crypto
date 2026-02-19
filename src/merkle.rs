@@ -24,7 +24,19 @@ impl AsScalar for Scalar {
     }
 }
 
+impl AsScalar for i32 {
+    fn as_scalar(&self) -> Scalar {
+        Scalar::from(*self as u64)
+    }
+}
+
 impl AsScalar for u32 {
+    fn as_scalar(&self) -> Scalar {
+        Scalar::from(*self as u64)
+    }
+}
+
+impl AsScalar for i64 {
     fn as_scalar(&self) -> Scalar {
         Scalar::from(*self as u64)
     }
