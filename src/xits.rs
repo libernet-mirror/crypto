@@ -232,7 +232,7 @@ impl plonk::Chip<1, 256> for FullBitDecomposerChip {
 
 pub fn div_pow3(value: Scalar, exp: usize) -> Scalar {
     let dividend = utils::scalar_to_u256(value);
-    let divisor = U256::from(3u64.pow(exp as u32));
+    let divisor = utils::scalar_to_u256(Scalar::from(3).pow([exp as u64]));
     utils::u256_to_scalar(dividend / divisor).unwrap()
 }
 
