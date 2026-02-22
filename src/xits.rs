@@ -51,12 +51,12 @@ pub fn and1(value: Scalar) -> Scalar {
     Scalar::from((lsb & 1) as u64)
 }
 
-pub fn shr(value: Scalar, count: Scalar) -> Scalar {
-    utils::u256_to_scalar(utils::scalar_to_u256(value) >> utils::scalar_to_u256(count)).unwrap()
+pub fn shr(value: Scalar, count: usize) -> Scalar {
+    utils::u256_to_scalar(utils::scalar_to_u256(value) >> U256::from(count)).unwrap()
 }
 
 pub fn shr1(value: Scalar) -> Scalar {
-    shr(value, 1.into())
+    shr(value, 1)
 }
 
 pub fn decompose_bits<const N: usize>(mut value: U256) -> [Scalar; N] {
@@ -230,9 +230,9 @@ impl plonk::Chip<1, 256> for FullBitDecomposerChip {
     }
 }
 
-pub fn div_pow3(value: Scalar, exp: u8) -> Scalar {
+pub fn div_pow3(value: Scalar, exp: usize) -> Scalar {
     let dividend = utils::scalar_to_u256(value);
-    let divisor = U256::from(3).pow(U256::from(exp));
+    let divisor = U256::from(3u64.pow(exp as u32));
     utils::u256_to_scalar(dividend / divisor).unwrap()
 }
 
@@ -499,7 +499,7 @@ mod tests {
         assert_eq!(
             shr(
                 parse_scalar("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"),
-                4.into()
+                4
             ),
             parse_scalar("0x00102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2")
         );
@@ -748,6 +748,17 @@ mod tests {
         test_full_bit_decomposer_chip_impl(5);
         test_full_bit_decomposer_chip_impl(6);
         test_full_bit_decomposer_chip_impl(7);
+    }
+
+    #[test]
+    fn test_div_pow3() {
+        assert_eq!(
+            div_pow3(
+                parse_scalar("0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"),
+                4
+            ),
+            parse_scalar("0x00032f71d3d0aac0e3aaca6871f05f0032c75591a1720ced55a4ab0058da7229")
+        );
     }
 
     #[test]
