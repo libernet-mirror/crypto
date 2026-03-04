@@ -57,12 +57,12 @@ pub fn encode_ecdsa_private_key(signing_key: &p256::ecdsa::SigningKey) -> Result
         // That won't happen any time soon because this code is the only one generating Libernet's
         // self-signed certificates with Libernet-specific extensions, but we should future-proof.
         parameters: Some(ContextSpecific {
-            tag_number: TagNumber::N0,
+            tag_number: TagNumber(0),
             tag_mode: TagMode::Explicit,
             value: EcParameters::NamedCurve(OID_EC_P256),
         }),
         public_key: Some(ContextSpecific {
-            tag_number: TagNumber::N1,
+            tag_number: TagNumber(1),
             tag_mode: TagMode::Explicit,
             value: BitString::from_bytes(
                 utils::encode_p256(*signing_key.verifying_key().as_affine()).as_slice(),

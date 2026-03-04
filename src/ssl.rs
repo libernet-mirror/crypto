@@ -152,12 +152,17 @@ pub struct LibernetIdentityExtension {
 }
 
 impl LibernetIdentityExtension {
+    fn make_octet_string<const N: usize>(bytes: [u8; N]) -> Result<OctetString> {
+        let b: Box<[u8]> = Box::new(bytes);
+        Ok(OctetString::new(b)?)
+    }
+
     pub fn ecdsa(signer: &impl Signer, serial_number: i128) -> Result<Self> {
         let identity_message = LibernetIdentityMessage {
             serial_number,
             algorithm_identifier: AlgorithmIdentifier::ecdsa_signature()?,
-            public_key: OctetString::new(
-                utils::compress_p256(signer.ecdsa_public_key()).as_fixed_bytes(),
+            public_key: Self::make_octet_string(
+                *utils::compress_p256(signer.ecdsa_public_key()).as_fixed_bytes(),
             )?,
         };
         let der = {
@@ -199,8 +204,8 @@ impl LibernetIdentityExtension {
         let identity_message = LibernetIdentityMessage {
             serial_number,
             algorithm_identifier: AlgorithmIdentifier::ed25519(),
-            public_key: OctetString::new(
-                utils::compress_point_25519(signer.ed25519_public_key()).as_fixed_bytes(),
+            public_key: Self::make_octet_string(
+                *utils::compress_point_25519(signer.ed25519_public_key()).as_fixed_bytes(),
             )?,
         };
         let der = {
@@ -353,7 +358,7 @@ pub fn generate_certificate(
     let serial_number = generate_serial_number();
     let tbs_certificate = TbsCertificate {
         version: ContextSpecific {
-            tag_number: TagNumber::N0,
+            tag_number: TagNumber(0),
             tag_mode: TagMode::Explicit,
             value: 2,
         },
@@ -385,7 +390,7 @@ pub fn generate_certificate(
             }
         },
         extensions: ContextSpecific {
-            tag_number: TagNumber::N3,
+            tag_number: TagNumber(3),
             tag_mode: TagMode::Explicit,
             value: make_certificate_extensions(signer, serial_number, use_ed25519)?,
         },
