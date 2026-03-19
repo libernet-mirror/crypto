@@ -34,6 +34,11 @@ fn map_err<E: Into<anyhow::Error>>(error: E) -> JsValue {
 }
 
 #[wasm_bindgen]
+pub fn hash_to_scalar(message: &str) -> String {
+    utils::format_scalar(utils::hash_to_scalar(message.as_bytes()))
+}
+
+#[wasm_bindgen]
 pub fn poseidon_hash_t3(inputs: Vec<String>) -> Result<String, JsValue> {
     Ok(utils::format_scalar(poseidon::hash_t3(
         inputs
@@ -507,6 +512,18 @@ mod tests {
     fn test_account() -> Account {
         Account::import("0x7c3a55192992a3ec1936d436f0b69efb8b4506c7e0ab55679d04534b5fc30ae86edd53d2626d396586e8abd0f932c9bfd95d83c682f178faa41a2baf7e19492b")
             .unwrap()
+    }
+
+    #[test]
+    fn test_hash_to_scalar() {
+        assert_eq!(
+            hash_to_scalar("lorem ipsum dolor sit amet"),
+            "0x2e153f5d15640c364521222297d2406f547ac0976a9cc5c1f4c42c0b20ff6d30"
+        );
+        assert_eq!(
+            hash_to_scalar("sator arepo tenet opera rotas"),
+            "0x1fdb6bf666ad555ca1a740f680d59736b736aa58ccd139eafe8889370196aa24"
+        );
     }
 
     #[test]
