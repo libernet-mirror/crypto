@@ -259,6 +259,7 @@ dependencies = [
  "p256",
  "primitive-types",
  "sha3",
+ "subtle",
  "wasm-bindgen",
  "x509-parser",
  "zeroize",
