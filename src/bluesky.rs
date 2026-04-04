@@ -384,12 +384,12 @@ impl Neg for Scalar {
         if self.is_zero_vartime() {
             return self;
         }
-        let (r0, b0) = self.0.overflowing_sub(Self::P[0]);
-        let (r1, b1) = self.1.overflowing_sub(Self::P[1]);
+        let (r0, b0) = Self::P[0].overflowing_sub(self.0);
+        let (r1, b1) = Self::P[1].overflowing_sub(self.1);
         let (r1, b2) = r1.overflowing_sub(b0 as u64);
-        let (r2, b3) = self.2.overflowing_sub(Self::P[2]);
+        let (r2, b3) = Self::P[2].overflowing_sub(self.2);
         let (r2, b4) = r2.overflowing_sub((b1 || b2) as u64);
-        let (r3, _) = self.3.overflowing_sub(Self::P[3]);
+        let (r3, _) = Self::P[3].overflowing_sub(self.3);
         let (r3, _) = r3.overflowing_sub((b3 || b4) as u64);
         Self(r0, r1, r2, r3)
     }
