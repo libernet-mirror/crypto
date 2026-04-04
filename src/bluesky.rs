@@ -104,6 +104,12 @@ impl Scalar {
     }
 
     #[inline(always)]
+    fn add_u64(lhs: u64, rhs: u64) -> (u64, u64) {
+        let (sum, carry) = lhs.overflowing_add(rhs);
+        (sum, if carry { 1 } else { 0 })
+    }
+
+    #[inline(always)]
     fn mul_add_u64(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
         let result = (a as u128) + (b as u128) * (c as u128) + carry as u128;
         (result as u64, (result >> 64) as u64)
@@ -127,7 +133,7 @@ impl Scalar {
 
         // redc 0
         m = t0.wrapping_neg();
-        (_, carry) = Self::mul_add_u64(t0, m, Self::P[0], 0);
+        (_, carry) = Self::add_u64(t0, m);
         (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
         (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
         (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
@@ -141,7 +147,7 @@ impl Scalar {
 
         // redc 1
         m = t0.wrapping_neg();
-        (_, carry) = Self::mul_add_u64(t0, m, Self::P[0], 0);
+        (_, carry) = Self::add_u64(t0, m);
         (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
         (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
         (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
@@ -155,7 +161,7 @@ impl Scalar {
 
         // redc 2
         m = t0.wrapping_neg();
-        (_, carry) = Self::mul_add_u64(t0, m, Self::P[0], 0);
+        (_, carry) = Self::add_u64(t0, m);
         (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
         (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
         (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
@@ -169,7 +175,7 @@ impl Scalar {
 
         // redc 3
         m = t0.wrapping_neg();
-        (_, carry) = Self::mul_add_u64(t0, m, Self::P[0], 0);
+        (_, carry) = Self::add_u64(t0, m);
         (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
         (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
         (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
@@ -375,7 +381,17 @@ impl Neg for Scalar {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
-        todo!()
+        if self.is_zero_vartime() {
+            return self;
+        }
+        let (r0, b0) = self.0.overflowing_sub(Self::P[0]);
+        let (r1, b1) = self.1.overflowing_sub(Self::P[1]);
+        let (r1, b2) = r1.overflowing_sub(b0 as u64);
+        let (r2, b3) = self.2.overflowing_sub(Self::P[2]);
+        let (r2, b4) = r2.overflowing_sub((b1 || b2) as u64);
+        let (r3, _) = self.3.overflowing_sub(Self::P[3]);
+        let (r3, _) = r3.overflowing_sub((b3 || b4) as u64);
+        Self(r0, r1, r2, r3)
     }
 }
 
@@ -584,6 +600,15 @@ impl ff::PrimeField for Scalar {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn parse_scalar(x: &str) -> Scalar {
+        x.parse().unwrap()
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!(Scalar::MAX, -Scalar::ONE);
+    }
 
     // TODO
 }
