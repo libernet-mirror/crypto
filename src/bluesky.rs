@@ -80,18 +80,19 @@ impl Scalar {
     /// R^-1 in Montgomery form, ie. 1 mod p.
     const R_INV: Self = Self(1, 0, 0, 0);
 
+    const P: [u64; 4] = MODULUS;
     const P_INV: u64 = 0xFFFFFFFFFFFFFFFFu64;
 
     /// Subtracts p. Assumes no underflow, ie. `self` must be greater than or equal to p.
     ///
     /// Used in several algorithms to bring a value back into the [0, p) range.
     fn subp(&self) -> Self {
-        let (s0, b0) = self.0.overflowing_sub(MODULUS[0]);
-        let (s1, b1) = self.1.overflowing_sub(MODULUS[1]);
+        let (s0, b0) = self.0.overflowing_sub(Self::P[0]);
+        let (s1, b1) = self.1.overflowing_sub(Self::P[1]);
         let (s1, b2) = s1.overflowing_sub(b0 as u64);
-        let (s2, b3) = self.2.overflowing_sub(MODULUS[2]);
+        let (s2, b3) = self.2.overflowing_sub(Self::P[2]);
         let (s2, b4) = s2.overflowing_sub((b1 || b2) as u64);
-        let (s3, _) = self.3.overflowing_sub(MODULUS[3]);
+        let (s3, _) = self.3.overflowing_sub(Self::P[3]);
         let (s3, _) = s3.overflowing_sub((b3 || b4) as u64);
         Self(s0, s1, s2, s3)
     }
@@ -102,6 +103,12 @@ impl Scalar {
         (product as u64, (product >> 64) as u64)
     }
 
+    #[inline(always)]
+    fn mul_add_u64(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
+        let result = (a as u128) + (b as u128) * (c as u128) + carry as u128;
+        (result as u64, (result >> 64) as u64)
+    }
+
     /// Performs Montgomery multiplication using CIOS over 64-bit limbs.
     fn mont_mul(lhs: &Self, rhs: &Self) -> Self {
         let mut t0: u64;
@@ -109,16 +116,70 @@ impl Scalar {
         let mut t2: u64;
         let mut t3: u64;
         let mut t4: u64;
-
         let mut carry: u64;
+        let mut m: u64;
 
+        // round 0
         (t0, carry) = Self::mul_u64(lhs.0, rhs.0, 0);
         (t1, carry) = Self::mul_u64(lhs.1, rhs.0, carry);
         (t2, carry) = Self::mul_u64(lhs.2, rhs.0, carry);
         (t3, t4) = Self::mul_u64(lhs.3, rhs.0, carry);
 
-        // TODO
-        todo!()
+        // redc 0
+        m = t0.wrapping_neg();
+        (_, carry) = Self::mul_add_u64(t0, m, Self::P[0], 0);
+        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
+        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
+        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        t3 = t4 + carry;
+
+        // round 1
+        (t0, carry) = Self::mul_add_u64(t0, lhs.0, rhs.1, 0);
+        (t1, carry) = Self::mul_add_u64(t1, lhs.1, rhs.1, carry);
+        (t2, carry) = Self::mul_add_u64(t2, lhs.2, rhs.1, carry);
+        (t3, t4) = Self::mul_add_u64(t3, lhs.3, rhs.1, carry);
+
+        // redc 1
+        m = t0.wrapping_neg();
+        (_, carry) = Self::mul_add_u64(t0, m, Self::P[0], 0);
+        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
+        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
+        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        t3 = t4 + carry;
+
+        // round 2
+        (t0, carry) = Self::mul_add_u64(t0, lhs.0, rhs.2, 0);
+        (t1, carry) = Self::mul_add_u64(t1, lhs.1, rhs.2, carry);
+        (t2, carry) = Self::mul_add_u64(t2, lhs.2, rhs.2, carry);
+        (t3, t4) = Self::mul_add_u64(t3, lhs.3, rhs.2, carry);
+
+        // redc 2
+        m = t0.wrapping_neg();
+        (_, carry) = Self::mul_add_u64(t0, m, Self::P[0], 0);
+        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
+        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
+        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        t3 = t4 + carry;
+
+        // round 3
+        (t0, carry) = Self::mul_add_u64(t0, lhs.0, rhs.3, 0);
+        (t1, carry) = Self::mul_add_u64(t1, lhs.1, rhs.3, carry);
+        (t2, carry) = Self::mul_add_u64(t2, lhs.2, rhs.3, carry);
+        (t3, t4) = Self::mul_add_u64(t3, lhs.3, rhs.3, carry);
+
+        // redc 3
+        m = t0.wrapping_neg();
+        (_, carry) = Self::mul_add_u64(t0, m, Self::P[0], 0);
+        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
+        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
+        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        t3 = t4 + carry;
+
+        let mut result = Self(t0, t1, t2, t3);
+        if result > Self::MAX_RAW {
+            result = result.subp();
+        }
+        result
     }
 
     /// Constructs a scalar from the given little-endian byte representation, returning `None` if
@@ -279,12 +340,12 @@ impl Sub<&Scalar> for Scalar {
         if !underflow {
             return Self(r0, r1, r2, r3);
         }
-        let (s0, c0) = r0.overflowing_add(MODULUS[0]);
-        let (s1, c1) = r1.overflowing_add(MODULUS[1]);
+        let (s0, c0) = r0.overflowing_add(Self::P[0]);
+        let (s1, c1) = r1.overflowing_add(Self::P[1]);
         let (s1, c2) = s1.overflowing_add(c0 as u64);
-        let (s2, c3) = r2.overflowing_add(MODULUS[2]);
+        let (s2, c3) = r2.overflowing_add(Self::P[2]);
         let (s2, c4) = s2.overflowing_add((c1 || c2) as u64);
-        let (s3, _) = r3.overflowing_add(MODULUS[3]);
+        let (s3, _) = r3.overflowing_add(Self::P[3]);
         let (s3, _) = s3.overflowing_add((c3 || c4) as u64);
         Self(s0, s1, s2, s3)
     }
