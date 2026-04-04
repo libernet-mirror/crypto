@@ -236,6 +236,11 @@ impl Scalar {
         Self::from_repr_vartime(&repr[0..32]).unwrap()
     }
 
+    pub fn from_le_u64(limbs: [u64; 4]) -> Scalar {
+        let value = Self(limbs[0], limbs[1], limbs[2], limbs[3]);
+        Self::mont_mul(&value, &Self::R)
+    }
+
     pub fn to_le_u64(&self) -> [u64; 4] {
         let raw = Self::mont_mul(self, &Self::R_INV);
         [raw.0, raw.1, raw.2, raw.3]
@@ -692,6 +697,8 @@ mod tests {
             ])
         );
         assert_eq!(Scalar::MAX_MINUS_ONE, -Scalar::from(2));
+        assert_eq!(Scalar::NUM_BITS, 255);
+        assert_eq!(Scalar::CAPACITY, 254);
         assert_eq!(Scalar::TWO_INV, Scalar::from(2).invert().unwrap());
         assert_eq!(Scalar::MULTIPLICATIVE_GENERATOR, 15.into());
         assert_eq!(
