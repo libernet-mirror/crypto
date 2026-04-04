@@ -1,12 +1,23 @@
 use anyhow::Context;
 use ff::{Field, PrimeField};
-use primitive_types::U256;
+use primitive_types::{U256, U512};
+use std::fmt::Debug;
 use std::iter::{Product, Sum};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
+use std::str::FromStr;
+use std::sync::LazyLock;
 use subtle::{
     Choice, ConditionallySelectable, ConstantTimeEq, ConstantTimeGreater, ConstantTimeLess,
     CtOption,
 };
+
+/// The prime order of the BlueSky field stored as four 64-bit limbs in little endian order.
+pub const MODULUS: [u64; 4] = [
+    0x0000000000000001u64,
+    0x0A30000000000000u64,
+    0x482926FEA7B9BA96u64,
+    0x7FFFFFBADB0AD87Au64,
+];
 
 /// A scalar over the BlueSky prime field.
 ///
@@ -19,18 +30,10 @@ use subtle::{
 /// degree.
 ///
 /// All our scalars are stored in Montgomery form with the four limbs stored in little-endian order.
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
+#[derive(Default, Copy, Clone, PartialEq, Eq)]
 struct Scalar(u64, u64, u64, u64);
 
 impl Scalar {
-    /// The prime order of the BlueSky field stored as four 64-bit limbs in little endian order.
-    pub const MODULUS: [u64; 4] = [
-        0x0000000000000001u64,
-        0x0A30000000000000u64,
-        0x482926FEA7B9BA96u64,
-        0x7FFFFFBADB0AD87Au64,
-    ];
-
     /// The largest value representable in the field, ie. p-1.
     pub const MAX: Self = Self(
         0x0000000000000003u64,
@@ -83,12 +86,12 @@ impl Scalar {
     ///
     /// Used in several algorithms to bring a value back into the [0, p) range.
     fn subp(&self) -> Self {
-        let (s0, b0) = self.0.overflowing_sub(Self::MODULUS[0]);
-        let (s1, b1) = self.1.overflowing_sub(Self::MODULUS[1]);
+        let (s0, b0) = self.0.overflowing_sub(MODULUS[0]);
+        let (s1, b1) = self.1.overflowing_sub(MODULUS[1]);
         let (s1, b2) = s1.overflowing_sub(b0 as u64);
-        let (s2, b3) = self.2.overflowing_sub(Self::MODULUS[2]);
+        let (s2, b3) = self.2.overflowing_sub(MODULUS[2]);
         let (s2, b4) = s2.overflowing_sub((b1 || b2) as u64);
-        let (s3, _) = self.3.overflowing_sub(Self::MODULUS[3]);
+        let (s3, _) = self.3.overflowing_sub(MODULUS[3]);
         let (s3, _) = s3.overflowing_sub((b3 || b4) as u64);
         Self(s0, s1, s2, s3)
     }
@@ -120,7 +123,9 @@ impl Scalar {
 
     /// Constructs a scalar from the given little-endian byte representation, returning `None` if
     /// the resulting value lies outside the field.
-    pub fn from_repr_vartime(repr: &[u8; 32]) -> Option<Self> {
+    ///
+    /// NOTE: the length of `repr` MUST be 32.
+    pub fn from_repr_vartime(repr: &[u8]) -> Option<Self> {
         let value = Self(
             u64::from_le_bytes(repr[0..8].try_into().unwrap()),
             u64::from_le_bytes(repr[8..16].try_into().unwrap()),
@@ -135,13 +140,36 @@ impl Scalar {
 
     /// Constructs a scalar from the given little-endian byte representation, performing modular
     /// reduction if the resulting value lies outside the field.
-    pub fn from_repr_canonical(repr: &[u8; 32]) -> Self {
+    ///
+    /// NOTE: the length of `repr` MUST be 32.
+    pub fn from_repr_canonical(repr: &[u8]) -> Self {
         // TODO
         todo!()
     }
 
+    /// Constructs a scalar from the given little-endian byte representation of a 512-bit value,
+    /// performing modular reduction to bring the value back into the BlueSky field.
+    ///
+    /// NOTE: the length of `repr` MUST be 64.
+    pub fn from_repr_wide(repr: &[u8]) -> Self {
+        static MODULUS: LazyLock<U512> = LazyLock::new(|| Scalar::MODULUS.parse().unwrap());
+        let value = U512::from_little_endian(&repr);
+        let repr = (value % *MODULUS).to_little_endian();
+        Self::from_repr_vartime(&repr[0..32]).unwrap()
+    }
+
     pub fn to_u256(&self) -> U256 {
         U256::from_little_endian(&self.to_repr())
+    }
+}
+
+impl Debug for Scalar {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "0x{:016x}{:016x}{:016x}{:016x}",
+            self.3, self.2, self.1, self.0
+        )
     }
 }
 
@@ -169,6 +197,20 @@ impl TryFrom<U256> for Scalar {
     fn try_from(value: U256) -> Result<Self, Self::Error> {
         Self::from_repr_vartime(&value.to_little_endian())
             .context("the provided value lies outside the BlueSky field")
+    }
+}
+
+impl FromStr for Scalar {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let value = if s.starts_with("0x") || s.starts_with("0X") {
+            U256::from_str_radix(&s[2..], 16)
+        } else {
+            U256::from_str_radix(s, 10)
+        }
+        .context("failed to parse scalar")?;
+        Self::try_from(value)
     }
 }
 
@@ -226,12 +268,12 @@ impl Sub<&Scalar> for Scalar {
         if !underflow {
             return Self(r0, r1, r2, r3);
         }
-        let (s0, c0) = r0.overflowing_add(Self::MODULUS[0]);
-        let (s1, c1) = r1.overflowing_add(Self::MODULUS[1]);
+        let (s0, c0) = r0.overflowing_add(MODULUS[0]);
+        let (s1, c1) = r1.overflowing_add(MODULUS[1]);
         let (s1, c2) = s1.overflowing_add(c0 as u64);
-        let (s2, c3) = r2.overflowing_add(Self::MODULUS[2]);
+        let (s2, c3) = r2.overflowing_add(MODULUS[2]);
         let (s2, c4) = s2.overflowing_add((c1 || c2) as u64);
-        let (s3, _) = r3.overflowing_add(Self::MODULUS[3]);
+        let (s3, _) = r3.overflowing_add(MODULUS[3]);
         let (s3, _) = s3.overflowing_add((c3 || c4) as u64);
         Self(s0, s1, s2, s3)
     }
@@ -362,8 +404,10 @@ impl ff::Field for Scalar {
         0x0000008A49EA4F0Bu64,
     );
 
-    fn random(rng: impl ecdsa::signature::rand_core::RngCore) -> Self {
-        todo!()
+    fn random(mut rng: impl ecdsa::signature::rand_core::RngCore) -> Self {
+        let mut bytes = [0u8; 64];
+        rng.fill_bytes(&mut bytes);
+        Self::from_repr_wide(&bytes)
     }
 
     fn square(&self) -> Self {
