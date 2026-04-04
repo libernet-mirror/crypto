@@ -143,8 +143,19 @@ impl Scalar {
     ///
     /// NOTE: the length of `repr` MUST be 32.
     pub fn from_repr_canonical(repr: &[u8]) -> Self {
-        // TODO
-        todo!()
+        let mut value = Self(
+            u64::from_le_bytes(repr[0..8].try_into().unwrap()),
+            u64::from_le_bytes(repr[8..16].try_into().unwrap()),
+            u64::from_le_bytes(repr[16..24].try_into().unwrap()),
+            u64::from_le_bytes(repr[24..32].try_into().unwrap()),
+        );
+        if value > Self::MAX_RAW {
+            value = value.subp();
+            if value > Self::MAX_RAW {
+                value = value.subp();
+            }
+        }
+        Self::mont_mul(&value, &Self::R)
     }
 
     /// Constructs a scalar from the given little-endian byte representation of a 512-bit value,
