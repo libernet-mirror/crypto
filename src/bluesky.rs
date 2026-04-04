@@ -236,18 +236,37 @@ impl Scalar {
         Self::from_repr_vartime(&repr[0..32]).unwrap()
     }
 
+    pub fn to_le_u64(&self) -> [u64; 4] {
+        let raw = Self::mont_mul(self, &Self::R_INV);
+        [raw.0, raw.1, raw.2, raw.3]
+    }
+
     pub fn to_u256(&self) -> U256 {
         U256::from_little_endian(&self.to_repr())
     }
 }
 
 impl Debug for Scalar {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            formatter,
-            "0x{:016x}{:016x}{:016x}{:016x}",
-            self.3, self.2, self.1, self.0
-        )
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#066x}", self.to_u256())
+    }
+}
+
+impl std::fmt::Display for Scalar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.to_u256(), f)
+    }
+}
+
+impl std::fmt::LowerHex for Scalar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::LowerHex::fmt(&self.to_u256(), f)
+    }
+}
+
+impl std::fmt::UpperHex for Scalar {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::UpperHex::fmt(&self.to_u256(), f)
     }
 }
 
@@ -601,13 +620,92 @@ impl ff::PrimeField for Scalar {
 mod tests {
     use super::*;
 
-    fn parse_scalar(x: &str) -> Scalar {
-        x.parse().unwrap()
+    fn format_scalar(x: Scalar) -> String {
+        format!("{:#066x}", x)
+    }
+
+    fn parse_scalar(s: &str) -> Scalar {
+        s.parse().unwrap()
     }
 
     #[test]
-    fn test() {
+    fn test_print_constants() {
+        assert_eq!(
+            format_scalar(Scalar::ZERO),
+            "0x0000000000000000000000000000000000000000000000000000000000000000",
+        );
+        assert_eq!(
+            format_scalar(Scalar::ONE),
+            "0x0000000000000000000000000000000000000000000000000000000000000001",
+        );
+        assert_eq!(
+            format_scalar(Scalar::MAX),
+            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000",
+        );
+        assert_eq!(
+            format_scalar(Scalar::MAX_RAW * Scalar::R),
+            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000",
+        );
+        assert_eq!(
+            format_scalar(Scalar::R),
+            "0x0000008a49ea4f0b6fadb202b08c8ad3eb9ffffffffffffffffffffffffffffe"
+        );
+        assert_eq!(
+            format_scalar(Scalar::MAX_MINUS_ONE),
+            "0x7fffffbadb0ad87a482926fea7b9ba960a2fffffffffffffffffffffffffffff"
+        );
+        assert_eq!(
+            format_scalar(Scalar::TWO_INV),
+            "0x3fffffdd6d856c3d2414937f53dcdd4b05180000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(Scalar::MULTIPLICATIVE_GENERATOR),
+            "0x000000000000000000000000000000000000000000000000000000000000000f"
+        );
+        assert_eq!(
+            format_scalar(Scalar::ROOT_OF_UNITY),
+            "0x1c855d595fa15936b0ac1d51b8e0a8f8878f9b5199ce56785060ee1e7ad85a7c"
+        );
+        assert_eq!(
+            format_scalar(Scalar::ROOT_OF_UNITY_INV),
+            "0x1c5ea19556788808dd94eebb6ba8ef1bf9382073b01276b94c7880e2f4e020d3"
+        );
+        assert_eq!(
+            format_scalar(Scalar::DELTA),
+            "0x75a17e51260c15dcd45173f1bd2207d6e2fc8c8cd6b30bb399b783a772de079c"
+        );
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(Scalar::ZERO, Scalar::default());
+        assert_eq!(Scalar::ZERO, 0.into());
+        assert_eq!(Scalar::ONE, 1.into());
         assert_eq!(Scalar::MAX, -Scalar::ONE);
+        assert_eq!(Scalar::MAX_RAW * Scalar::R, -Scalar::ONE);
+        assert_eq!(
+            Scalar::R,
+            Scalar::from_repr_wide(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+            ])
+        );
+        assert_eq!(Scalar::MAX_MINUS_ONE, -Scalar::from(2));
+        assert_eq!(Scalar::TWO_INV, Scalar::from(2).invert().unwrap());
+        assert_eq!(Scalar::MULTIPLICATIVE_GENERATOR, 15.into());
+        assert_eq!(
+            Scalar::ROOT_OF_UNITY.pow_vartime(
+                Scalar::from(2)
+                    .pow_vartime([Scalar::S as u64, 0, 0, 0])
+                    .to_le_u64()
+            ),
+            Scalar::ONE
+        );
+        assert_eq!(
+            Scalar::ROOT_OF_UNITY * Scalar::ROOT_OF_UNITY_INV,
+            Scalar::ONE
+        );
     }
 
     // TODO
