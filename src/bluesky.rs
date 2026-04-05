@@ -1092,6 +1092,38 @@ mod tests {
     }
 
     #[test]
+    fn test_from_u64() {
+        assert_eq!(
+            Scalar::from(0),
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000000")
+        );
+        assert_eq!(
+            Scalar::from(1),
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000001")
+        );
+        assert_eq!(
+            Scalar::from(2),
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000002")
+        );
+        assert_eq!(
+            Scalar::from(42),
+            parse_scalar("0x000000000000000000000000000000000000000000000000000000000000002a")
+        );
+        assert_eq!(
+            Scalar::from(u64::MAX - 2),
+            parse_scalar("0x000000000000000000000000000000000000000000000000fffffffffffffffd")
+        );
+        assert_eq!(
+            Scalar::from(u64::MAX - 1),
+            parse_scalar("0x000000000000000000000000000000000000000000000000fffffffffffffffe")
+        );
+        assert_eq!(
+            Scalar::from(u64::MAX),
+            parse_scalar("0x000000000000000000000000000000000000000000000000ffffffffffffffff")
+        );
+    }
+
+    #[test]
     fn test_try_from_u256() {
         assert_eq!(
             Scalar::try_from(
