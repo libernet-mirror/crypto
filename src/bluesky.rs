@@ -884,5 +884,21 @@ mod tests {
         );
     }
 
+    fn from_repr_wide(u512: U512) -> Scalar {
+        Scalar::from_repr_wide(&u512.to_little_endian())
+    }
+
+    #[test]
+    fn test_from_repr_wide() {
+        assert_eq!(
+            from_repr_wide("0x53acd3dc79d20203e9e60026cdb75d037f9cbb33eded8b767a8dfbee9bff090ecf26226e4d9d26b20b854b21b423ea28becd7445365e1fd349ed4af9c16baf97".parse().unwrap()),
+            parse_scalar("0x5807d7340b99b478a10bcacd6fefef4c2df17bdee2f9c5353e307f113a60d6e5"),
+        );
+        assert_eq!(
+            from_repr_wide("0x76f63d96682cea5050cd80435b9c53c6b9298bb03e2fc5d726094917e80782c0f9cd0bc49eb092a199116130b24377ed6a5fe01bc95ce0a8cca77dbb1d10922b".parse().unwrap()),
+            parse_scalar("0x49edffbd1c10c843ab8beda2fddf2b976758e6d3a9a5fc702ef433ab97eb570e"),
+        );
+    }
+
     // TODO
 }
