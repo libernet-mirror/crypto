@@ -1427,5 +1427,84 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn test_sum_owned() {
+        let values = vec![Scalar::ONE, Scalar::from(2), Scalar::from(3)];
+        assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::from(6));
+    }
+
+    #[test]
+    fn test_sum_refs() {
+        let values = vec![Scalar::ONE, Scalar::from(2), Scalar::from(3)];
+        assert_eq!(values.iter().sum::<Scalar>(), Scalar::from(6));
+    }
+
+    #[test]
+    fn test_sum_empty() {
+        let values: Vec<Scalar> = vec![];
+        assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::ZERO);
+    }
+
+    #[test]
+    fn test_sum_empty_refs() {
+        let values: Vec<Scalar> = vec![];
+        assert_eq!(values.iter().sum::<Scalar>(), Scalar::ZERO);
+    }
+
+    #[test]
+    fn test_sum_single() {
+        let values = vec![Scalar::from(42)];
+        assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::from(42));
+    }
+
+    #[test]
+    fn test_sum_wraps_modulo_p() {
+        // MAX + ONE wraps around to ZERO
+        let values = vec![Scalar::MAX, Scalar::ONE];
+        assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::ZERO);
+    }
+
+    #[test]
+    fn test_product_owned() {
+        let values = vec![Scalar::from(2), Scalar::from(3), Scalar::from(4)];
+        assert_eq!(values.into_iter().product::<Scalar>(), Scalar::from(24));
+    }
+
+    #[test]
+    fn test_product_refs() {
+        let values = vec![Scalar::from(2), Scalar::from(3), Scalar::from(4)];
+        assert_eq!(values.iter().product::<Scalar>(), Scalar::from(24));
+    }
+
+    #[test]
+    fn test_product_empty() {
+        let values: Vec<Scalar> = vec![];
+        assert_eq!(values.into_iter().product::<Scalar>(), Scalar::ONE);
+    }
+
+    #[test]
+    fn test_product_empty_refs() {
+        let values: Vec<Scalar> = vec![];
+        assert_eq!(values.iter().product::<Scalar>(), Scalar::ONE);
+    }
+
+    #[test]
+    fn test_product_single() {
+        let values = vec![Scalar::from(42)];
+        assert_eq!(values.into_iter().product::<Scalar>(), Scalar::from(42));
+    }
+
+    #[test]
+    fn test_product_with_zero() {
+        let values = vec![Scalar::from(5), Scalar::ZERO, Scalar::from(7)];
+        assert_eq!(values.into_iter().product::<Scalar>(), Scalar::ZERO);
+    }
+
+    #[test]
+    fn test_product_with_one() {
+        let values = vec![Scalar::ONE, Scalar::from(5), Scalar::ONE];
+        assert_eq!(values.into_iter().product::<Scalar>(), Scalar::from(5));
+    }
+
     // TODO
 }
