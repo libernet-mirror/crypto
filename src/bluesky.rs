@@ -1187,5 +1187,57 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_cmp() {
+        let v0 = Scalar::from(0);
+        let v1 = Scalar::from(1);
+        let v2 = Scalar::from(42);
+        let v3 = parse_scalar("0x318c1df8459d125dc54e1fe487bf23e8430221b69660d8ca9427235713f24de1");
+        let v4 = Scalar::MAX_MINUS_ONE;
+        let v5 = Scalar::MAX;
+
+        assert_eq!(v0.cmp(&v0), Ordering::Equal);
+        assert_eq!(v0.cmp(&v1), Ordering::Less);
+        assert_eq!(v0.cmp(&v2), Ordering::Less);
+        assert_eq!(v0.cmp(&v3), Ordering::Less);
+        assert_eq!(v0.cmp(&v4), Ordering::Less);
+        assert_eq!(v0.cmp(&v5), Ordering::Less);
+
+        assert_eq!(v1.cmp(&v0), Ordering::Greater);
+        assert_eq!(v1.cmp(&v1), Ordering::Equal);
+        assert_eq!(v1.cmp(&v2), Ordering::Less);
+        assert_eq!(v1.cmp(&v3), Ordering::Less);
+        assert_eq!(v1.cmp(&v4), Ordering::Less);
+        assert_eq!(v1.cmp(&v5), Ordering::Less);
+
+        assert_eq!(v2.cmp(&v0), Ordering::Greater);
+        assert_eq!(v2.cmp(&v1), Ordering::Greater);
+        assert_eq!(v2.cmp(&v2), Ordering::Equal);
+        assert_eq!(v2.cmp(&v3), Ordering::Less);
+        assert_eq!(v2.cmp(&v4), Ordering::Less);
+        assert_eq!(v2.cmp(&v5), Ordering::Less);
+
+        assert_eq!(v3.cmp(&v0), Ordering::Greater);
+        assert_eq!(v3.cmp(&v1), Ordering::Greater);
+        assert_eq!(v3.cmp(&v2), Ordering::Greater);
+        assert_eq!(v3.cmp(&v3), Ordering::Equal);
+        assert_eq!(v3.cmp(&v4), Ordering::Less);
+        assert_eq!(v3.cmp(&v5), Ordering::Less);
+
+        assert_eq!(v4.cmp(&v0), Ordering::Greater);
+        assert_eq!(v4.cmp(&v1), Ordering::Greater);
+        assert_eq!(v4.cmp(&v2), Ordering::Greater);
+        assert_eq!(v4.cmp(&v3), Ordering::Greater);
+        assert_eq!(v4.cmp(&v4), Ordering::Equal);
+        assert_eq!(v4.cmp(&v5), Ordering::Less);
+
+        assert_eq!(v5.cmp(&v0), Ordering::Greater);
+        assert_eq!(v5.cmp(&v1), Ordering::Greater);
+        assert_eq!(v5.cmp(&v2), Ordering::Greater);
+        assert_eq!(v5.cmp(&v3), Ordering::Greater);
+        assert_eq!(v5.cmp(&v4), Ordering::Greater);
+        assert_eq!(v5.cmp(&v5), Ordering::Equal);
+    }
+
     // TODO
 }
