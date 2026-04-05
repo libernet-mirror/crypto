@@ -1563,5 +1563,87 @@ mod tests {
         assert_eq!(values.into_iter().product::<Scalar>(), Scalar::from(5));
     }
 
+    #[test]
+    fn test_ct_eq() {
+        let a = Scalar::from(42);
+        let b = Scalar::from(42);
+        let c = Scalar::from(43);
+
+        assert_eq!(bool::from(a.ct_eq(&b)), true);
+        assert_eq!(bool::from(a.ct_eq(&a)), true);
+        assert_eq!(bool::from(a.ct_eq(&c)), false);
+        assert_eq!(bool::from(c.ct_eq(&a)), false);
+
+        assert_eq!(bool::from(Scalar::ZERO.ct_eq(&Scalar::ZERO)), true);
+        assert_eq!(bool::from(Scalar::ONE.ct_eq(&Scalar::ONE)), true);
+        assert_eq!(bool::from(Scalar::MAX.ct_eq(&Scalar::MAX)), true);
+        assert_eq!(bool::from(Scalar::ZERO.ct_eq(&Scalar::ONE)), false);
+        assert_eq!(bool::from(Scalar::ONE.ct_eq(&Scalar::MAX)), false);
+
+        let v1 = parse_scalar("0x318c1df8459d125dc54e1fe487bf23e8430221b69660d8ca9427235713f24de1");
+        let v2 = parse_scalar("0x318c1df8459d125dc54e1fe487bf23e8430221b69660d8ca9427235713f24de2");
+        assert_eq!(bool::from(v1.ct_eq(&v2)), false);
+        assert_eq!(bool::from(v1.ct_eq(&v1)), true);
+    }
+
+    #[test]
+    fn test_ct_gt() {
+        let v0 = Scalar::from(0);
+        let v1 = Scalar::from(1);
+        let v2 = Scalar::from(42);
+        let v3 = Scalar::MAX_MINUS_ONE;
+        let v4 = Scalar::MAX;
+        assert_eq!(bool::from(v0.ct_gt(&v0)), false);
+        assert_eq!(bool::from(v1.ct_gt(&v1)), false);
+        assert_eq!(bool::from(v4.ct_gt(&v4)), false);
+        assert_eq!(bool::from(v1.ct_gt(&v0)), true);
+        assert_eq!(bool::from(v2.ct_gt(&v0)), true);
+        assert_eq!(bool::from(v2.ct_gt(&v1)), true);
+        assert_eq!(bool::from(v4.ct_gt(&v3)), true);
+        assert_eq!(bool::from(v4.ct_gt(&v0)), true);
+        assert_eq!(bool::from(v0.ct_gt(&v1)), false);
+        assert_eq!(bool::from(v0.ct_gt(&v4)), false);
+        assert_eq!(bool::from(v1.ct_gt(&v2)), false);
+        assert_eq!(bool::from(v3.ct_gt(&v4)), false);
+    }
+
+    #[test]
+    fn test_ct_lt() {
+        let v0 = Scalar::from(0);
+        let v1 = Scalar::from(1);
+        let v2 = Scalar::from(42);
+        let v3 = Scalar::MAX_MINUS_ONE;
+        let v4 = Scalar::MAX;
+        assert_eq!(bool::from(v0.ct_lt(&v0)), false);
+        assert_eq!(bool::from(v1.ct_lt(&v1)), false);
+        assert_eq!(bool::from(v4.ct_lt(&v4)), false);
+        assert_eq!(bool::from(v0.ct_lt(&v1)), true);
+        assert_eq!(bool::from(v0.ct_lt(&v4)), true);
+        assert_eq!(bool::from(v1.ct_lt(&v2)), true);
+        assert_eq!(bool::from(v2.ct_lt(&v3)), true);
+        assert_eq!(bool::from(v3.ct_lt(&v4)), true);
+        assert_eq!(bool::from(v1.ct_lt(&v0)), false);
+        assert_eq!(bool::from(v4.ct_lt(&v3)), false);
+        assert_eq!(bool::from(v4.ct_lt(&v0)), false);
+    }
+
+    #[test]
+    fn test_conditional_select() {
+        let a = Scalar::from(12);
+        let b = Scalar::from(34);
+        assert_eq!(Scalar::conditional_select(&a, &b, Choice::from(0)), a);
+        assert_eq!(Scalar::conditional_select(&a, &b, Choice::from(1)), b);
+        assert_eq!(
+            Scalar::conditional_select(&Scalar::ZERO, &Scalar::ONE, Choice::from(0)),
+            Scalar::ZERO
+        );
+        assert_eq!(
+            Scalar::conditional_select(&Scalar::ZERO, &Scalar::ONE, Choice::from(1)),
+            Scalar::ONE
+        );
+        assert_eq!(Scalar::conditional_select(&a, &a, Choice::from(0)), a);
+        assert_eq!(Scalar::conditional_select(&a, &a, Choice::from(1)), a);
+    }
+
     // TODO
 }
