@@ -1645,5 +1645,38 @@ mod tests {
         assert_eq!(Scalar::conditional_select(&a, &a, Choice::from(1)), a);
     }
 
-    // TODO
+    #[test]
+    fn test_square() {
+        assert_eq!(Scalar::ZERO.square(), Scalar::ZERO);
+        assert_eq!(Scalar::ONE.square(), Scalar::ONE);
+        assert_eq!(Scalar::from(7).square(), Scalar::from(49));
+        assert_eq!(Scalar::from(12).square(), Scalar::from(144));
+        let v = parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
+        assert_eq!(v.square(), v * v);
+        let v = parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f");
+        assert_eq!(v.square(), v * v);
+    }
+
+    #[test]
+    fn test_double() {
+        assert_eq!(Scalar::ZERO.double(), Scalar::ZERO);
+        assert_eq!(Scalar::ONE.double(), Scalar::from(2));
+        assert_eq!(Scalar::from(21).double(), Scalar::from(42));
+        let v = parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
+        assert_eq!(v.double(), v + v);
+        assert_eq!(Scalar::MAX.double(), Scalar::MAX_MINUS_ONE);
+        assert_eq!(Scalar::MAX_MINUS_ONE.double(), -Scalar::from(4));
+    }
+
+    #[test]
+    fn test_invert() {
+        assert!(bool::from(Scalar::ZERO.invert().is_none()));
+        assert_eq!(Scalar::ONE.invert().unwrap(), Scalar::ONE);
+        assert_eq!(Scalar::MAX.invert().unwrap(), Scalar::MAX);
+        assert_eq!(Scalar::from(2).invert().unwrap(), Scalar::TWO_INV);
+        let v = parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
+        assert_eq!(v * v.invert().unwrap(), Scalar::ONE);
+        let v = parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f");
+        assert_eq!(v * v.invert().unwrap(), Scalar::ONE);
+    }
 }
