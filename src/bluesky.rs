@@ -90,9 +90,6 @@ impl Scalar {
         0x72D8588D20D577D6u64,
     );
 
-    /// R^-1 in Montgomery form, ie. 1 mod p.
-    const R_INV: Self = Self(1, 0, 0, 0);
-
     const P: [u64; 4] = MODULUS;
     const P_INV: u64 = 0xFFFFFFFFFFFFFFFFu64;
 
@@ -206,6 +203,55 @@ impl Scalar {
         }
     }
 
+    /// Performs a Montgomery multiplication by 1, which results in converting from Montgomery form
+    /// to raw form.
+    fn to_raw(&self) -> Self {
+        let mut t0 = self.0;
+        let mut t1 = self.1;
+        let mut t2 = self.2;
+        let mut t3 = self.3;
+        let mut carry: u64;
+        let mut m: u64;
+
+        // redc 0
+        m = t0.wrapping_neg();
+        (_, carry) = Self::add_u64(t0, m);
+        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
+        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
+        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        t3 = carry;
+
+        // redc 1
+        m = t0.wrapping_neg();
+        (_, carry) = Self::add_u64(t0, m);
+        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
+        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
+        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        t3 = carry;
+
+        // redc 2
+        m = t0.wrapping_neg();
+        (_, carry) = Self::add_u64(t0, m);
+        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
+        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
+        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        t3 = carry;
+
+        // redc 3
+        m = t0.wrapping_neg();
+        (_, carry) = Self::add_u64(t0, m);
+        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
+        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
+        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        t3 = carry;
+
+        let result = Self(t0, t1, t2, t3);
+        match result.cmp_raw(&Self::MAX_RAW) {
+            Ordering::Greater => result.subp(),
+            _ => result,
+        }
+    }
+
     /// Constructs a scalar from the given little-endian byte representation, returning `None` if
     /// the resulting value lies outside the field.
     ///
@@ -274,7 +320,7 @@ impl Scalar {
     /// Converts this scalar to its canonical integer representation as 4 little-endian 64-bit
     /// limbs.
     pub fn to_le_u64(&self) -> [u64; 4] {
-        let raw = Self::mont_mul(self, &Self::R_INV);
+        let raw = self.to_raw();
         [raw.0, raw.1, raw.2, raw.3]
     }
 
@@ -310,8 +356,8 @@ impl std::fmt::UpperHex for Scalar {
 
 impl Ord for Scalar {
     fn cmp(&self, other: &Self) -> Ordering {
-        let lhs = Self::mont_mul(self, &Self::R_INV);
-        let rhs = Self::mont_mul(other, &Self::R_INV);
+        let lhs = self.to_raw();
+        let rhs = other.to_raw();
         lhs.cmp_raw(&rhs)
     }
 }
@@ -597,7 +643,7 @@ impl ff::PrimeField for Scalar {
     }
 
     fn to_repr(&self) -> Self::Repr {
-        let raw = Self::mont_mul(self, &Self::R_INV);
+        let raw = self.to_raw();
         let mut bytes = [0u8; 32];
         bytes[0..8].copy_from_slice(&raw.0.to_le_bytes());
         bytes[8..16].copy_from_slice(&raw.1.to_le_bytes());
@@ -607,7 +653,7 @@ impl ff::PrimeField for Scalar {
     }
 
     fn is_odd(&self) -> Choice {
-        let raw = Self::mont_mul(self, &Self::R_INV);
+        let raw = self.to_raw();
         Choice::from((raw.0 & 1) as u8)
     }
 
