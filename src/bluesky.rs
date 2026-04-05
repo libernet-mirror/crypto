@@ -11,6 +11,18 @@ use subtle::{
     CtOption,
 };
 
+/// Describes a prime field with a (3^T)-th root of unity.
+pub trait TernaryRootOfUnity: PrimeField {
+    /// The 3-adicity of the field.
+    const T: u32;
+
+    /// The root of unity, a number w such that w^(3^T) = 1.
+    const TERNARY_ROOT_OF_UNITY: Self;
+
+    /// The inverse of the root of unity.
+    const TERNARY_ROOT_OF_UNITY_INV: Self;
+}
+
 /// The prime order of the BlueSky field stored as four 64-bit limbs in little endian order.
 pub const MODULUS: [u64; 4] = [
     0x0000000000000001u64,
@@ -106,7 +118,7 @@ impl Scalar {
     #[inline(always)]
     fn add_u64(lhs: u64, rhs: u64) -> (u64, u64) {
         let (sum, carry) = lhs.overflowing_add(rhs);
-        (sum, if carry { 1 } else { 0 })
+        (sum, carry as u64)
     }
 
     #[inline(always)]
@@ -125,7 +137,7 @@ impl Scalar {
         let mut carry: u64;
         let mut m: u64;
 
-        // round 0
+        // row 0
         (t0, carry) = Self::mul_u64(lhs.0, rhs.0, 0);
         (t1, carry) = Self::mul_u64(lhs.1, rhs.0, carry);
         (t2, carry) = Self::mul_u64(lhs.2, rhs.0, carry);
@@ -139,7 +151,7 @@ impl Scalar {
         (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
         t3 = t4 + carry;
 
-        // round 1
+        // row 1
         (t0, carry) = Self::mul_add_u64(t0, lhs.0, rhs.1, 0);
         (t1, carry) = Self::mul_add_u64(t1, lhs.1, rhs.1, carry);
         (t2, carry) = Self::mul_add_u64(t2, lhs.2, rhs.1, carry);
@@ -153,7 +165,7 @@ impl Scalar {
         (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
         t3 = t4 + carry;
 
-        // round 2
+        // row 2
         (t0, carry) = Self::mul_add_u64(t0, lhs.0, rhs.2, 0);
         (t1, carry) = Self::mul_add_u64(t1, lhs.1, rhs.2, carry);
         (t2, carry) = Self::mul_add_u64(t2, lhs.2, rhs.2, carry);
@@ -167,7 +179,7 @@ impl Scalar {
         (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
         t3 = t4 + carry;
 
-        // round 3
+        // row 3
         (t0, carry) = Self::mul_add_u64(t0, lhs.0, rhs.3, 0);
         (t1, carry) = Self::mul_add_u64(t1, lhs.1, rhs.3, carry);
         (t2, carry) = Self::mul_add_u64(t2, lhs.2, rhs.3, carry);
@@ -236,16 +248,31 @@ impl Scalar {
         Self::from_repr_vartime(&repr[0..32]).unwrap()
     }
 
-    pub fn from_le_u64(limbs: [u64; 4]) -> Scalar {
+    /// Constructs a scalar from the 4 64-bit limbs provided in little-endian order.
+    pub fn from_le_u64_vartime(limbs: [u64; 4]) -> Option<Scalar> {
         let value = Self(limbs[0], limbs[1], limbs[2], limbs[3]);
-        Self::mont_mul(&value, &Self::R)
+        if value > Self::MAX_RAW {
+            return None;
+        }
+        Some(Self::mont_mul(&value, &Self::R))
     }
 
+    /// Constructs a scalar in constant time from the 4 64-bit limbs provided in little-endian
+    /// order.
+    pub fn from_le_u64(limbs: [u64; 4]) -> CtOption<Scalar> {
+        let mut value = Self(limbs[0], limbs[1], limbs[2], limbs[3]);
+        value = Self::mont_mul(&value, &Self::R);
+        CtOption::new(value, Choice::from((value <= Self::MAX) as u8))
+    }
+
+    /// Converts this scalar to its canonical integer representation as 4 little-endian 64-bit
+    /// limbs.
     pub fn to_le_u64(&self) -> [u64; 4] {
         let raw = Self::mont_mul(self, &Self::R_INV);
         [raw.0, raw.1, raw.2, raw.3]
     }
 
+    /// Converts this scalar to a [`U256`] integer.
     pub fn to_u256(&self) -> U256 {
         U256::from_little_endian(&self.to_repr())
     }
@@ -621,6 +648,24 @@ impl ff::PrimeField for Scalar {
     );
 }
 
+impl TernaryRootOfUnity for Scalar {
+    const T: u32 = 72;
+
+    const TERNARY_ROOT_OF_UNITY: Self = Self(
+        0x9314C94DE2611B54u64,
+        0x1BA21F3681B57370u64,
+        0xEE95983972FB1D78u64,
+        0x171185928D540DB8u64,
+    );
+
+    const TERNARY_ROOT_OF_UNITY_INV: Self = Self(
+        0x0244D24CB2EBE053u64,
+        0x1B8F468F5DE0B10Fu64,
+        0xFEEE78FCA5107C01u64,
+        0x6A785A15461116AFu64,
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -667,6 +712,7 @@ mod tests {
             format_scalar(Scalar::MULTIPLICATIVE_GENERATOR),
             "0x000000000000000000000000000000000000000000000000000000000000000f"
         );
+        assert_eq!(Scalar::S, 116);
         assert_eq!(
             format_scalar(Scalar::ROOT_OF_UNITY),
             "0x1c855d595fa15936b0ac1d51b8e0a8f8878f9b5199ce56785060ee1e7ad85a7c"
@@ -678,6 +724,15 @@ mod tests {
         assert_eq!(
             format_scalar(Scalar::DELTA),
             "0x75a17e51260c15dcd45173f1bd2207d6e2fc8c8cd6b30bb399b783a772de079c"
+        );
+        assert_eq!(Scalar::T, 72);
+        assert_eq!(
+            format_scalar(Scalar::TERNARY_ROOT_OF_UNITY),
+            "0x33b6631e951bde0a85158d1f24777f7df914b50c409fde500cd094b370b08730"
+        );
+        assert_eq!(
+            format_scalar(Scalar::TERNARY_ROOT_OF_UNITY_INV),
+            "0x55d494cccd313cb5c91a992a0cd716a45392da2c38e93c3426415c863938c5fe"
         );
     }
 
@@ -712,6 +767,120 @@ mod tests {
         assert_eq!(
             Scalar::ROOT_OF_UNITY * Scalar::ROOT_OF_UNITY_INV,
             Scalar::ONE
+        );
+        assert_eq!(
+            Scalar::TERNARY_ROOT_OF_UNITY.pow_vartime(
+                Scalar::from(3)
+                    .pow_vartime([Scalar::T as u64, 0, 0, 0])
+                    .to_le_u64()
+            ),
+            Scalar::ONE
+        );
+        assert_eq!(
+            Scalar::TERNARY_ROOT_OF_UNITY * Scalar::TERNARY_ROOT_OF_UNITY_INV,
+            Scalar::ONE
+        );
+    }
+
+    #[test]
+    fn test_from_repr_vartime() {
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr_vartime(&[
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                    23, 24, 25, 26, 27, 28, 29, 30, 31, 32
+                ])
+                .unwrap()
+            ),
+            "0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201"
+        );
+    }
+
+    #[test]
+    fn test_from_repr_canonical() {
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32
+            ])),
+            "0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 47, 10, 150,
+                186, 185, 167, 254, 38, 41, 72, 122, 216, 10, 219, 186, 255, 255, 127
+            ])),
+            "0x7fffffbadb0ad87a482926fea7b9ba960a2fffffffffffffffffffffffffffff"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
+                72, 122, 216, 10, 219, 186, 255, 255, 127
+            ])),
+            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
+                72, 122, 216, 10, 219, 186, 255, 255, 127
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
+                72, 122, 216, 10, 219, 186, 255, 255, 127
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 20, 44, 117, 115, 79, 253, 77, 82,
+                144, 244, 176, 21, 182, 117, 255, 255, 255
+            ])),
+            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 20, 44, 117, 115, 79, 253, 77, 82,
+                144, 244, 176, 21, 182, 117, 255, 255, 255
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 20, 44, 117, 115, 79, 253, 77, 82,
+                144, 244, 176, 21, 182, 117, 255, 255, 255
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                254, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            ])),
+            "0x0000008a49ea4f0b6fadb202b08c8ad3eb9ffffffffffffffffffffffffffffc"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            ])),
+            "0x0000008a49ea4f0b6fadb202b08c8ad3eb9ffffffffffffffffffffffffffffd"
         );
     }
 
