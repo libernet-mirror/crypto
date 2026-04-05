@@ -1062,5 +1062,98 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_to_le_u64() {
+        assert_eq!(
+            parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
+                .to_le_u64(),
+            [1, 2, 3, 4]
+        );
+        assert_eq!(
+            parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
+                .to_le_u64(),
+            [
+                0x12F64A812FF7B02Eu64,
+                0x1EAA2E32B4F74374u64,
+                0x03DD6B282EECE85Bu64,
+                0x6DEB006CE96C1BECu64,
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+                .to_le_u64(),
+            [
+                0x0000000000000000u64,
+                0x0A30000000000000u64,
+                0x482926FEA7B9BA96u64,
+                0x7FFFFFBADB0AD87Au64,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_try_from_u256() {
+        assert_eq!(
+            Scalar::try_from(
+                "0x0000000000000004000000000000000300000000000000020000000000000001"
+                    .parse::<U256>()
+                    .unwrap()
+            )
+            .unwrap(),
+            parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
+        );
+        assert_eq!(
+            Scalar::try_from(
+                "0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e"
+                    .parse::<U256>()
+                    .unwrap()
+            )
+            .unwrap(),
+            parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
+        );
+        assert_eq!(
+            Scalar::try_from(
+                "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+                    .parse::<U256>()
+                    .unwrap()
+            )
+            .unwrap(),
+            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+        );
+        assert!(
+            Scalar::try_from(
+                "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000001"
+                    .parse::<U256>()
+                    .unwrap()
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn test_to_u256() {
+        assert_eq!(
+            parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
+                .to_u256(),
+            "0x0000000000000004000000000000000300000000000000020000000000000001"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(
+            parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
+                .to_u256(),
+            "0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(
+            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+                .to_u256(),
+            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+                .parse()
+                .unwrap()
+        );
+    }
+
     // TODO
 }
