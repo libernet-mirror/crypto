@@ -1407,5 +1407,25 @@ mod tests {
         );
     }
 
+    fn test_neg_impl(value: Scalar) {
+        assert_eq!(-value, Scalar::MAX - value + Scalar::ONE);
+    }
+
+    #[test]
+    fn test_neg() {
+        assert_eq!(-Scalar::ZERO, Scalar::ZERO);
+        assert_eq!(-Scalar::ONE, Scalar::MAX);
+        assert_eq!(-Scalar::from(2), Scalar::MAX_MINUS_ONE);
+        test_neg_impl(parse_scalar(
+            "0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b",
+        ));
+        test_neg_impl(parse_scalar(
+            "0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6",
+        ));
+        test_neg_impl(parse_scalar(
+            "0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236",
+        ));
+    }
+
     // TODO
 }
