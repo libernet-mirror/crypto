@@ -841,12 +841,49 @@ mod tests {
         assert_eq!(
             format_scalar(
                 Scalar::from_repr_vartime(&[
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ])
+                .unwrap()
+            ),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr_vartime(&[
+                    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ])
+                .unwrap()
+            ),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr_vartime(&[
                     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
                     23, 24, 25, 26, 27, 28, 29, 30, 31, 32
                 ])
                 .unwrap()
             ),
             "0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr_vartime(&[
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38,
+                    41, 72, 122, 216, 10, 219, 186, 255, 255, 127
+                ])
+                .unwrap()
+            ),
+            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+        );
+        assert!(
+            Scalar::from_repr_vartime(&[
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
+                72, 122, 216, 10, 219, 186, 255, 255, 127
+            ])
+            .is_none()
         );
     }
 
@@ -957,23 +994,70 @@ mod tests {
     #[test]
     fn test_from_le_u64() {
         assert_eq!(
+            Scalar::from_le_u64([1, 2, 3, 4]).unwrap(),
+            parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
+        );
+        assert_eq!(
+            Scalar::from_le_u64_vartime([1, 2, 3, 4]).unwrap(),
+            parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
+        );
+        assert_eq!(
             Scalar::from_le_u64([
-                0x12f64a812ff7b02eu64,
-                0x1eaa2e32b4f74374u64,
-                0x03dd6b282eece85bu64,
-                0x6deb006ce96c1becu64,
+                0x12F64A812FF7B02Eu64,
+                0x1EAA2E32B4F74374u64,
+                0x03DD6B282EECE85Bu64,
+                0x6DEB006CE96C1BECu64,
             ])
             .unwrap(),
             parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
         );
+        assert_eq!(
+            Scalar::from_le_u64_vartime([
+                0x12F64A812FF7B02Eu64,
+                0x1EAA2E32B4F74374u64,
+                0x03DD6B282EECE85Bu64,
+                0x6DEB006CE96C1BECu64,
+            ])
+            .unwrap(),
+            parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
+        );
+        assert_eq!(
+            Scalar::from_le_u64([
+                0x0000000000000000u64,
+                0x0A30000000000000u64,
+                0x482926FEA7B9BA96u64,
+                0x7FFFFFBADB0AD87Au64,
+            ])
+            .unwrap(),
+            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+        );
+        assert_eq!(
+            Scalar::from_le_u64_vartime([
+                0x0000000000000000u64,
+                0x0A30000000000000u64,
+                0x482926FEA7B9BA96u64,
+                0x7FFFFFBADB0AD87Au64,
+            ])
+            .unwrap(),
+            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+        );
         assert!(
             Scalar::from_le_u64([
-                0xe3753f23089ce351u64,
-                0x1fcb625a24342afdu64,
-                0x5b2fba293650bf2cu64,
-                0xf47b0384f4d71068u64,
+                0x0000000000000001u64,
+                0x0A30000000000000u64,
+                0x482926FEA7B9BA96u64,
+                0x7FFFFFBADB0AD87Au64,
             ])
             .into_option()
+            .is_none()
+        );
+        assert!(
+            Scalar::from_le_u64_vartime([
+                0x0000000000000001u64,
+                0x0A30000000000000u64,
+                0x482926FEA7B9BA96u64,
+                0x7FFFFFBADB0AD87Au64,
+            ])
             .is_none()
         );
     }
