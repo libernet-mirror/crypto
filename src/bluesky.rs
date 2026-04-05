@@ -624,6 +624,7 @@ impl ff::Field for Scalar {
     }
 
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
+        // TODO
         todo!()
     }
 }
@@ -1188,6 +1189,94 @@ mod tests {
     }
 
     #[test]
+    fn test_from_repr() {
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr([
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ])
+                .unwrap()
+            ),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr([
+                    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ])
+                .unwrap()
+            ),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr([
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                    23, 24, 25, 26, 27, 28, 29, 30, 31, 32
+                ])
+                .unwrap()
+            ),
+            "0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr([
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38,
+                    41, 72, 122, 216, 10, 219, 186, 255, 255, 127
+                ])
+                .unwrap()
+            ),
+            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+        );
+        assert!(
+            Scalar::from_repr([
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
+                72, 122, 216, 10, 219, 186, 255, 255, 127
+            ])
+            .into_option()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn test_to_repr() {
+        assert_eq!(
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000000")
+                .to_repr(),
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000001")
+                .to_repr(),
+            [
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201")
+                .to_repr(),
+            [
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+                .to_repr(),
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
+                72, 122, 216, 10, 219, 186, 255, 255, 127
+            ]
+        );
+    }
+
+    #[test]
     fn test_cmp() {
         let v0 = Scalar::from(0);
         let v1 = Scalar::from(1);
@@ -1643,6 +1732,18 @@ mod tests {
         );
         assert_eq!(Scalar::conditional_select(&a, &a, Choice::from(0)), a);
         assert_eq!(Scalar::conditional_select(&a, &a, Choice::from(1)), a);
+    }
+
+    #[test]
+    fn test_is_odd() {
+        assert_eq!(bool::from(Scalar::ZERO.is_odd()), false);
+        assert_eq!(bool::from(Scalar::ONE.is_odd()), true);
+        assert_eq!(bool::from(Scalar::from(2).is_odd()), false);
+        assert_eq!(bool::from(Scalar::from(3).is_odd()), true);
+        assert_eq!(bool::from(Scalar::from(100).is_odd()), false);
+        assert_eq!(bool::from(Scalar::from(101).is_odd()), true);
+        assert_eq!(bool::from(Scalar::MAX_MINUS_ONE.is_odd()), true);
+        assert_eq!(bool::from(Scalar::MAX.is_odd()), false);
     }
 
     #[test]
