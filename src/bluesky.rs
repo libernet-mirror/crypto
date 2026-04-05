@@ -1428,6 +1428,63 @@ mod tests {
     }
 
     #[test]
+    fn test_mul_by_zero() {
+        assert_eq!(Scalar::ZERO * Scalar::from(42), Scalar::ZERO);
+        assert_eq!(Scalar::ZERO * &Scalar::from(42), Scalar::ZERO);
+        assert_eq!(Scalar::ZERO * Scalar::from(43), Scalar::ZERO);
+        assert_eq!(Scalar::ZERO * &Scalar::from(43), Scalar::ZERO);
+        assert_eq!(Scalar::from(42) * Scalar::ZERO, Scalar::ZERO);
+        assert_eq!(Scalar::from(42) * &Scalar::ZERO, Scalar::ZERO);
+        assert_eq!(Scalar::from(43) * Scalar::ZERO, Scalar::ZERO);
+        assert_eq!(Scalar::from(43) * &Scalar::ZERO, Scalar::ZERO);
+    }
+
+    #[test]
+    fn test_mul_by_one() {
+        assert_eq!(Scalar::ONE * Scalar::from(42), Scalar::from(42));
+        assert_eq!(Scalar::ONE * &Scalar::from(42), Scalar::from(42));
+        assert_eq!(Scalar::ONE * Scalar::from(43), Scalar::from(43));
+        assert_eq!(Scalar::ONE * &Scalar::from(43), Scalar::from(43));
+        assert_eq!(Scalar::from(42) * Scalar::ONE, Scalar::from(42));
+        assert_eq!(Scalar::from(42) * &Scalar::ONE, Scalar::from(42));
+        assert_eq!(Scalar::from(43) * Scalar::ONE, Scalar::from(43));
+        assert_eq!(Scalar::from(43) * &Scalar::ONE, Scalar::from(43));
+    }
+
+    #[test]
+    fn test_mul() {
+        assert_eq!(Scalar::from(12) * Scalar::from(34), Scalar::from(408));
+        assert_eq!(Scalar::from(12) * &Scalar::from(34), Scalar::from(408));
+        assert_eq!(Scalar::from(12) * Scalar::from(56), Scalar::from(672));
+        assert_eq!(Scalar::from(12) * &Scalar::from(56), Scalar::from(672));
+        assert_eq!(Scalar::from(34) * Scalar::from(12), Scalar::from(408));
+        assert_eq!(Scalar::from(34) * &Scalar::from(12), Scalar::from(408));
+        assert_eq!(Scalar::from(56) * Scalar::from(12), Scalar::from(672));
+        assert_eq!(Scalar::from(56) * &Scalar::from(12), Scalar::from(672));
+    }
+
+    fn test_mul_large_impl(v1: Scalar, v2: Scalar, v3: Scalar) {
+        assert_eq!(v1 * v2, v3);
+        assert_eq!(v1 * &v2, v3);
+        assert_eq!(v2 * v1, v3);
+        assert_eq!(v2 * &v1, v3);
+    }
+
+    #[test]
+    fn test_mul_large() {
+        test_mul_large_impl(
+            parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f"),
+            parse_scalar("0x395ff9efcaa35d618872a95b7244c4b3b2a7e1d9276d4e88db27217993014628"),
+            parse_scalar("0x48bd4ecc2466c149025cda9043bdc246fd4bc2ddc8553ccbebf5f67ab8f5c94c"),
+        );
+        test_mul_large_impl(
+            parse_scalar("0x233f7c593e331b2e1285f17013cd4b692d7219c10bf06adca229780913851577"),
+            parse_scalar("0x74b95de3995095f242fa8dc762645eb31dffd6fcda71851456db33ef75365820"),
+            parse_scalar("0x7cb5f81d26335fb63d4964d1000668b43c1e16c5ecc404dd9429dfd2b4f38067"),
+        );
+    }
+
+    #[test]
     fn test_sum_owned() {
         let values = vec![Scalar::ONE, Scalar::from(2), Scalar::from(3)];
         assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::from(6));
