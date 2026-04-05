@@ -1323,5 +1323,89 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_sub() {
+        let lhs =
+            parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        assert_eq!(
+            lhs - rhs,
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
+        );
+        assert_eq!(
+            lhs - &rhs,
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
+        );
+    }
+
+    #[test]
+    fn test_sub_wraparound() {
+        let lhs =
+            parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        assert_eq!(
+            lhs - rhs,
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
+        );
+        assert_eq!(
+            lhs - &rhs,
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
+        );
+    }
+
+    #[test]
+    fn test_sub_assign() {
+        let mut lhs =
+            parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs -= rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
+        );
+    }
+
+    #[test]
+    fn test_sub_assign_ref() {
+        let mut lhs =
+            parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs -= &rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
+        );
+    }
+
+    #[test]
+    fn test_sub_assign_wraparound() {
+        let mut lhs =
+            parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs -= rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
+        );
+    }
+
+    #[test]
+    fn test_sub_assign_wraparound_ref() {
+        let mut lhs =
+            parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs -= &rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
+        );
+    }
+
     // TODO
 }
