@@ -1,6 +1,7 @@
 use anyhow::Context;
 use ff::{Field, PrimeField};
 use primitive_types::{U256, U512};
+use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::iter::{Product, Sum};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
@@ -109,6 +110,11 @@ impl Scalar {
         Self(s0, s1, s2, s3)
     }
 
+    /// Compares raw scalars, ignoring Montgomery form.
+    fn cmp_raw(&self, other: &Self) -> Ordering {
+        (self.3, self.2, self.1, self.0).cmp(&(other.3, other.2, other.1, other.0))
+    }
+
     #[inline(always)]
     fn mul_u64(lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {
         let product = (lhs as u128) * (rhs as u128) + carry as u128;
@@ -193,11 +199,11 @@ impl Scalar {
         (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
         t3 = t4 + carry;
 
-        let mut result = Self(t0, t1, t2, t3);
-        if result > Self::MAX_RAW {
-            result = result.subp();
+        let result = Self(t0, t1, t2, t3);
+        match result.cmp_raw(&Self::MAX_RAW) {
+            Ordering::Greater => result.subp(),
+            _ => result,
         }
-        result
     }
 
     /// Constructs a scalar from the given little-endian byte representation, returning `None` if
@@ -211,10 +217,10 @@ impl Scalar {
             u64::from_le_bytes(repr[16..24].try_into().unwrap()),
             u64::from_le_bytes(repr[24..32].try_into().unwrap()),
         );
-        if value > Self::MAX_RAW {
-            return None;
+        match value.cmp_raw(&Self::MAX_RAW) {
+            Ordering::Greater => None,
+            _ => Some(Self::mont_mul(&value, &Self::R)),
         }
-        Some(Self::mont_mul(&value, &Self::R))
     }
 
     /// Constructs a scalar from the given little-endian byte representation, performing modular
@@ -228,9 +234,9 @@ impl Scalar {
             u64::from_le_bytes(repr[16..24].try_into().unwrap()),
             u64::from_le_bytes(repr[24..32].try_into().unwrap()),
         );
-        if value > Self::MAX_RAW {
+        if value.cmp_raw(&Self::MAX_RAW) == Ordering::Greater {
             value = value.subp();
-            if value > Self::MAX_RAW {
+            if value.cmp_raw(&Self::MAX_RAW) == Ordering::Greater {
                 value = value.subp();
             }
         }
@@ -251,18 +257,18 @@ impl Scalar {
     /// Constructs a scalar from the 4 64-bit limbs provided in little-endian order.
     pub fn from_le_u64_vartime(limbs: [u64; 4]) -> Option<Scalar> {
         let value = Self(limbs[0], limbs[1], limbs[2], limbs[3]);
-        if value > Self::MAX_RAW {
-            return None;
+        match value.cmp_raw(&Self::MAX_RAW) {
+            Ordering::Greater => None,
+            _ => Some(Self::mont_mul(&value, &Self::R)),
         }
-        Some(Self::mont_mul(&value, &Self::R))
     }
 
     /// Constructs a scalar in constant time from the 4 64-bit limbs provided in little-endian
     /// order.
     pub fn from_le_u64(limbs: [u64; 4]) -> CtOption<Scalar> {
-        let mut value = Self(limbs[0], limbs[1], limbs[2], limbs[3]);
-        value = Self::mont_mul(&value, &Self::R);
-        CtOption::new(value, Choice::from((value <= Self::MAX) as u8))
+        let raw_value = Self(limbs[0], limbs[1], limbs[2], limbs[3]);
+        let montgomery = Self::mont_mul(&raw_value, &Self::R);
+        CtOption::new(montgomery, !raw_value.ct_gt(&Self::MAX_RAW))
     }
 
     /// Converts this scalar to its canonical integer representation as 4 little-endian 64-bit
@@ -303,13 +309,15 @@ impl std::fmt::UpperHex for Scalar {
 }
 
 impl Ord for Scalar {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.3, self.2, self.1, self.0).cmp(&(other.3, other.2, other.1, other.0))
+    fn cmp(&self, other: &Self) -> Ordering {
+        let lhs = Self::mont_mul(self, &Self::R_INV);
+        let rhs = Self::mont_mul(other, &Self::R_INV);
+        lhs.cmp_raw(&rhs)
     }
 }
 
 impl PartialOrd for Scalar {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
@@ -354,11 +362,11 @@ impl Add<&Scalar> for Scalar {
         let (r2, c4) = r2.overflowing_add((c1 || c2) as u64);
         let (r3, _) = self.3.overflowing_add(rhs.3);
         let (r3, _) = r3.overflowing_add((c3 || c4) as u64);
-        let mut result = Self(r0, r1, r2, r3);
-        if result > Self::MAX_RAW {
-            result = result.subp();
+        let result = Self(r0, r1, r2, r3);
+        match result.cmp_raw(&Self::MAX_RAW) {
+            Ordering::Greater => result.subp(),
+            _ => result,
         }
-        result
     }
 }
 
@@ -559,10 +567,10 @@ impl ff::Field for Scalar {
         value.2 = (value.2 << 1) | (value.1 >> 63);
         value.1 = (value.1 << 1) | (value.0 >> 63);
         value.0 = value.0 << 1;
-        if value > Self::MAX_RAW {
-            value = value.subp();
+        match value.cmp_raw(&Self::MAX_RAW) {
+            Ordering::Greater => value.subp(),
+            _ => value,
         }
-        value
     }
 
     fn invert(&self) -> CtOption<Self> {
@@ -897,6 +905,30 @@ mod tests {
         assert_eq!(
             from_repr_wide("0x76f63d96682cea5050cd80435b9c53c6b9298bb03e2fc5d726094917e80782c0f9cd0bc49eb092a199116130b24377ed6a5fe01bc95ce0a8cca77dbb1d10922b".parse().unwrap()),
             parse_scalar("0x49edffbd1c10c843ab8beda2fddf2b976758e6d3a9a5fc702ef433ab97eb570e"),
+        );
+    }
+
+    #[test]
+    fn test_from_le_u64() {
+        assert_eq!(
+            Scalar::from_le_u64([
+                0x12f64a812ff7b02eu64,
+                0x1eaa2e32b4f74374u64,
+                0x03dd6b282eece85bu64,
+                0x6deb006ce96c1becu64,
+            ])
+            .unwrap(),
+            parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
+        );
+        assert!(
+            Scalar::from_le_u64([
+                0xe3753f23089ce351u64,
+                0x1fcb625a24342afdu64,
+                0x5b2fba293650bf2cu64,
+                0xf47b0384f4d71068u64,
+            ])
+            .into_option()
+            .is_none()
         );
     }
 
