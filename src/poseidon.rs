@@ -2,36 +2,57 @@ use crate::plonk::{Chip as PlonkChip, CircuitBuilder, Wire, WireOrUnconstrained,
 use crate::utils::parse_scalar;
 use anyhow::{Result, anyhow};
 use blstrs::Scalar as BlsScalar;
-use ff::Field;
+use ff::{Field, PrimeField};
+use std::marker::PhantomData;
 use std::sync::LazyLock;
 
-struct Constants<const T: usize> {}
+struct Constants<F: PrimeField, const T: usize> {
+    _data: PhantomData<F>,
+}
 
-impl<const T: usize> Constants<T> {
-    fn decode_round_constants<const N: usize>(bytes: &[u8]) -> [BlsScalar; N] {
-        let num_full_rounds = Self::num_full_rounds();
-        let num_partial_rounds = Self::num_partial_rounds();
+// WARNING: this impl assumes the following are always true:
+//
+//   * F::NUM_BITS == 255
+//   * F::CAPACITY == 254
+//   * T equals 3 or 4
+//
+// If any of those fail the resulting implementation may be INSECURE.
+impl<F: PrimeField, const T: usize> Constants<F, T> {
+    /// The number of full rounds on each side (they're 8 in total).
+    const NUM_FULL_ROUNDS: usize = 4;
+
+    /// The number of partial rounds.
+    const NUM_PARTIAL_ROUNDS: usize = 56;
+
+    /// The total number of rounds.
+    const NUM_TOTAL_ROUNDS: usize = Self::NUM_FULL_ROUNDS * 2 + Self::NUM_PARTIAL_ROUNDS;
+}
+
+impl<F: PrimeField, const T: usize> Constants<F, T> {
+    const REPR_SIZE: usize = ((F::NUM_BITS >> 3) + ((F::NUM_BITS & 7) != 0) as u32) as usize;
+
+    fn decode_round_constants<const N: usize>(bytes: &[u8]) -> [F; N] {
+        assert_eq!(Self::REPR_SIZE, 32);
+        let num_full_rounds = Self::NUM_FULL_ROUNDS;
+        let num_partial_rounds = Self::NUM_PARTIAL_ROUNDS;
         assert_eq!(N, (num_full_rounds * 2 + num_partial_rounds) * T);
         assert_eq!(bytes.len(), N * 32);
-        let mut constants = [BlsScalar::ZERO; N];
+        let mut constants = [F::ZERO; N];
         for i in 0..N {
-            constants[i] =
-                BlsScalar::from_bytes_le(&bytes[(i * 32)..((i + 1) * 32)].try_into().unwrap())
-                    .into_option()
-                    .unwrap();
+            let bytes: [u8; 32] = bytes[(i * 32)..((i + 1) * 32)].try_into().unwrap();
+            let mut repr = F::Repr::default();
+            repr.as_mut().copy_from_slice(&bytes);
+            constants[i] = F::from_repr_vartime(repr).unwrap();
         }
         constants
     }
 }
 
-impl Constants<3> {
-    const FR: usize = 4;
-    const PR: usize = 56;
-
+impl Constants<BlsScalar, 3> {
     fn get_round_constants_impl() -> &'static [BlsScalar; 192] {
         static ROUND_CONSTANTS: LazyLock<[BlsScalar; 192]> = LazyLock::new(|| {
             let bytes = include_bytes!("../params/arc_t3_bls12_381.bin");
-            Constants::<3>::decode_round_constants::<192>(bytes)
+            Constants::<BlsScalar, 3>::decode_round_constants::<192>(bytes)
         });
         &*ROUND_CONSTANTS
     }
@@ -71,14 +92,11 @@ impl Constants<3> {
     }
 }
 
-impl Constants<4> {
-    const FR: usize = 4;
-    const PR: usize = 56;
-
+impl Constants<BlsScalar, 4> {
     fn get_round_constants_impl() -> &'static [BlsScalar; 256] {
         static ROUND_CONSTANTS: LazyLock<[BlsScalar; 256]> = LazyLock::new(|| {
             let bytes = include_bytes!("../params/arc_t4_bls12_381.bin");
-            Constants::<4>::decode_round_constants::<256>(bytes)
+            Constants::<BlsScalar, 4>::decode_round_constants::<256>(bytes)
         });
         &*ROUND_CONSTANTS
     }
@@ -136,58 +154,38 @@ impl Constants<4> {
     }
 }
 
-impl<const T: usize> Constants<T> {
-    const fn num_full_rounds() -> usize {
-        match T {
-            3 => Constants::<3>::FR,
-            4 => Constants::<4>::FR,
-            _ => unimplemented!(),
-        }
-    }
-
-    const fn num_partial_rounds() -> usize {
-        match T {
-            3 => Constants::<3>::PR,
-            4 => Constants::<4>::PR,
-            _ => unimplemented!(),
-        }
-    }
-
-    const fn num_total_rounds() -> usize {
-        Self::num_full_rounds() * 2 + Self::num_partial_rounds()
-    }
-
+impl<const T: usize> Constants<BlsScalar, T> {
     fn get_round_constants() -> &'static [BlsScalar] {
         match T {
-            3 => Constants::<3>::get_round_constants_impl(),
-            4 => Constants::<4>::get_round_constants_impl(),
+            3 => Constants::<BlsScalar, 3>::get_round_constants_impl(),
+            4 => Constants::<BlsScalar, 4>::get_round_constants_impl(),
             _ => unimplemented!(),
         }
     }
 
     fn get_external_matrix() -> &'static [BlsScalar] {
         match T {
-            3 => Constants::<3>::get_external_matrix_impl(),
-            4 => Constants::<4>::get_external_matrix_impl(),
+            3 => Constants::<BlsScalar, 3>::get_external_matrix_impl(),
+            4 => Constants::<BlsScalar, 4>::get_external_matrix_impl(),
             _ => unimplemented!(),
         }
     }
 
     fn get_internal_matrix() -> &'static [BlsScalar] {
         match T {
-            3 => Constants::<3>::get_internal_matrix_impl(),
-            4 => Constants::<4>::get_internal_matrix_impl(),
+            3 => Constants::<BlsScalar, 3>::get_internal_matrix_impl(),
+            4 => Constants::<BlsScalar, 4>::get_internal_matrix_impl(),
             _ => unimplemented!(),
         }
     }
 }
 
-fn sbox(x: BlsScalar) -> BlsScalar {
+fn sbox<F: PrimeField>(x: F) -> F {
     x.square().square() * x
 }
 
-fn linear<const T: usize>(matrix: &[BlsScalar], state: [BlsScalar; T]) -> [BlsScalar; T] {
-    let mut result = [BlsScalar::ZERO; T];
+fn linear<F: PrimeField, const T: usize>(matrix: &[F], state: [F; T]) -> [F; T] {
+    let mut result = [F::ZERO; T];
     for i in 0..T {
         for j in 0..T {
             result[i] += matrix[i * T + j] * state[j];
@@ -196,22 +194,22 @@ fn linear<const T: usize>(matrix: &[BlsScalar], state: [BlsScalar; T]) -> [BlsSc
     result
 }
 
-fn external_linear<const T: usize>(state: [BlsScalar; T]) -> [BlsScalar; T] {
-    linear::<T>(Constants::<T>::get_external_matrix(), state)
+fn external_linear<F: PrimeField, const T: usize>(state: [F; T]) -> [F; T] {
+    linear::<F, T>(Constants::<F, T>::get_external_matrix(), state)
 }
 
-fn internal_linear<const T: usize>(state: [BlsScalar; T]) -> [BlsScalar; T] {
-    linear::<T>(Constants::<T>::get_internal_matrix(), state)
+fn internal_linear<F: PrimeField, const T: usize>(state: [F; T]) -> [F; T] {
+    linear::<F, T>(Constants::<F, T>::get_internal_matrix(), state)
 }
 
-fn permutation<const T: usize>(mut state: [BlsScalar; T]) -> [BlsScalar; T] {
-    let num_full_rounds = Constants::<T>::num_full_rounds();
-    let num_partial_rounds = Constants::<T>::num_partial_rounds();
-    let num_total_rounds = Constants::<T>::num_total_rounds();
+fn permutation<F: PrimeField, const T: usize>(mut state: [F; T]) -> [F; T] {
+    let num_full_rounds = Constants::<F, T>::num_full_rounds();
+    let num_partial_rounds = Constants::<F, T>::num_partial_rounds();
+    let num_total_rounds = Constants::<F, T>::num_total_rounds();
 
-    let c = Constants::<T>::get_round_constants();
+    let c = Constants::<F, T>::get_round_constants();
 
-    state = external_linear::<T>(state);
+    state = external_linear::<F, T>(state);
 
     for r in 0..num_full_rounds {
         for i in 0..T {
@@ -242,14 +240,14 @@ fn permutation<const T: usize>(mut state: [BlsScalar; T]) -> [BlsScalar; T] {
     state
 }
 
-fn hash<const T: usize>(inputs: &[BlsScalar]) -> BlsScalar {
+fn hash<F: PrimeField, const T: usize>(inputs: &[F]) -> F {
     assert!(!inputs.is_empty());
-    let mut state = [BlsScalar::ZERO; T];
+    let mut state = [F::ZERO; T];
     for chunk in inputs.chunks(T - 1) {
         for i in 0..chunk.len() {
             state[i] += chunk[i];
         }
-        state = permutation::<T>(state);
+        state = permutation::<F, T>(state);
     }
     state[0]
 }
@@ -261,7 +259,7 @@ fn hash<const T: usize>(inputs: &[BlsScalar]) -> BlsScalar {
 /// Our choice of capacity=1 warrants 128-bit security, while our choice of rate=2 makes this hash
 /// optimal for SNARKing binary Merkle proofs.
 pub fn hash_t3(inputs: &[BlsScalar]) -> BlsScalar {
-    hash::<3>(inputs)
+    hash::<BlsScalar, 3>(inputs)
 }
 
 /// Poseidon hash with x^5 S-box and T=4 (rate=3, capacity=1).
@@ -271,7 +269,7 @@ pub fn hash_t3(inputs: &[BlsScalar]) -> BlsScalar {
 /// Our choice of capacity=1 warrants 128-bit security, while our choice of rate=3 makes this hash
 /// optimal for SNARKing ternary Merkle proofs.
 pub fn hash_t4(inputs: &[BlsScalar]) -> BlsScalar {
-    hash::<4>(inputs)
+    hash::<BlsScalar, 4>(inputs)
 }
 
 /// PLONK chip for our Poseidon hash instance (see the `hash` function above for the exact
@@ -371,7 +369,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         builder: &mut CircuitBuilder,
         state: [Option<Wire>; T],
     ) -> [Wire; T] {
-        let m = Constants::<4>::get_external_matrix();
+        let m = Constants::<BlsScalar, 4>::get_external_matrix();
         std::array::from_fn(|i| {
             let lhs = builder.add_linear_combination_gate(
                 m[i * T + 0],
@@ -394,7 +392,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness: &mut Witness,
         state: [WireOrUnconstrained; T],
     ) -> [Wire; T] {
-        let m = Constants::<4>::get_external_matrix();
+        let m = Constants::<BlsScalar, 4>::get_external_matrix();
         std::array::from_fn(|i| {
             let lhs = witness.combine(m[i * T + 0], state[0].into(), m[i * T + 1], state[1].into());
             let rhs = witness.combine(m[i * T + 2], state[2].into(), m[i * T + 3], state[3].into());
@@ -457,7 +455,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let lhs = builder.add_sum_gate(state[0].into(), state[1].into());
         let rhs = builder.add_sum_gate(state[2].into(), state[3].into());
         let sum = builder.add_sum_gate(lhs.into(), rhs.into());
-        let m = Constants::<4>::get_internal_matrix();
+        let m = Constants::<BlsScalar, 4>::get_internal_matrix();
         std::array::from_fn(|i| {
             builder.add_linear_combination_gate(
                 m[i * 5] - BlsScalar::from(1),
@@ -472,7 +470,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         let lhs = witness.add(state[0].into(), state[1].into());
         let rhs = witness.add(state[2].into(), state[3].into());
         let sum = witness.add(lhs.into(), rhs.into());
-        let m = Constants::<4>::get_internal_matrix();
+        let m = Constants::<BlsScalar, 4>::get_internal_matrix();
         std::array::from_fn(|i| {
             witness.combine(
                 m[i * 5] - BlsScalar::from(1),
@@ -505,7 +503,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         state: [Wire; T],
         r: usize,
     ) -> [Wire; T] {
-        let c = Constants::<T>::get_round_constants();
+        let c = Constants::<BlsScalar, T>::get_round_constants();
         let mut state: [Wire; T] =
             std::array::from_fn(|i| builder.add_sum_with_const_gate(Some(state[i]), c[r * T + i]));
         for i in 0..T {
@@ -515,7 +513,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     }
 
     fn witness_full_round(&self, witness: &mut Witness, state: [Wire; T], r: usize) -> [Wire; T] {
-        let c = Constants::<T>::get_round_constants();
+        let c = Constants::<BlsScalar, T>::get_round_constants();
         let mut state: [Wire; T] = std::array::from_fn(|i| {
             witness.add_const(WireOrUnconstrained::Wire(state[i]), c[r * T + i].into())
         });
@@ -531,7 +529,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         mut state: [Wire; T],
         r: usize,
     ) -> [Wire; T] {
-        let c = Constants::<T>::get_round_constants();
+        let c = Constants::<BlsScalar, T>::get_round_constants();
         state[0] = builder.add_sum_with_const_gate(Some(state[0]), c[r * T]);
         state[0] = self.build_sbox(builder, state[0]);
         self.build_internal_linear(builder, state)
@@ -543,7 +541,7 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         mut state: [Wire; T],
         r: usize,
     ) -> [Wire; T] {
-        let c = Constants::<T>::get_round_constants();
+        let c = Constants::<BlsScalar, T>::get_round_constants();
         state[0] = witness.add_const(WireOrUnconstrained::Wire(state[0]), c[r * T].into());
         state[0] = self.witness_sbox(witness, state[0]);
         self.witness_internal_linear(witness, state)
@@ -554,8 +552,8 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         builder: &mut CircuitBuilder,
         state: [Option<Wire>; T],
     ) -> [Wire; T] {
-        let num_full_rounds = Constants::<T>::num_full_rounds();
-        let num_partial_rounds = Constants::<T>::num_partial_rounds();
+        let num_full_rounds = Constants::<BlsScalar, T>::NUM_FULL_ROUNDS;
+        let num_partial_rounds = Constants::<BlsScalar, T>::NUM_PARTIAL_ROUNDS;
         let mut state = self.build_external_linear(builder, state);
         for i in 0..num_full_rounds {
             state = self.build_full_round(builder, state, i);
@@ -574,8 +572,8 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness: &mut Witness,
         state: [WireOrUnconstrained; T],
     ) -> [Wire; T] {
-        let num_full_rounds = Constants::<T>::num_full_rounds();
-        let num_partial_rounds = Constants::<T>::num_partial_rounds();
+        let num_full_rounds = Constants::<BlsScalar, T>::NUM_FULL_ROUNDS;
+        let num_partial_rounds = Constants::<BlsScalar, T>::NUM_PARTIAL_ROUNDS;
         let mut state = self.witness_external_linear(witness, state);
         for i in 0..num_full_rounds {
             state = self.witness_full_round(witness, state, i);
@@ -645,7 +643,7 @@ mod tests {
     #[test]
     fn test_permutation_t3() {
         assert_eq!(
-            permutation::<3>([0.into(), 1.into(), 2.into()]),
+            permutation::<BlsScalar, 3>([0.into(), 1.into(), 2.into()]),
             [
                 parse_scalar("0x1b152349b1950b6a8ca75ee4407b6e26ca5cca5650534e56ef3fd45761fbf5f0"),
                 parse_scalar("0x4c5793c87d51bdc2c08a32108437dc0000bd0275868f09ebc5f36919af5b3891"),
@@ -657,7 +655,7 @@ mod tests {
     #[test]
     fn test_permutation_t4() {
         assert_eq!(
-            permutation::<4>([0.into(), 1.into(), 2.into(), 3.into()]),
+            permutation::<BlsScalar, 4>([0.into(), 1.into(), 2.into(), 3.into()]),
             [
                 parse_scalar("0x28ff6c4edf9768c08ae26290487e93449cc8bc155fc2fad92a344adceb3ada6d"),
                 parse_scalar("0x0e56f2b6fad25075aa93560185b70e2b180ed7e269159c507c288b6747a0db2d"),
@@ -751,7 +749,7 @@ mod tests {
         inputs: [BlsScalar; I],
         expected_circuit_size: usize,
     ) {
-        let result = hash::<T>(&inputs);
+        let result = hash::<BlsScalar, T>(&inputs);
         let mut builder = CircuitBuilder::default();
         let chip = Chip::<T, I>::default();
         let input_wires = inputs.map(|input| builder.add_const_gate(input));
@@ -845,7 +843,7 @@ mod tests {
         inputs: [BlsScalar; I],
         expected_circuit_size: usize,
     ) {
-        let result = hash::<T>(&inputs);
+        let result = hash::<BlsScalar, T>(&inputs);
         let mut builder = CircuitBuilder::default();
         let chip = Chip::<T, I>::default();
         let result_wire = chip
