@@ -587,7 +587,7 @@ impl ConditionallySelectable for Scalar {
     }
 }
 
-impl ff::Field for Scalar {
+impl Field for Scalar {
     const ZERO: Self = Self(0, 0, 0, 0);
 
     const ONE: Self = Self(
@@ -629,7 +629,7 @@ impl ff::Field for Scalar {
     }
 }
 
-impl ff::PrimeField for Scalar {
+impl PrimeField for Scalar {
     type Repr = [u8; 32];
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {

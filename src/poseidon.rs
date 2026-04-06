@@ -30,7 +30,7 @@ impl Constants<3> {
 
     fn get_round_constants_impl() -> &'static [Scalar; 192] {
         static ROUND_CONSTANTS: LazyLock<[Scalar; 192]> = LazyLock::new(|| {
-            let bytes = include_bytes!("../params/arc_t3.bin");
+            let bytes = include_bytes!("../params/arc_t3_bls12_381.bin");
             Constants::<3>::decode_round_constants::<192>(bytes)
         });
         &*ROUND_CONSTANTS
@@ -77,7 +77,7 @@ impl Constants<4> {
 
     fn get_round_constants_impl() -> &'static [Scalar; 256] {
         static ROUND_CONSTANTS: LazyLock<[Scalar; 256]> = LazyLock::new(|| {
-            let bytes = include_bytes!("../params/arc_t4.bin");
+            let bytes = include_bytes!("../params/arc_t4_bls12_381.bin");
             Constants::<4>::decode_round_constants::<256>(bytes)
         });
         &*ROUND_CONSTANTS
