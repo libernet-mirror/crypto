@@ -18,6 +18,11 @@ pub trait Config<F: PrimeField, const T: usize> {
     /// Returns the total number of rounds.
     fn num_total_rounds() -> usize;
 
+    /// Applies an optimal S-box for this field.
+    ///
+    /// For BLS12-381 and BlueSky the S-Box is x^5.
+    fn sbox(x: F) -> F;
+
     /// Returns the constants of the ARC layer stored as a flat array, row-first.
     fn get_round_constants() -> &'static [F];
 
@@ -26,6 +31,15 @@ pub trait Config<F: PrimeField, const T: usize> {
 
     /// Returns the constants of the internal matrix stored as a flat array, row-first.
     fn get_internal_matrix() -> &'static [F];
+}
+
+/// Standard x^5 S-box.
+///
+/// WARNING: this is suitable for BLS12-381 and BlueSky but may not be suitable for other fields.
+/// The general requirement is that `F::MAX % 5 != 0`, otherwise this S-box is not a bijection and
+/// the resulting Poseidon2 implementation is insecure.
+fn sbox5<F: PrimeField>(x: F) -> F {
+    x.square().square() * x
 }
 
 /// Helper function to decode a binary file of packed 256-bit constants.
@@ -56,6 +70,10 @@ impl Config<BlsScalar, 3> for BlsConfig3 {
 
     fn num_total_rounds() -> usize {
         64
+    }
+
+    fn sbox(x: BlsScalar) -> BlsScalar {
+        sbox5(x)
     }
 
     fn get_round_constants() -> &'static [BlsScalar] {
@@ -96,6 +114,10 @@ impl Config<BlsScalar, 4> for BlsConfig4 {
 
     fn num_total_rounds() -> usize {
         64
+    }
+
+    fn sbox(x: BlsScalar) -> BlsScalar {
+        sbox5(x)
     }
 
     fn get_round_constants() -> &'static [BlsScalar] {
@@ -150,6 +172,10 @@ impl<const T: usize> Config<BlsScalar, T> for BlsConfig<T> {
         }
     }
 
+    fn sbox(x: BlsScalar) -> BlsScalar {
+        sbox5(x)
+    }
+
     fn get_round_constants() -> &'static [BlsScalar] {
         match T {
             3 => BlsConfig3::get_round_constants(),
@@ -173,10 +199,6 @@ impl<const T: usize> Config<BlsScalar, T> for BlsConfig<T> {
             _ => unimplemented!(),
         }
     }
-}
-
-fn sbox<F: PrimeField>(x: F) -> F {
-    x.square().square() * x
 }
 
 fn linear<F: PrimeField, const T: usize>(matrix: &[F], state: [F; T]) -> [F; T] {
@@ -211,14 +233,14 @@ fn permutation<C: Config<F, T>, F: PrimeField, const T: usize>(mut state: [F; T]
             state[i] += c[r * T + i];
         }
         for i in 0..T {
-            state[i] = sbox(state[i]);
+            state[i] = C::sbox(state[i]);
         }
         state = external_linear::<C, F, T>(state);
     }
 
     for r in num_full_rounds..(num_full_rounds + num_partial_rounds) {
         state[0] += c[r * T];
-        state[0] = sbox(state[0]);
+        state[0] = C::sbox(state[0]);
         state = internal_linear::<C, F, T>(state);
     }
 
@@ -227,7 +249,7 @@ fn permutation<C: Config<F, T>, F: PrimeField, const T: usize>(mut state: [F; T]
             state[i] += c[r * T + i];
         }
         for i in 0..T {
-            state[i] = sbox(state[i]);
+            state[i] = C::sbox(state[i]);
         }
         state = external_linear::<C, F, T>(state);
     }
@@ -235,6 +257,7 @@ fn permutation<C: Config<F, T>, F: PrimeField, const T: usize>(mut state: [F; T]
     state
 }
 
+/// Generic Poseidon2 implementation over the prime field `F` with state size `T`.
 fn hash<C: Config<F, T>, F: PrimeField, const T: usize>(inputs: &[F]) -> F {
     assert!(!inputs.is_empty());
     let mut state = [F::ZERO; T];
@@ -247,9 +270,7 @@ fn hash<C: Config<F, T>, F: PrimeField, const T: usize>(inputs: &[F]) -> F {
     state[0]
 }
 
-/// Poseidon hash with x^5 S-box and T=3 (rate=2, capacity=1).
-///
-/// The x^5 S-box is optimal for BlueSky and BLS12-381.
+/// Poseidon hash over BLS12-381 T=3 (rate=2, capacity=1).
 ///
 /// Our choice of capacity=1 warrants 128-bit security, while our choice of rate=2 makes this hash
 /// optimal for SNARKing binary Merkle proofs.
@@ -257,9 +278,7 @@ pub fn hash_t3(inputs: &[BlsScalar]) -> BlsScalar {
     hash::<BlsConfig3, BlsScalar, 3>(inputs)
 }
 
-/// Poseidon hash with x^5 S-box and T=4 (rate=3, capacity=1).
-///
-/// The x^5 S-box is optimal for BlueSky and BLS12-381.
+/// Poseidon hash over BLS12-381 T=4 (rate=3, capacity=1).
 ///
 /// Our choice of capacity=1 warrants 128-bit security, while our choice of rate=3 makes this hash
 /// optimal for SNARKing ternary Merkle proofs.
