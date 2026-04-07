@@ -1,5 +1,8 @@
 use anyhow::Context;
-use ff::{Field, PrimeField};
+use ff::{
+    Field, PrimeField,
+    derive::{adc, mac, sbb},
+};
 use primitive_types::{U256, U512};
 use std::cmp::Ordering;
 use std::fmt::Debug;
@@ -12,31 +15,43 @@ use subtle::{
     CtOption,
 };
 
+#[inline(always)]
+fn add(a: u64, b: u64) -> (u64, u64) {
+    let sum = (a as u128) + (b as u128);
+    return (sum as u64, (sum >> 64) as u64);
+}
+
+#[inline(always)]
+fn sub(a: u64, b: u64) -> (u64, u64) {
+    let ret = (a as u128).wrapping_sub(b as u128);
+    (ret as u64, (ret >> 64) as u64)
+}
+
 /// Describes a prime field with a (3^T)-th root of unity.
-pub trait TernaryRootOfUnity: PrimeField {
+pub trait ThreeAdicRootOfUnity: PrimeField {
     /// The 3-adicity of the field.
     const T: u32;
 
     /// The root of unity, a number w such that w^(3^T) = 1.
-    const TERNARY_ROOT_OF_UNITY: Self;
+    const THREE_ADIC_ROOT_OF_UNITY: Self;
 
     /// The inverse of the root of unity.
-    const TERNARY_ROOT_OF_UNITY_INV: Self;
+    const THREE_ADIC_ROOT_OF_UNITY_INV: Self;
 }
 
 /// The prime order of the BlueSky field stored as four 64-bit limbs in little endian order.
 pub const MODULUS: [u64; 4] = [
     0x0000000000000001u64,
-    0x0A30000000000000u64,
-    0x482926FEA7B9BA96u64,
-    0x7FFFFFBADB0AD87Au64,
+    0x0a30000000000000u64,
+    0x482926fea7b9ba96u64,
+    0x7fffffbadb0ad87au64,
 ];
 
 /// A scalar over the BlueSky prime field.
 ///
 /// The prime order of the field is:
 ///
-///   p = 0x7FFFFFBADB0AD87A482926FEA7B9BA960A300000000000000000000000000001
+///   p = 0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000001
 ///
 /// This field is well-suited for use in both binary and ternary FRI because it has a large 2- and
 /// 3-adicity: p-1 is divided by both 2^116 and 3^72, supporting polynomials of extremely high
@@ -44,23 +59,23 @@ pub const MODULUS: [u64; 4] = [
 ///
 /// All our scalars are stored in Montgomery form with the four limbs stored in little-endian order.
 #[derive(Default, Copy, Clone, PartialEq, Eq)]
-struct Scalar(u64, u64, u64, u64);
+pub struct Scalar(u64, u64, u64, u64);
 
 impl Scalar {
     /// The largest value representable in the field, ie. p-1.
     pub const MAX: Self = Self(
         0x0000000000000003u64,
-        0x1E90000000000000u64,
-        0xD87B74FBF72D2FC2u64,
-        0x7FFFFF309120896Eu64,
+        0x1e90000000000000u64,
+        0xd87b74fbf72d2fc2u64,
+        0x7fffff309120896eu64,
     );
 
     /// The raw (non-Montgomery) little-endian representation of `MAX`.
     const MAX_RAW: Self = Self(
         0x0000000000000000u64,
-        0x0A30000000000000u64,
-        0x482926FEA7B9BA96u64,
-        0x7FFFFFBADB0AD87Au64,
+        0x0a30000000000000u64,
+        0x482926fea7b9ba96u64,
+        0x7fffffbadb0ad87au64,
     );
 
     /// `MAX` minus one, ie. p-2.
@@ -69,41 +84,44 @@ impl Scalar {
     /// modular inverse of that scalar.
     pub const MAX_MINUS_ONE: Self = Self(
         0x0000000000000005u64,
-        0x32F0000000000000u64,
-        0x68CDC2F946A0A4EEu64,
-        0x7FFFFEA647363A63u64,
+        0x32f0000000000000u64,
+        0x68cdc2f946a0a4eeu64,
+        0x7ffffea647363a63u64,
     );
 
     /// The raw (non-Montgomery) little-endian representation of `MAX_MINUS_ONE`.
     const MAX_MINUS_ONE_RAW: [u64; 4] = [
-        0xFFFFFFFFFFFFFFFFu64,
-        0x0A2FFFFFFFFFFFFFu64,
-        0x482926FEA7B9BA96u64,
-        0x7FFFFFBADB0AD87Au64,
+        0xffffffffffffffffu64,
+        0x0a2fffffffffffffu64,
+        0x482926fea7b9ba96u64,
+        0x7fffffbadb0ad87au64,
     ];
 
     /// R in Montgomery form, ie. R^2 mod p.
     pub const R: Self = Self(
-        0x51C757662A015C86u64,
-        0xEF82894FBC71B353u64,
-        0x665005C1F6F07F38u64,
-        0x72D8588D20D577D6u64,
+        0x51c757662a015c86u64,
+        0xef82894fbc71b353u64,
+        0x665005c1f6f07f38u64,
+        0x72d8588d20d577d6u64,
     );
 
     const P: [u64; 4] = MODULUS;
-    const P_INV: u64 = 0xFFFFFFFFFFFFFFFFu64;
+
+    const TM1D2: [u64; 4] = [
+        0x4937f53dcdd4b051u64,
+        0xfffdd6d856c3d241u64,
+        0x00000000000003ffu64,
+        0x0000000000000000u64,
+    ];
 
     /// Subtracts p. Assumes no underflow, ie. `self` must be greater than or equal to p.
     ///
     /// Used in several algorithms to bring a value back into the [0, p) range.
     fn subp(&self) -> Self {
-        let (s0, b0) = self.0.overflowing_sub(Self::P[0]);
-        let (s1, b1) = self.1.overflowing_sub(Self::P[1]);
-        let (s1, b2) = s1.overflowing_sub(b0 as u64);
-        let (s2, b3) = self.2.overflowing_sub(Self::P[2]);
-        let (s2, b4) = s2.overflowing_sub((b1 || b2) as u64);
-        let (s3, _) = self.3.overflowing_sub(Self::P[3]);
-        let (s3, _) = s3.overflowing_sub((b3 || b4) as u64);
+        let (s0, b0) = sub(self.0, Self::P[0]);
+        let (s1, b1) = sbb(self.1, Self::P[1], b0);
+        let (s2, b2) = sbb(self.2, Self::P[2], b1);
+        let (s3, _) = sbb(self.3, Self::P[3], b2);
         Self(s0, s1, s2, s3)
     }
 
@@ -116,18 +134,6 @@ impl Scalar {
     fn mul_u64(lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {
         let product = (lhs as u128) * (rhs as u128) + carry as u128;
         (product as u64, (product >> 64) as u64)
-    }
-
-    #[inline(always)]
-    fn add_u64(lhs: u64, rhs: u64) -> (u64, u64) {
-        let (sum, carry) = lhs.overflowing_add(rhs);
-        (sum, carry as u64)
-    }
-
-    #[inline(always)]
-    fn mul_add_u64(a: u64, b: u64, c: u64, carry: u64) -> (u64, u64) {
-        let result = (a as u128) + (b as u128) * (c as u128) + carry as u128;
-        (result as u64, (result >> 64) as u64)
     }
 
     /// Performs Montgomery multiplication using CIOS over 64-bit limbs.
@@ -148,52 +154,52 @@ impl Scalar {
 
         // redc 0
         m = t0.wrapping_neg();
-        (_, carry) = Self::add_u64(t0, m);
-        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
-        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
-        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        (_, carry) = add(t0, m);
+        (t0, carry) = mac(t1, m, Self::P[1], carry);
+        (t1, carry) = mac(t2, m, Self::P[2], carry);
+        (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = t4 + carry;
 
         // row 1
-        (t0, carry) = Self::mul_add_u64(t0, lhs.0, rhs.1, 0);
-        (t1, carry) = Self::mul_add_u64(t1, lhs.1, rhs.1, carry);
-        (t2, carry) = Self::mul_add_u64(t2, lhs.2, rhs.1, carry);
-        (t3, t4) = Self::mul_add_u64(t3, lhs.3, rhs.1, carry);
+        (t0, carry) = mac(t0, lhs.0, rhs.1, 0);
+        (t1, carry) = mac(t1, lhs.1, rhs.1, carry);
+        (t2, carry) = mac(t2, lhs.2, rhs.1, carry);
+        (t3, t4) = mac(t3, lhs.3, rhs.1, carry);
 
         // redc 1
         m = t0.wrapping_neg();
-        (_, carry) = Self::add_u64(t0, m);
-        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
-        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
-        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        (_, carry) = add(t0, m);
+        (t0, carry) = mac(t1, m, Self::P[1], carry);
+        (t1, carry) = mac(t2, m, Self::P[2], carry);
+        (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = t4 + carry;
 
         // row 2
-        (t0, carry) = Self::mul_add_u64(t0, lhs.0, rhs.2, 0);
-        (t1, carry) = Self::mul_add_u64(t1, lhs.1, rhs.2, carry);
-        (t2, carry) = Self::mul_add_u64(t2, lhs.2, rhs.2, carry);
-        (t3, t4) = Self::mul_add_u64(t3, lhs.3, rhs.2, carry);
+        (t0, carry) = mac(t0, lhs.0, rhs.2, 0);
+        (t1, carry) = mac(t1, lhs.1, rhs.2, carry);
+        (t2, carry) = mac(t2, lhs.2, rhs.2, carry);
+        (t3, t4) = mac(t3, lhs.3, rhs.2, carry);
 
         // redc 2
         m = t0.wrapping_neg();
-        (_, carry) = Self::add_u64(t0, m);
-        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
-        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
-        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        (_, carry) = add(t0, m);
+        (t0, carry) = mac(t1, m, Self::P[1], carry);
+        (t1, carry) = mac(t2, m, Self::P[2], carry);
+        (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = t4 + carry;
 
         // row 3
-        (t0, carry) = Self::mul_add_u64(t0, lhs.0, rhs.3, 0);
-        (t1, carry) = Self::mul_add_u64(t1, lhs.1, rhs.3, carry);
-        (t2, carry) = Self::mul_add_u64(t2, lhs.2, rhs.3, carry);
-        (t3, t4) = Self::mul_add_u64(t3, lhs.3, rhs.3, carry);
+        (t0, carry) = mac(t0, lhs.0, rhs.3, 0);
+        (t1, carry) = mac(t1, lhs.1, rhs.3, carry);
+        (t2, carry) = mac(t2, lhs.2, rhs.3, carry);
+        (t3, t4) = mac(t3, lhs.3, rhs.3, carry);
 
         // redc 3
         m = t0.wrapping_neg();
-        (_, carry) = Self::add_u64(t0, m);
-        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
-        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
-        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        (_, carry) = add(t0, m);
+        (t0, carry) = mac(t1, m, Self::P[1], carry);
+        (t1, carry) = mac(t2, m, Self::P[2], carry);
+        (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = t4 + carry;
 
         let result = Self(t0, t1, t2, t3);
@@ -215,34 +221,34 @@ impl Scalar {
 
         // redc 0
         m = t0.wrapping_neg();
-        (_, carry) = Self::add_u64(t0, m);
-        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
-        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
-        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        (_, carry) = add(t0, m);
+        (t0, carry) = mac(t1, m, Self::P[1], carry);
+        (t1, carry) = mac(t2, m, Self::P[2], carry);
+        (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = carry;
 
         // redc 1
         m = t0.wrapping_neg();
-        (_, carry) = Self::add_u64(t0, m);
-        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
-        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
-        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        (_, carry) = add(t0, m);
+        (t0, carry) = mac(t1, m, Self::P[1], carry);
+        (t1, carry) = mac(t2, m, Self::P[2], carry);
+        (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = carry;
 
         // redc 2
         m = t0.wrapping_neg();
-        (_, carry) = Self::add_u64(t0, m);
-        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
-        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
-        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        (_, carry) = add(t0, m);
+        (t0, carry) = mac(t1, m, Self::P[1], carry);
+        (t1, carry) = mac(t2, m, Self::P[2], carry);
+        (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = carry;
 
         // redc 3
         m = t0.wrapping_neg();
-        (_, carry) = Self::add_u64(t0, m);
-        (t0, carry) = Self::mul_add_u64(t1, m, Self::P[1], carry);
-        (t1, carry) = Self::mul_add_u64(t2, m, Self::P[2], carry);
-        (t2, carry) = Self::mul_add_u64(t3, m, Self::P[3], carry);
+        (_, carry) = add(t0, m);
+        (t0, carry) = mac(t1, m, Self::P[1], carry);
+        (t1, carry) = mac(t2, m, Self::P[2], carry);
+        (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = carry;
 
         let result = Self(t0, t1, t2, t3);
@@ -401,13 +407,10 @@ impl Add<&Scalar> for Scalar {
     type Output = Self;
 
     fn add(self, rhs: &Self) -> Self::Output {
-        let (r0, c0) = self.0.overflowing_add(rhs.0);
-        let (r1, c1) = self.1.overflowing_add(rhs.1);
-        let (r1, c2) = r1.overflowing_add(c0 as u64);
-        let (r2, c3) = self.2.overflowing_add(rhs.2);
-        let (r2, c4) = r2.overflowing_add((c1 || c2) as u64);
-        let (r3, _) = self.3.overflowing_add(rhs.3);
-        let (r3, _) = r3.overflowing_add((c3 || c4) as u64);
+        let (r0, c0) = add(self.0, rhs.0);
+        let (r1, c1) = adc(self.1, rhs.1, c0);
+        let (r2, c2) = adc(self.2, rhs.2, c1);
+        let (r3, _) = adc(self.3, rhs.3, c2);
         let result = Self(r0, r1, r2, r3);
         match result.cmp_raw(&Self::MAX_RAW) {
             Ordering::Greater => result.subp(),
@@ -440,24 +443,17 @@ impl Sub<&Scalar> for Scalar {
     type Output = Self;
 
     fn sub(self, rhs: &Self) -> Self::Output {
-        let (r0, b0) = self.0.overflowing_sub(rhs.0);
-        let (r1, b1) = self.1.overflowing_sub(rhs.1);
-        let (r1, b2) = r1.overflowing_sub(b0 as u64);
-        let (r2, b3) = self.2.overflowing_sub(rhs.2);
-        let (r2, b4) = r2.overflowing_sub((b1 || b2) as u64);
-        let (r3, b5) = self.3.overflowing_sub(rhs.3);
-        let (r3, b6) = r3.overflowing_sub((b3 || b4) as u64);
-        let underflow = b5 || b6;
-        if !underflow {
+        let (r0, b0) = sub(self.0, rhs.0);
+        let (r1, b1) = sbb(self.1, rhs.1, b0);
+        let (r2, b2) = sbb(self.2, rhs.2, b1);
+        let (r3, b3) = sbb(self.3, rhs.3, b2);
+        if b3 == 0 {
             return Self(r0, r1, r2, r3);
         }
-        let (s0, c0) = r0.overflowing_add(Self::P[0]);
-        let (s1, c1) = r1.overflowing_add(Self::P[1]);
-        let (s1, c2) = s1.overflowing_add(c0 as u64);
-        let (s2, c3) = r2.overflowing_add(Self::P[2]);
-        let (s2, c4) = s2.overflowing_add((c1 || c2) as u64);
-        let (s3, _) = r3.overflowing_add(Self::P[3]);
-        let (s3, _) = s3.overflowing_add((c3 || c4) as u64);
+        let (s0, c0) = add(r0, Self::P[0]);
+        let (s1, c1) = adc(r1, Self::P[1], c0);
+        let (s2, c2) = adc(r2, Self::P[2], c1);
+        let (s3, _) = adc(r3, Self::P[3], c2);
         Self(s0, s1, s2, s3)
     }
 }
@@ -489,13 +485,10 @@ impl Neg for Scalar {
         if self.is_zero_vartime() {
             return self;
         }
-        let (r0, b0) = Self::P[0].overflowing_sub(self.0);
-        let (r1, b1) = Self::P[1].overflowing_sub(self.1);
-        let (r1, b2) = r1.overflowing_sub(b0 as u64);
-        let (r2, b3) = Self::P[2].overflowing_sub(self.2);
-        let (r2, b4) = r2.overflowing_sub((b1 || b2) as u64);
-        let (r3, _) = Self::P[3].overflowing_sub(self.3);
-        let (r3, _) = r3.overflowing_sub((b3 || b4) as u64);
+        let (r0, b0) = sub(Self::P[0], self.0);
+        let (r1, b1) = sbb(Self::P[1], self.1, b0);
+        let (r2, b2) = sbb(Self::P[2], self.2, b1);
+        let (r3, _) = sbb(Self::P[3], self.3, b2);
         Self(r0, r1, r2, r3)
     }
 }
@@ -587,14 +580,14 @@ impl ConditionallySelectable for Scalar {
     }
 }
 
-impl ff::Field for Scalar {
+impl Field for Scalar {
     const ZERO: Self = Self(0, 0, 0, 0);
 
     const ONE: Self = Self(
-        0xFFFFFFFFFFFFFFFEu64,
-        0xEB9FFFFFFFFFFFFFu64,
-        0x6FADB202B08C8AD3u64,
-        0x0000008A49EA4F0Bu64,
+        0xfffffffffffffffeu64,
+        0xeb9fffffffffffffu64,
+        0x6fadb202b08c8ad3u64,
+        0x0000008a49ea4f0bu64,
     );
 
     fn random(mut rng: impl ecdsa::signature::rand_core::RngCore) -> Self {
@@ -623,13 +616,16 @@ impl ff::Field for Scalar {
         CtOption::new(self.pow(&Self::MAX_MINUS_ONE_RAW), !self.is_zero())
     }
 
+    fn sqrt(&self) -> CtOption<Self> {
+        ff::helpers::sqrt_tonelli_shanks(self, &Self::TM1D2)
+    }
+
     fn sqrt_ratio(num: &Self, div: &Self) -> (Choice, Self) {
-        // TODO
-        todo!()
+        ff::helpers::sqrt_ratio_generic(num, div)
     }
 }
 
-impl ff::PrimeField for Scalar {
+impl PrimeField for Scalar {
     type Repr = [u8; 32];
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
@@ -659,65 +655,65 @@ impl ff::PrimeField for Scalar {
     }
 
     const MODULUS: &'static str =
-        "0x7FFFFFBADB0AD87A482926FEA7B9BA960A300000000000000000000000000001";
+        "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000001";
 
     const NUM_BITS: u32 = 255;
 
     const CAPACITY: u32 = 254;
 
     const TWO_INV: Self = Self(
-        0xFFFFFFFFFFFFFFFFu64,
-        0xF5CFFFFFFFFFFFFFu64,
-        0xB7D6D90158464569u64,
-        0x0000004524F52785u64,
+        0xffffffffffffffffu64,
+        0xf5cfffffffffffffu64,
+        0xb7d6d90158464569u64,
+        0x0000004524f52785u64,
     );
 
     const MULTIPLICATIVE_GENERATOR: Self = Self(
-        0xFFFFFFFFFFFFFFE2u64,
-        0xCE5FFFFFFFFFFFFFu64,
-        0x8B2D6E28583C226Au64,
-        0x0000081A54BAA1ABu64,
+        0xffffffffffffffe2u64,
+        0xce5fffffffffffffu64,
+        0x8b2d6e28583c226au64,
+        0x0000081a54baa1abu64,
     );
 
     const S: u32 = 116;
 
     const ROOT_OF_UNITY: Self = Self(
-        0x414271B88836A3E9u64,
-        0x225DCB814A62145Fu64,
-        0x883E0F615396824Eu64,
-        0x1263FB05D26BDEBAu64,
+        0x414271b88836a3e9u64,
+        0x225dcb814a62145fu64,
+        0x883e0f615396824eu64,
+        0x1263fb05d26bdebau64,
     );
 
     const ROOT_OF_UNITY_INV: Self = Self(
-        0x23B3EEA298DDC101u64,
-        0x0C586CB5E452E0ACu64,
-        0xC9D460676A6DB24Du64,
-        0x66F63F753FB648CFu64,
+        0x23b3eea298ddc101u64,
+        0x0c586cb5e452e0acu64,
+        0xc9d460676a6db24du64,
+        0x66f63f753fb648cfu64,
     );
 
     const DELTA: Self = Self(
-        0x486B9FE587C79584u64,
-        0x63A20C20325A87A4u64,
-        0x8A8EE8F2B8693518u64,
-        0x00F62F997B528845u64,
+        0x486b9fe587c79584u64,
+        0x63a20c20325a87a4u64,
+        0x8a8ee8f2b8693518u64,
+        0x00f62f997b528845u64,
     );
 }
 
-impl TernaryRootOfUnity for Scalar {
+impl ThreeAdicRootOfUnity for Scalar {
     const T: u32 = 72;
 
-    const TERNARY_ROOT_OF_UNITY: Self = Self(
-        0x9314C94DE2611B54u64,
-        0x1BA21F3681B57370u64,
-        0xEE95983972FB1D78u64,
-        0x171185928D540DB8u64,
+    const THREE_ADIC_ROOT_OF_UNITY: Self = Self(
+        0x9314c94de2611b54u64,
+        0x1ba21f3681b57370u64,
+        0xee95983972fb1d78u64,
+        0x171185928d540db8u64,
     );
 
-    const TERNARY_ROOT_OF_UNITY_INV: Self = Self(
-        0x0244D24CB2EBE053u64,
-        0x1B8F468F5DE0B10Fu64,
-        0xFEEE78FCA5107C01u64,
-        0x6A785A15461116AFu64,
+    const THREE_ADIC_ROOT_OF_UNITY_INV: Self = Self(
+        0x0244d24cb2ebe053u64,
+        0x1b8f468f5de0b10fu64,
+        0xfeee78fca5107c01u64,
+        0x6a785a15461116afu64,
     );
 }
 
@@ -782,11 +778,11 @@ mod tests {
         );
         assert_eq!(Scalar::T, 72);
         assert_eq!(
-            format_scalar(Scalar::TERNARY_ROOT_OF_UNITY),
+            format_scalar(Scalar::THREE_ADIC_ROOT_OF_UNITY),
             "0x33b6631e951bde0a85158d1f24777f7df914b50c409fde500cd094b370b08730"
         );
         assert_eq!(
-            format_scalar(Scalar::TERNARY_ROOT_OF_UNITY_INV),
+            format_scalar(Scalar::THREE_ADIC_ROOT_OF_UNITY_INV),
             "0x55d494cccd313cb5c91a992a0cd716a45392da2c38e93c3426415c863938c5fe"
         );
     }
@@ -811,6 +807,7 @@ mod tests {
         assert_eq!(Scalar::CAPACITY, 254);
         assert_eq!(Scalar::TWO_INV, Scalar::from(2).invert().unwrap());
         assert_eq!(Scalar::MULTIPLICATIVE_GENERATOR, 15.into());
+        assert!(Scalar::ROOT_OF_UNITY > Scalar::ONE);
         assert_eq!(
             Scalar::ROOT_OF_UNITY.pow_vartime(
                 Scalar::from(2)
@@ -823,8 +820,9 @@ mod tests {
             Scalar::ROOT_OF_UNITY * Scalar::ROOT_OF_UNITY_INV,
             Scalar::ONE
         );
+        assert!(Scalar::THREE_ADIC_ROOT_OF_UNITY > Scalar::ONE);
         assert_eq!(
-            Scalar::TERNARY_ROOT_OF_UNITY.pow_vartime(
+            Scalar::THREE_ADIC_ROOT_OF_UNITY.pow_vartime(
                 Scalar::from(3)
                     .pow_vartime([Scalar::T as u64, 0, 0, 0])
                     .to_le_u64()
@@ -832,7 +830,7 @@ mod tests {
             Scalar::ONE
         );
         assert_eq!(
-            Scalar::TERNARY_ROOT_OF_UNITY * Scalar::TERNARY_ROOT_OF_UNITY_INV,
+            Scalar::THREE_ADIC_ROOT_OF_UNITY * Scalar::THREE_ADIC_ROOT_OF_UNITY_INV,
             Scalar::ONE
         );
     }
@@ -1004,20 +1002,20 @@ mod tests {
         );
         assert_eq!(
             Scalar::from_le_u64([
-                0x12F64A812FF7B02Eu64,
-                0x1EAA2E32B4F74374u64,
-                0x03DD6B282EECE85Bu64,
-                0x6DEB006CE96C1BECu64,
+                0x12f64a812ff7b02eu64,
+                0x1eaa2e32b4f74374u64,
+                0x03dd6b282eece85bu64,
+                0x6deb006ce96c1becu64,
             ])
             .unwrap(),
             parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
         );
         assert_eq!(
             Scalar::from_le_u64_vartime([
-                0x12F64A812FF7B02Eu64,
-                0x1EAA2E32B4F74374u64,
-                0x03DD6B282EECE85Bu64,
-                0x6DEB006CE96C1BECu64,
+                0x12f64a812ff7b02eu64,
+                0x1eaa2e32b4f74374u64,
+                0x03dd6b282eece85bu64,
+                0x6deb006ce96c1becu64,
             ])
             .unwrap(),
             parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
@@ -1025,9 +1023,9 @@ mod tests {
         assert_eq!(
             Scalar::from_le_u64([
                 0x0000000000000000u64,
-                0x0A30000000000000u64,
-                0x482926FEA7B9BA96u64,
-                0x7FFFFFBADB0AD87Au64,
+                0x0a30000000000000u64,
+                0x482926fea7b9ba96u64,
+                0x7fffffbadb0ad87au64,
             ])
             .unwrap(),
             parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
@@ -1035,9 +1033,9 @@ mod tests {
         assert_eq!(
             Scalar::from_le_u64_vartime([
                 0x0000000000000000u64,
-                0x0A30000000000000u64,
-                0x482926FEA7B9BA96u64,
-                0x7FFFFFBADB0AD87Au64,
+                0x0a30000000000000u64,
+                0x482926fea7b9ba96u64,
+                0x7fffffbadb0ad87au64,
             ])
             .unwrap(),
             parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
@@ -1045,9 +1043,9 @@ mod tests {
         assert!(
             Scalar::from_le_u64([
                 0x0000000000000001u64,
-                0x0A30000000000000u64,
-                0x482926FEA7B9BA96u64,
-                0x7FFFFFBADB0AD87Au64,
+                0x0a30000000000000u64,
+                0x482926fea7b9ba96u64,
+                0x7fffffbadb0ad87au64,
             ])
             .into_option()
             .is_none()
@@ -1055,9 +1053,9 @@ mod tests {
         assert!(
             Scalar::from_le_u64_vartime([
                 0x0000000000000001u64,
-                0x0A30000000000000u64,
-                0x482926FEA7B9BA96u64,
-                0x7FFFFFBADB0AD87Au64,
+                0x0a30000000000000u64,
+                0x482926fea7b9ba96u64,
+                0x7fffffbadb0ad87au64,
             ])
             .is_none()
         );
@@ -1074,10 +1072,10 @@ mod tests {
             parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
                 .to_le_u64(),
             [
-                0x12F64A812FF7B02Eu64,
-                0x1EAA2E32B4F74374u64,
-                0x03DD6B282EECE85Bu64,
-                0x6DEB006CE96C1BECu64,
+                0x12f64a812ff7b02eu64,
+                0x1eaa2e32b4f74374u64,
+                0x03dd6b282eece85bu64,
+                0x6deb006ce96c1becu64,
             ]
         );
         assert_eq!(
@@ -1085,9 +1083,9 @@ mod tests {
                 .to_le_u64(),
             [
                 0x0000000000000000u64,
-                0x0A30000000000000u64,
-                0x482926FEA7B9BA96u64,
-                0x7FFFFFBADB0AD87Au64,
+                0x0a30000000000000u64,
+                0x482926fea7b9ba96u64,
+                0x7fffffbadb0ad87au64,
             ]
         );
     }
@@ -1779,5 +1777,23 @@ mod tests {
         assert_eq!(v * v.invert().unwrap(), Scalar::ONE);
         let v = parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f");
         assert_eq!(v * v.invert().unwrap(), Scalar::ONE);
+    }
+
+    #[test]
+    fn test_sqrt() {
+        assert_eq!(Scalar::ZERO.sqrt().unwrap(), Scalar::ZERO);
+        assert_eq!(Scalar::ONE.sqrt().unwrap(), Scalar::ONE);
+        assert_eq!(Scalar::from(2).sqrt().unwrap().square(), 2.into());
+        assert_eq!(Scalar::from(3).sqrt().unwrap().square(), 3.into());
+        assert_eq!(Scalar::from(4).sqrt().unwrap().square(), 4.into());
+        assert!(Scalar::from(5).sqrt().into_option().is_none());
+        assert!(
+            parse_scalar("0x26f9845e46b8d4a46419673fcd8d6a22df74920c2f1149eb60839d7e3dfbe8ec")
+                .sqrt()
+                .into_option()
+                .is_none()
+        );
+        let v = parse_scalar("0x4dd28128e1cd4cedfb041d4e87476561b8c347877bd4a82687fac6e5d7264156");
+        assert_eq!(v.sqrt().unwrap().square(), v);
     }
 }
