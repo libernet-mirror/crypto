@@ -3,6 +3,7 @@ use crate::utils::parse_scalar;
 use anyhow::{Result, anyhow};
 use blstrs::Scalar as BlsScalar;
 use ff::{Field, PrimeField};
+use primitive_types::U256;
 use std::marker::PhantomData;
 use std::sync::LazyLock;
 
@@ -10,22 +11,48 @@ struct Constants<F: PrimeField, const T: usize> {
     _data: PhantomData<F>,
 }
 
-// WARNING: this impl assumes the following are always true:
+// This impl provides the number of rounds.
+//
+// NOTE: we're assuming the following are always true:
 //
 //   * F::NUM_BITS == 255
 //   * F::CAPACITY == 254
-//   * T equals 3 or 4
+//   * F::MAX is not divisible by 5
 //
-// If any of those fail the resulting implementation may be INSECURE.
+// If any of those failed the resulting implementation would be insecure.
 impl<F: PrimeField, const T: usize> Constants<F, T> {
-    /// The number of full rounds on each side (they're 8 in total).
-    const NUM_FULL_ROUNDS: usize = 4;
+    fn maxf() -> U256 {
+        let bytes = (-F::ONE).to_repr();
+        U256::from_little_endian(bytes.as_ref())
+    }
 
-    /// The number of partial rounds.
-    const NUM_PARTIAL_ROUNDS: usize = 56;
+    #[cfg(debug_assertions)]
+    fn check_assumptions() {
+        assert_eq!(F::NUM_BITS, 255);
+        assert_eq!(F::CAPACITY, 254);
+        assert_ne!(Self::maxf() % U256::from(5), 0.into());
+    }
 
-    /// The total number of rounds.
-    const NUM_TOTAL_ROUNDS: usize = Self::NUM_FULL_ROUNDS * 2 + Self::NUM_PARTIAL_ROUNDS;
+    /// Returns the number of full rounds on each side (they're 8 in total).
+    fn num_full_rounds() -> usize {
+        #[cfg(debug_assertions)]
+        Self::check_assumptions();
+        4
+    }
+
+    /// Returns the number of partial rounds.
+    fn num_partial_rounds() -> usize {
+        #[cfg(debug_assertions)]
+        Self::check_assumptions();
+        56
+    }
+
+    /// Returns the total number of rounds.
+    fn num_total_rounds() -> usize {
+        #[cfg(debug_assertions)]
+        Self::check_assumptions();
+        64
+    }
 }
 
 impl<F: PrimeField, const T: usize> Constants<F, T> {
@@ -33,9 +60,7 @@ impl<F: PrimeField, const T: usize> Constants<F, T> {
 
     fn decode_round_constants<const N: usize>(bytes: &[u8]) -> [F; N] {
         assert_eq!(Self::REPR_SIZE, 32);
-        let num_full_rounds = Self::NUM_FULL_ROUNDS;
-        let num_partial_rounds = Self::NUM_PARTIAL_ROUNDS;
-        assert_eq!(N, (num_full_rounds * 2 + num_partial_rounds) * T);
+        assert_eq!(N, Self::num_total_rounds() * T);
         assert_eq!(bytes.len(), N * 32);
         let mut constants = [F::ZERO; N];
         for i in 0..N {
@@ -254,7 +279,7 @@ fn hash<F: PrimeField, const T: usize>(inputs: &[F]) -> F {
 
 /// Poseidon hash with x^5 S-box and T=3 (rate=2, capacity=1).
 ///
-/// The x^5 S-box is optimal for BLS12-381.
+/// The x^5 S-box is optimal for BlueSky and BLS12-381.
 ///
 /// Our choice of capacity=1 warrants 128-bit security, while our choice of rate=2 makes this hash
 /// optimal for SNARKing binary Merkle proofs.
@@ -264,7 +289,7 @@ pub fn hash_t3(inputs: &[BlsScalar]) -> BlsScalar {
 
 /// Poseidon hash with x^5 S-box and T=4 (rate=3, capacity=1).
 ///
-/// The x^5 S-box is optimal for BLS12-381.
+/// The x^5 S-box is optimal for BlueSky and BLS12-381.
 ///
 /// Our choice of capacity=1 warrants 128-bit security, while our choice of rate=3 makes this hash
 /// optimal for SNARKing ternary Merkle proofs.
@@ -552,8 +577,8 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         builder: &mut CircuitBuilder,
         state: [Option<Wire>; T],
     ) -> [Wire; T] {
-        let num_full_rounds = Constants::<BlsScalar, T>::NUM_FULL_ROUNDS;
-        let num_partial_rounds = Constants::<BlsScalar, T>::NUM_PARTIAL_ROUNDS;
+        let num_full_rounds = Constants::<BlsScalar, T>::num_full_rounds();
+        let num_partial_rounds = Constants::<BlsScalar, T>::num_partial_rounds();
         let mut state = self.build_external_linear(builder, state);
         for i in 0..num_full_rounds {
             state = self.build_full_round(builder, state, i);
@@ -572,8 +597,8 @@ impl<const T: usize, const I: usize> Chip<T, I> {
         witness: &mut Witness,
         state: [WireOrUnconstrained; T],
     ) -> [Wire; T] {
-        let num_full_rounds = Constants::<BlsScalar, T>::NUM_FULL_ROUNDS;
-        let num_partial_rounds = Constants::<BlsScalar, T>::NUM_PARTIAL_ROUNDS;
+        let num_full_rounds = Constants::<BlsScalar, T>::num_full_rounds();
+        let num_partial_rounds = Constants::<BlsScalar, T>::num_partial_rounds();
         let mut state = self.witness_external_linear(witness, state);
         for i in 0..num_full_rounds {
             state = self.witness_full_round(witness, state, i);
