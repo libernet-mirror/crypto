@@ -1,3 +1,4 @@
+use crate::bluesky::Scalar;
 use crate::plonk::{Chip as PlonkChip, CircuitBuilder, Wire, WireOrUnconstrained, Witness};
 use anyhow::{Result, anyhow};
 use blstrs::Scalar as BlsScalar;
@@ -57,9 +58,9 @@ fn decode_constants<F: PrimeField, const N: usize>(bytes: &[u8]) -> [F; N] {
     constants
 }
 
-struct BlsConfig3 {}
+pub struct BlsConfig<const T: usize> {}
 
-impl Config<BlsScalar, 3> for BlsConfig3 {
+impl Config<BlsScalar, 3> for BlsConfig<3> {
     fn num_full_rounds() -> usize {
         4
     }
@@ -101,9 +102,7 @@ impl Config<BlsScalar, 3> for BlsConfig3 {
     }
 }
 
-struct BlsConfig4 {}
-
-impl Config<BlsScalar, 4> for BlsConfig4 {
+impl Config<BlsScalar, 4> for BlsConfig<4> {
     fn num_full_rounds() -> usize {
         4
     }
@@ -145,61 +144,97 @@ impl Config<BlsScalar, 4> for BlsConfig4 {
     }
 }
 
-struct BlsConfig<const T: usize> {}
+pub type BlsConfig3 = BlsConfig<3>;
+pub type BlsConfig4 = BlsConfig<4>;
 
-impl<const T: usize> Config<BlsScalar, T> for BlsConfig<T> {
+pub struct BlueSkyConfig<const T: usize> {}
+
+impl Config<Scalar, 3> for BlueSkyConfig<3> {
     fn num_full_rounds() -> usize {
-        match T {
-            3 => BlsConfig3::num_full_rounds(),
-            4 => BlsConfig4::num_full_rounds(),
-            _ => unimplemented!(),
-        }
+        4
     }
 
     fn num_partial_rounds() -> usize {
-        match T {
-            3 => BlsConfig3::num_partial_rounds(),
-            4 => BlsConfig4::num_partial_rounds(),
-            _ => unimplemented!(),
-        }
+        56
     }
 
     fn num_total_rounds() -> usize {
-        match T {
-            3 => BlsConfig3::num_total_rounds(),
-            4 => BlsConfig4::num_total_rounds(),
-            _ => unimplemented!(),
-        }
+        64
     }
 
-    fn sbox(x: BlsScalar) -> BlsScalar {
+    fn sbox(x: Scalar) -> Scalar {
         sbox5(x)
     }
 
-    fn get_round_constants() -> &'static [BlsScalar] {
-        match T {
-            3 => BlsConfig3::get_round_constants(),
-            4 => BlsConfig4::get_round_constants(),
-            _ => unimplemented!(),
-        }
+    fn get_round_constants() -> &'static [Scalar] {
+        static ROUND_CONSTANTS: LazyLock<[Scalar; 192]> = LazyLock::new(|| {
+            let bytes = include_bytes!("../params/bluesky/arc_t3.bin");
+            decode_constants::<Scalar, 192>(bytes)
+        });
+        &*ROUND_CONSTANTS
     }
 
-    fn get_external_matrix() -> &'static [BlsScalar] {
-        match T {
-            3 => BlsConfig3::get_external_matrix(),
-            4 => BlsConfig4::get_external_matrix(),
-            _ => unimplemented!(),
-        }
+    fn get_external_matrix() -> &'static [Scalar] {
+        static MATRIX: LazyLock<[Scalar; 9]> = LazyLock::new(|| {
+            let bytes = include_bytes!("../params/bluesky/fl_t3.bin");
+            decode_constants::<Scalar, 9>(bytes)
+        });
+        &*MATRIX
     }
 
-    fn get_internal_matrix() -> &'static [BlsScalar] {
-        match T {
-            3 => BlsConfig3::get_internal_matrix(),
-            4 => BlsConfig4::get_internal_matrix(),
-            _ => unimplemented!(),
-        }
+    fn get_internal_matrix() -> &'static [Scalar] {
+        static MATRIX: LazyLock<[Scalar; 9]> = LazyLock::new(|| {
+            let bytes = include_bytes!("../params/bluesky/pl_t3.bin");
+            decode_constants::<Scalar, 9>(bytes)
+        });
+        &*MATRIX
     }
 }
+
+impl Config<Scalar, 4> for BlueSkyConfig<4> {
+    fn num_full_rounds() -> usize {
+        4
+    }
+
+    fn num_partial_rounds() -> usize {
+        56
+    }
+
+    fn num_total_rounds() -> usize {
+        64
+    }
+
+    fn sbox(x: Scalar) -> Scalar {
+        sbox5(x)
+    }
+
+    fn get_round_constants() -> &'static [Scalar] {
+        static ROUND_CONSTANTS: LazyLock<[Scalar; 256]> = LazyLock::new(|| {
+            let bytes = include_bytes!("../params/bluesky/arc_t4.bin");
+            decode_constants::<Scalar, 256>(bytes)
+        });
+        &*ROUND_CONSTANTS
+    }
+
+    fn get_external_matrix() -> &'static [Scalar] {
+        static MATRIX: LazyLock<[Scalar; 16]> = LazyLock::new(|| {
+            let bytes = include_bytes!("../params/bluesky/fl_t4.bin");
+            decode_constants::<Scalar, 16>(bytes)
+        });
+        &*MATRIX
+    }
+
+    fn get_internal_matrix() -> &'static [Scalar] {
+        static MATRIX: LazyLock<[Scalar; 16]> = LazyLock::new(|| {
+            let bytes = include_bytes!("../params/bluesky/pl_t4.bin");
+            decode_constants::<Scalar, 16>(bytes)
+        });
+        &*MATRIX
+    }
+}
+
+pub type BlueSkyConfig3 = BlueSkyConfig<3>;
+pub type BlueSkyConfig4 = BlueSkyConfig<4>;
 
 fn linear<F: PrimeField, const T: usize>(matrix: &[F], state: [F; T]) -> [F; T] {
     let mut result = [F::ZERO; T];
@@ -291,7 +326,10 @@ pub fn hash_t4(inputs: &[BlsScalar]) -> BlsScalar {
 #[derive(Debug, Default)]
 pub struct Chip<const T: usize, const I: usize> {}
 
-impl<const T: usize, const I: usize> Chip<T, I> {
+impl<const T: usize, const I: usize> Chip<T, I>
+where
+    BlsConfig<T>: Config<BlsScalar, T>,
+{
     fn build_absorb_first(
         &self,
         builder: &mut CircuitBuilder,
@@ -603,7 +641,10 @@ impl<const T: usize, const I: usize> Chip<T, I> {
     }
 }
 
-impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I> {
+impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I>
+where
+    BlsConfig<T>: Config<BlsScalar, T>,
+{
     fn build(
         &self,
         builder: &mut CircuitBuilder,
@@ -651,30 +692,73 @@ impl<const T: usize, const I: usize> PlonkChip<I, 1> for Chip<T, I> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::testing::parse_scalar;
+    use crate::utils::testing::parse_scalar as parse_bls_scalar;
     use std::collections::BTreeMap;
 
+    fn parse_scalar(s: &str) -> Scalar {
+        s.parse().unwrap()
+    }
+
     #[test]
-    fn test_permutation_t3() {
+    fn test_permutation_t3_bls12_381() {
         assert_eq!(
             permutation::<BlsConfig3, BlsScalar, 3>([0.into(), 1.into(), 2.into()]),
             [
-                parse_scalar("0x1b152349b1950b6a8ca75ee4407b6e26ca5cca5650534e56ef3fd45761fbf5f0"),
-                parse_scalar("0x4c5793c87d51bdc2c08a32108437dc0000bd0275868f09ebc5f36919af5b3891"),
-                parse_scalar("0x1fc8ed171e67902ca49863159fe5ba6325318843d13976143b8125f08b50dc6b"),
+                parse_bls_scalar(
+                    "0x1b152349b1950b6a8ca75ee4407b6e26ca5cca5650534e56ef3fd45761fbf5f0"
+                ),
+                parse_bls_scalar(
+                    "0x4c5793c87d51bdc2c08a32108437dc0000bd0275868f09ebc5f36919af5b3891"
+                ),
+                parse_bls_scalar(
+                    "0x1fc8ed171e67902ca49863159fe5ba6325318843d13976143b8125f08b50dc6b"
+                ),
             ]
         );
     }
 
     #[test]
-    fn test_permutation_t4() {
+    fn test_permutation_t4_bls12_381() {
         assert_eq!(
             permutation::<BlsConfig4, BlsScalar, 4>([0.into(), 1.into(), 2.into(), 3.into()]),
             [
-                parse_scalar("0x28ff6c4edf9768c08ae26290487e93449cc8bc155fc2fad92a344adceb3ada6d"),
-                parse_scalar("0x0e56f2b6fad25075aa93560185b70e2b180ed7e269159c507c288b6747a0db2d"),
-                parse_scalar("0x6d8196f28da6006bb89b3df94600acdc03d0ba7c2b0f3f4409a54c1db6bf30d0"),
-                parse_scalar("0x07cfb49540ee456cce38b8a7d1a930a57ffc6660737f6589ef184c5e15334e36"),
+                parse_bls_scalar(
+                    "0x28ff6c4edf9768c08ae26290487e93449cc8bc155fc2fad92a344adceb3ada6d"
+                ),
+                parse_bls_scalar(
+                    "0x0e56f2b6fad25075aa93560185b70e2b180ed7e269159c507c288b6747a0db2d"
+                ),
+                parse_bls_scalar(
+                    "0x6d8196f28da6006bb89b3df94600acdc03d0ba7c2b0f3f4409a54c1db6bf30d0"
+                ),
+                parse_bls_scalar(
+                    "0x07cfb49540ee456cce38b8a7d1a930a57ffc6660737f6589ef184c5e15334e36"
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_permutation_t3_bluesky() {
+        assert_eq!(
+            permutation::<BlueSkyConfig3, Scalar, 3>([0.into(), 1.into(), 2.into()]),
+            [
+                parse_scalar("0x65370fb2741e69826dfce65c057df95840cc1ba84e5a2a78d247cd3abbc8d24f"),
+                parse_scalar("0x516d29bd3c593f536011f5cf6f9c7ec0c13b3c1d40b58c6f1adfbea7cef701aa"),
+                parse_scalar("0x2b7ccc54fc2614a044372db43483b62b3044574e2d9e516a7c8162aa2af4b507"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_permutation_t4_bluesky() {
+        assert_eq!(
+            permutation::<BlueSkyConfig4, Scalar, 4>([0.into(), 1.into(), 2.into(), 3.into()]),
+            [
+                parse_scalar("0x21ceb57077b950023adb5c9d1912bac28d9bc3ee5d871f7eff86be4e79b105dc"),
+                parse_scalar("0x37e6b98b05fcc4cf9750887a0a15db2abd4c702ed38f2896c21fd1cf023e2b7c"),
+                parse_scalar("0x5305e6d7d5890c75afe7760351dd000cafe891e8ffb2ba4e62ccd571906901d3"),
+                parse_scalar("0x20e6de3116aec90c3e3ce05db2aeced836a619f61b187c34a054f29df7cfdca0"),
             ]
         );
     }
@@ -683,7 +767,7 @@ mod tests {
     fn test_hash_t3_1() {
         assert_eq!(
             hash_t3(&[42.into()]),
-            parse_scalar("0x3096077a3d12ab01b506e6aceda3c0dda9fe86c329ce2996ee63e1517b729e29")
+            parse_bls_scalar("0x3096077a3d12ab01b506e6aceda3c0dda9fe86c329ce2996ee63e1517b729e29")
         );
     }
 
@@ -691,7 +775,7 @@ mod tests {
     fn test_hash_t3_2() {
         assert_eq!(
             hash_t3(&[1.into(), 2.into()]),
-            parse_scalar("0x70a58720d46a84d195bc875de66ed3ddef47522a7e806ec7a98c0d656517ce74")
+            parse_bls_scalar("0x70a58720d46a84d195bc875de66ed3ddef47522a7e806ec7a98c0d656517ce74")
         );
     }
 
@@ -699,7 +783,7 @@ mod tests {
     fn test_hash_t3_3() {
         assert_eq!(
             hash_t3(&[3.into(), 4.into(), 5.into()]),
-            parse_scalar("0x67497b788437da8141a3580f52a7ece12dbdd8ae1b9efef7dde3cf06cad18b8a")
+            parse_bls_scalar("0x67497b788437da8141a3580f52a7ece12dbdd8ae1b9efef7dde3cf06cad18b8a")
         );
     }
 
@@ -707,7 +791,7 @@ mod tests {
     fn test_hash_t3_4() {
         assert_eq!(
             hash_t3(&[6.into(), 7.into(), 8.into(), 9.into()]),
-            parse_scalar("0x6c1ac173b683ba0f3c743b3ae256f8ed269660e6825d2f41d52a8851bcfe689a")
+            parse_bls_scalar("0x6c1ac173b683ba0f3c743b3ae256f8ed269660e6825d2f41d52a8851bcfe689a")
         );
     }
 
@@ -715,7 +799,7 @@ mod tests {
     fn test_hash_t3_5() {
         assert_eq!(
             hash_t3(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
-            parse_scalar("0x64b7d7fafdefa8e32de1d2c5db35ff3f204c474bba09a1acc41704dafdbf0405")
+            parse_bls_scalar("0x64b7d7fafdefa8e32de1d2c5db35ff3f204c474bba09a1acc41704dafdbf0405")
         );
     }
 
@@ -723,7 +807,7 @@ mod tests {
     fn test_hash_t4_1() {
         assert_eq!(
             hash_t4(&[42.into()]),
-            parse_scalar("0x371862e4591023f4be2dd1b86827e2ef6dac40c430beab9d12344ddeef2a5802")
+            parse_bls_scalar("0x371862e4591023f4be2dd1b86827e2ef6dac40c430beab9d12344ddeef2a5802")
         );
     }
 
@@ -731,7 +815,7 @@ mod tests {
     fn test_hash_t4_2() {
         assert_eq!(
             hash_t4(&[1.into(), 2.into()]),
-            parse_scalar("0x588e95bbff17f8929c7775706570c315fe7db256e96fe213da4e8ffa0587cda8")
+            parse_bls_scalar("0x588e95bbff17f8929c7775706570c315fe7db256e96fe213da4e8ffa0587cda8")
         );
     }
 
@@ -739,7 +823,7 @@ mod tests {
     fn test_hash_t4_3() {
         assert_eq!(
             hash_t4(&[3.into(), 4.into(), 5.into()]),
-            parse_scalar("0x5f5ba9ebadb4641e56a4d98062c1b8d8f6e5dcf0a3e740844f06d5f9237b5eb2")
+            parse_bls_scalar("0x5f5ba9ebadb4641e56a4d98062c1b8d8f6e5dcf0a3e740844f06d5f9237b5eb2")
         );
     }
 
@@ -747,7 +831,7 @@ mod tests {
     fn test_hash_t4_4() {
         assert_eq!(
             hash_t4(&[6.into(), 7.into(), 8.into(), 9.into()]),
-            parse_scalar("0x3e2c69046948fc299380c2b83b1b785c36d9d36df9da6395d03b77927039ba05")
+            parse_bls_scalar("0x3e2c69046948fc299380c2b83b1b785c36d9d36df9da6395d03b77927039ba05")
         );
     }
 
@@ -755,14 +839,16 @@ mod tests {
     fn test_hash_t4_5() {
         assert_eq!(
             hash_t4(&[10.into(), 11.into(), 12.into(), 13.into(), 14.into()]),
-            parse_scalar("0x414a70dcfe4bfeb447008058a293fa5e64e31e3c78ca8441d6fe8886fb0892dc")
+            parse_bls_scalar("0x414a70dcfe4bfeb447008058a293fa5e64e31e3c78ca8441d6fe8886fb0892dc")
         );
     }
 
     fn test_hash_chip<const T: usize, const I: usize>(
         inputs: [BlsScalar; I],
         expected_circuit_size: usize,
-    ) {
+    ) where
+        BlsConfig<T>: Config<BlsScalar, T>,
+    {
         let result = hash::<BlsConfig<T>, BlsScalar, T>(&inputs);
         let mut builder = CircuitBuilder::default();
         let chip = Chip::<T, I>::default();
@@ -856,7 +942,9 @@ mod tests {
     fn test_preimage_chip<const T: usize, const I: usize>(
         inputs: [BlsScalar; I],
         expected_circuit_size: usize,
-    ) {
+    ) where
+        BlsConfig<T>: Config<BlsScalar, T>,
+    {
         let result = hash::<BlsConfig<T>, BlsScalar, T>(&inputs);
         let mut builder = CircuitBuilder::default();
         let chip = Chip::<T, I>::default();

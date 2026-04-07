@@ -59,7 +59,7 @@ pub const MODULUS: [u64; 4] = [
 ///
 /// All our scalars are stored in Montgomery form with the four limbs stored in little-endian order.
 #[derive(Default, Copy, Clone, PartialEq, Eq)]
-struct Scalar(u64, u64, u64, u64);
+pub struct Scalar(u64, u64, u64, u64);
 
 impl Scalar {
     /// The largest value representable in the field, ie. p-1.
@@ -106,7 +106,6 @@ impl Scalar {
     );
 
     const P: [u64; 4] = MODULUS;
-    const P_INV: u64 = 0xffffffffffffffffu64;
 
     const TM1D2: [u64; 4] = [
         0x4937f53dcdd4b051u64,
