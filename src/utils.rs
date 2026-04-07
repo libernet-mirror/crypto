@@ -4,7 +4,7 @@ use curve25519_dalek::{
     Scalar as Scalar25519, edwards::CompressedEdwardsY, edwards::EdwardsPoint as Point25519,
 };
 use ecdsa::elliptic_curve::sec1::{FromEncodedPoint, ToEncodedPoint};
-use ff::PrimeField;
+use ff::{Field, PrimeField};
 use fixed_hash::construct_fixed_hash;
 use group::GroupEncoding;
 use p256::AffinePoint as PointP256;
@@ -21,8 +21,7 @@ pub fn get_random_bytes() -> H512 {
 pub fn h512_to_scalar(h512: H512) -> Scalar {
     static MODULUS: LazyLock<U512> = LazyLock::new(|| Scalar::MODULUS.parse().unwrap());
     let dividend = U512::from_little_endian(h512.as_bytes());
-    let quotient = dividend / *MODULUS;
-    let remainder = dividend - quotient * *MODULUS;
+    let remainder = dividend % *MODULUS;
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(&remainder.to_little_endian()[0..32]);
     Scalar::from_repr_vartime(bytes).unwrap()
@@ -34,8 +33,8 @@ pub fn hash_to_scalar(message: &[u8]) -> Scalar {
     h512_to_scalar(H512::from_slice(hasher.finalize().as_slice()))
 }
 
-pub fn get_random_scalar() -> Scalar {
-    h512_to_scalar(get_random_bytes())
+pub fn get_random_scalar<F: Field>() -> F {
+    F::random(rand_core::OsRng)
 }
 
 pub fn scalar_to_u256(value: Scalar) -> U256 {
@@ -209,6 +208,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bluesky;
     use blstrs::{G1Projective, G2Projective};
     use ff::PrimeField;
     use group::Group;
@@ -248,11 +248,16 @@ mod tests {
         );
     }
 
+    fn test_random_scalar_impl<F: Field>() {
+        assert_ne!(get_random_scalar::<F>(), get_random_scalar::<F>());
+        assert_ne!(get_random_scalar::<F>(), get_random_scalar::<F>());
+        assert_ne!(get_random_scalar::<F>(), get_random_scalar::<F>());
+    }
+
     #[test]
     fn test_random_scalar() {
-        assert_ne!(get_random_scalar(), get_random_scalar());
-        assert_ne!(get_random_scalar(), get_random_scalar());
-        assert_ne!(get_random_scalar(), get_random_scalar());
+        test_random_scalar_impl::<Scalar>();
+        test_random_scalar_impl::<bluesky::Scalar>();
     }
 
     #[test]
@@ -348,28 +353,28 @@ mod tests {
 
     #[test]
     fn test_g1_compression() {
-        let point = G1Projective::generator() * get_random_scalar();
+        let point = G1Projective::generator() * get_random_scalar::<Scalar>();
         let decompressed = decompress_g1(compress_g1(point.into())).unwrap();
         assert_eq!(point, decompressed.into());
     }
 
     #[test]
     fn test_format_g1() {
-        let point = G1Projective::generator() * get_random_scalar();
+        let point = G1Projective::generator() * get_random_scalar::<Scalar>();
         let parsed = parse_g1(format_g1(point.into()).as_str()).unwrap();
         assert_eq!(point, parsed.into());
     }
 
     #[test]
     fn test_g2_compression() {
-        let point = G2Projective::generator() * get_random_scalar();
+        let point = G2Projective::generator() * get_random_scalar::<Scalar>();
         let decompressed = decompress_g2(compress_g2(point.into())).unwrap();
         assert_eq!(point, decompressed.into());
     }
 
     #[test]
     fn test_format_g2() {
-        let point = G2Projective::generator() * get_random_scalar();
+        let point = G2Projective::generator() * get_random_scalar::<Scalar>();
         let parsed = parse_g2(format_g2(point.into()).as_str()).unwrap();
         assert_eq!(point, parsed.into());
     }

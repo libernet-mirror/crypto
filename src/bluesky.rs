@@ -211,6 +211,10 @@ impl Scalar {
 
     /// Performs a Montgomery multiplication by 1, which results in converting from Montgomery form
     /// to raw form.
+    ///
+    /// This is exactly the same as `mont_mul(Scalar(1, 0, 0, 0))` but slightly faster because it
+    /// exploits the fact that we're multiplying by (1, 0, 0, 0), so it skips all "row" phases and
+    /// only performs the "redc" phases.
     fn to_raw(&self) -> Self {
         let mut t0 = self.0;
         let mut t1 = self.1;
@@ -344,19 +348,19 @@ impl Debug for Scalar {
 
 impl std::fmt::Display for Scalar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.to_u256(), f)
+        write!(f, "{:#066x}", self.to_u256())
     }
 }
 
 impl std::fmt::LowerHex for Scalar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::LowerHex::fmt(&self.to_u256(), f)
+        write!(f, "{:#066x}", self.to_u256())
     }
 }
 
 impl std::fmt::UpperHex for Scalar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::UpperHex::fmt(&self.to_u256(), f)
+        write!(f, "{:#066X}", self.to_u256())
     }
 }
 

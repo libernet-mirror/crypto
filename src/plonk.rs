@@ -1,5 +1,5 @@
 use crate::kzg;
-use crate::poly::Polynomial;
+use crate::poly;
 use crate::poseidon;
 use crate::utils;
 use anyhow::{Context, Result, anyhow};
@@ -7,6 +7,8 @@ use blstrs::{G1Affine, G1Projective, Scalar};
 use ff::Field;
 use std::collections::{BTreeMap, BTreeSet, btree_map};
 use std::sync::LazyLock;
+
+type Polynomial = poly::Polynomial<Scalar>;
 
 fn witness_hash_dst() -> Scalar {
     static TAG: LazyLock<Scalar> =
