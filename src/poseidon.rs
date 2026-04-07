@@ -1,5 +1,4 @@
 use crate::plonk::{Chip as PlonkChip, CircuitBuilder, Wire, WireOrUnconstrained, Witness};
-use crate::utils::parse_scalar;
 use anyhow::{Result, anyhow};
 use blstrs::Scalar as BlsScalar;
 use ff::{Field, PrimeField};
@@ -69,34 +68,16 @@ impl Config<BlsScalar, 3> for BlsConfig3 {
 
     fn get_external_matrix() -> &'static [BlsScalar] {
         static MATRIX: LazyLock<[BlsScalar; 9]> = LazyLock::new(|| {
-            [
-                2.into(),
-                1.into(),
-                1.into(),
-                1.into(),
-                2.into(),
-                1.into(),
-                1.into(),
-                1.into(),
-                2.into(),
-            ]
+            let bytes = include_bytes!("../params/fl_t3_bls12_381.bin");
+            decode_constants::<BlsScalar, 9>(bytes)
         });
         &*MATRIX
     }
 
     fn get_internal_matrix() -> &'static [BlsScalar] {
         static MATRIX: LazyLock<[BlsScalar; 9]> = LazyLock::new(|| {
-            [
-                2.into(),
-                1.into(),
-                1.into(),
-                1.into(),
-                2.into(),
-                1.into(),
-                1.into(),
-                1.into(),
-                3.into(),
-            ]
+            let bytes = include_bytes!("../params/pl_t3_bls12_381.bin");
+            decode_constants::<BlsScalar, 9>(bytes)
         });
         &*MATRIX
     }
@@ -127,52 +108,16 @@ impl Config<BlsScalar, 4> for BlsConfig4 {
 
     fn get_external_matrix() -> &'static [BlsScalar] {
         static MATRIX: LazyLock<[BlsScalar; 16]> = LazyLock::new(|| {
-            [
-                5.into(),
-                7.into(),
-                1.into(),
-                3.into(),
-                4.into(),
-                6.into(),
-                1.into(),
-                1.into(),
-                1.into(),
-                3.into(),
-                5.into(),
-                7.into(),
-                1.into(),
-                1.into(),
-                4.into(),
-                6.into(),
-            ]
+            let bytes = include_bytes!("../params/fl_t4_bls12_381.bin");
+            decode_constants::<BlsScalar, 16>(bytes)
         });
         &*MATRIX
     }
 
     fn get_internal_matrix() -> &'static [BlsScalar] {
         static MATRIX: LazyLock<[BlsScalar; 16]> = LazyLock::new(|| {
-            [
-                parse_scalar("0x07564ad691bf01c8601d68757a561d224f00f313ada673ab83e6255fb4fd5b3e")
-                    .unwrap(),
-                1.into(),
-                1.into(),
-                1.into(),
-                1.into(),
-                parse_scalar("0x6184e3be38549f7c0850cd069b32f6decbfde312dd4b8c18349b1b3776a6eaa5")
-                    .unwrap(),
-                1.into(),
-                1.into(),
-                1.into(),
-                1.into(),
-                parse_scalar("0x419289088178ad742be6f78425c0156b6546a18fd338f0169937dea46cfb64d3")
-                    .unwrap(),
-                1.into(),
-                1.into(),
-                1.into(),
-                1.into(),
-                parse_scalar("0x3244cdec173b71a4659e2529b499362dac10cb2fd17562860c8bb9d0fd45b788")
-                    .unwrap(),
-            ]
+            let bytes = include_bytes!("../params/pl_t4_bls12_381.bin");
+            decode_constants::<BlsScalar, 16>(bytes)
         });
         &*MATRIX
     }
