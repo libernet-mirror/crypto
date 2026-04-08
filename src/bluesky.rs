@@ -113,7 +113,7 @@ impl Scalar {
 
     const P: [u64; 4] = MODULUS;
 
-    const P_INV: u64 = 0x7fffffffffffffffu64;
+    const P_INV: u64 = 0xbfffffffffffffffu64;
 
     const TM1D2: [u64; 4] = [
         0x0ce7bbe53d36aa8fu64,
@@ -747,49 +747,49 @@ mod tests {
         );
         assert_eq!(
             format_scalar(Scalar::MAX),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000",
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000",
         );
         assert_eq!(
             format_scalar(Scalar::MAX_RAW * Scalar::R),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000",
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000",
         );
         assert_eq!(
             format_scalar(Scalar::R),
-            "0x0000008a49ea4f0b6fadb202b08c8ad3eb9ffffffffffffffffffffffffffffe"
+            "0x00000000000000000000000000000003f318441ac2c955707ffffffffffffffe"
         );
         assert_eq!(
             format_scalar(Scalar::MAX_MINUS_ONE),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a2fffffffffffffffffffffffffffff"
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547bfffffffffffffff"
         );
         assert_eq!(
             format_scalar(Scalar::TWO_INV),
-            "0x3fffffdd6d856c3d2414937f53dcdd4b05180000000000000000000000000001"
+            "0x3fffffffffffffffffffffffffffffff0339eef94f4daaa3e000000000000001"
         );
         assert_eq!(
             format_scalar(Scalar::MULTIPLICATIVE_GENERATOR),
-            "0x000000000000000000000000000000000000000000000000000000000000000f"
+            "0x0000000000000000000000000000000000000000000000000000000000000005"
         );
-        assert_eq!(Scalar::S, 116);
+        assert_eq!(Scalar::S, 62);
         assert_eq!(
             format_scalar(Scalar::ROOT_OF_UNITY),
-            "0x1c855d595fa15936b0ac1d51b8e0a8f8878f9b5199ce56785060ee1e7ad85a7c"
+            "0x2772569d549e1249ca6891eceba43568f6e0a747a2afe898b3977ca1a5bbfc9c"
         );
         assert_eq!(
             format_scalar(Scalar::ROOT_OF_UNITY_INV),
-            "0x1c5ea19556788808dd94eebb6ba8ef1bf9382073b01276b94c7880e2f4e020d3"
+            "0x76def406f046ef5ee7eeecd2c4e6ecd7cdedc4e2bcf6b19f1420121cd00b4cdb"
         );
         assert_eq!(
             format_scalar(Scalar::DELTA),
-            "0x75a17e51260c15dcd45173f1bd2207d6e2fc8c8cd6b30bb399b783a772de079c"
+            "0x232680e97f4b6251c95edefd145053d6dea23905b503a1002987caddeb54cdce"
         );
-        assert_eq!(Scalar::T, 72);
+        assert_eq!(Scalar::T, 39);
         assert_eq!(
             format_scalar(Scalar::THREE_ADIC_ROOT_OF_UNITY),
-            "0x33b6631e951bde0a85158d1f24777f7df914b50c409fde500cd094b370b08730"
+            "0x1b6292b3a6f8a32da98705fee2d66e8fe35f48642a417a72f1a4ca414adfd9e6"
         );
         assert_eq!(
             format_scalar(Scalar::THREE_ADIC_ROOT_OF_UNITY_INV),
-            "0x55d494cccd313cb5c91a992a0cd716a45392da2c38e93c3426415c863938c5fe"
+            "0x4d369d8e1ff761fca979a0ffb5545471ceae8164a047dff8b5679e11c5dfdf72"
         );
     }
 
@@ -812,7 +812,7 @@ mod tests {
         assert_eq!(Scalar::NUM_BITS, 255);
         assert_eq!(Scalar::CAPACITY, 254);
         assert_eq!(Scalar::TWO_INV, Scalar::from(2).invert().unwrap());
-        assert_eq!(Scalar::MULTIPLICATIVE_GENERATOR, 15.into());
+        assert_eq!(Scalar::MULTIPLICATIVE_GENERATOR, 5.into());
         assert!(Scalar::ROOT_OF_UNITY > Scalar::ONE);
         for i in 0..Scalar::S {
             assert_ne!(
