@@ -125,7 +125,8 @@ impl<F: PrimeField + Ord> Polynomial<F> {
 
     /// Fast Fourier Transform.
     ///
-    /// REQUIRES: the length of `data` must be a power of two less than or equal to 2^32.
+    /// REQUIRES: the length of `data` must be a power of two less than or equal to N and `omega`
+    /// must be an N-th root of unity, where N = 2^(F::S).
     ///
     /// Running time: O(N*logN).
     fn fft(data: &mut [F], omega: F) {
@@ -196,8 +197,8 @@ impl<F: PrimeField + Ord> Polynomial<F> {
     /// the list to be a power of two. If that's not the case, this function will automatically pad
     /// the provided list with zeros.
     ///
-    /// Additionally, since the scalar field of BLS12-381 has 2^32 roots of unity, the provided list
-    /// is required to have no more than 2^32 elements (roughly 4.3 billions).
+    /// Additionally, the provided list must not exceed the FFT capacity so it's required to have no
+    /// more than 2^(F::S) elements.
     ///
     /// If the `blind` flag is set the algorithm will add a blinding factor. The degree of the
     /// resulting polynomial will be increased by 1 and every call will return a different
@@ -243,8 +244,8 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         return self.coefficients;
     }
 
-    /// Multiplies two polynomials, returning an error if the FFT capacity is exceeded (i.e. if the
-    /// degree of the product is higher than 2^32).
+    /// Multiplies two polynomials, returning an error if the FFT capacity is exceeded -- that is,
+    /// if the degree of the product is greater than or equal to 2^(F::S).
     pub fn multiply(self, other: Self) -> Result<Self> {
         let mut a = self.coefficients;
         let mut b = other.coefficients;
@@ -305,8 +306,8 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         }
     }
 
-    /// Multiplies two or more polynomials, returning an error if the FFT capacity is exceeded (i.e.
-    /// if the degree of the product is higher than 2^32).
+    /// Multiplies two or more polynomials, returning an error if the FFT capacity is exceeded --
+    /// that is, if the degree of the product is greater than or equal to 2^(F::S).
     ///
     /// REQUIRES: the `polynomials` array must have at least 1 element, otherwise the function will
     /// panic.
@@ -457,10 +458,11 @@ impl Polynomial<BlsScalar> {
     ///
     /// where `w` is an n-th root of unity.
     ///
-    /// REQUIRES: `n` must be a power of 2 less than or equal to 2^32.
+    /// REQUIRES: `n` must be a power of 2 less than or equal to 2^(F::S).
     ///
-    /// These polynomials are used in the PLONK proving scheme. Since there are only 32 of them (or
-    /// 33 if we include n=1) we cache them in a static data structure so that retrieval takes O(1).
+    /// These polynomials are used in the PLONK proving scheme running over BLS12-381. Since there
+    /// are only 32 of them (or 33 if we include n=1) we cache them in a static data structure so
+    /// that retrieval takes O(1).
     pub fn lagrange0(n: usize) -> &'static Self {
         assert!(n.is_power_of_two());
         let k = n.trailing_zeros();
