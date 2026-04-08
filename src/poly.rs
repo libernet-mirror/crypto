@@ -645,846 +645,864 @@ impl<F: PrimeField + Ord> MulAssign<F> for Polynomial<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bluesky;
+    use crate::bluesky::Scalar;
     use crate::utils;
 
     fn from_roots<F: PrimeField + Ord>(roots: &[F]) -> Polynomial<F> {
         Polynomial::from_roots(roots, utils::get_random_scalar()).unwrap()
     }
 
-    fn test_constant_impl<F: PrimeField + Ord>() {
-        let p = Polynomial::<F>::constant(42.into());
+    #[test]
+    fn test_constant() {
+        let p = Polynomial::<Scalar>::constant(42.into());
         assert_eq!(p.evaluate(12.into()), 42.into());
         assert_eq!(p.evaluate(34.into()), 42.into());
         assert_eq!(p.evaluate(42.into()), 42.into());
     }
 
     #[test]
-    fn test_constant() {
-        test_constant_impl::<BlsScalar>();
-        test_constant_impl::<bluesky::Scalar>();
+    fn test_zero() {
+        let p = Polynomial::<Scalar>::with_coefficients(vec![]);
+        assert_eq!(p, Polynomial::default());
+        assert_eq!(p.len(), 0);
+        assert_eq!(p.evaluate(42.into()), 0.into());
     }
 
-    // #[test]
-    // fn test_zero() {
-    //     let p = Polynomial::with_coefficients(vec![]);
-    //     assert_eq!(p, Polynomial::default());
-    //     assert_eq!(p.len(), 0);
-    //     assert_eq!(p.evaluate(42.into()), 0.into());
-    // }
+    #[test]
+    fn test_with_coefficients() {
+        let p = Polynomial::<Scalar>::with_coefficients(vec![12.into(), 34.into(), 56.into()]);
+        assert_eq!(p.len(), 3);
+        assert_eq!(p.take(), vec![12.into(), 34.into(), 56.into()]);
+    }
 
-    // #[test]
-    // fn test_with_coefficients() {
-    //     let p = Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into()]);
-    //     assert_eq!(p.len(), 3);
-    //     assert_eq!(p.take(), vec![12.into(), 34.into(), 56.into()]);
-    // }
+    #[test]
+    fn test_no_roots() {
+        let p = from_roots::<Scalar>(&[]);
+        assert_eq!(p.len(), 1);
+        assert_ne!(p.evaluate(12.into()), 0.into());
+        assert_ne!(p.evaluate(34.into()), 0.into());
+        assert_ne!(p.evaluate(56.into()), 0.into());
+        assert_ne!(p.evaluate(78.into()), 0.into());
+        assert_ne!(p.evaluate(90.into()), 0.into());
+        assert_ne!(p.evaluate(13.into()), 0.into());
+        assert_ne!(p.evaluate(57.into()), 0.into());
+        assert_ne!(p.evaluate(92.into()), 0.into());
+        assert_ne!(p.evaluate(46.into()), 0.into());
+        assert_ne!(p.evaluate(80.into()), 0.into());
+    }
 
-    // #[test]
-    // fn test_no_roots() {
-    //     let p = from_roots(&[]);
-    //     assert_eq!(p.len(), 1);
-    //     assert_ne!(p.evaluate(12.into()), 0.into());
-    //     assert_ne!(p.evaluate(34.into()), 0.into());
-    //     assert_ne!(p.evaluate(56.into()), 0.into());
-    //     assert_ne!(p.evaluate(78.into()), 0.into());
-    //     assert_ne!(p.evaluate(90.into()), 0.into());
-    //     assert_ne!(p.evaluate(13.into()), 0.into());
-    //     assert_ne!(p.evaluate(57.into()), 0.into());
-    //     assert_ne!(p.evaluate(92.into()), 0.into());
-    //     assert_ne!(p.evaluate(46.into()), 0.into());
-    //     assert_ne!(p.evaluate(80.into()), 0.into());
-    // }
+    #[test]
+    fn test_one_root() {
+        let p = from_roots::<Scalar>(&[12.into()]);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p.evaluate(12.into()), 0.into());
+        assert_ne!(p.evaluate(34.into()), 0.into());
+        assert_ne!(p.evaluate(56.into()), 0.into());
+        assert_ne!(p.evaluate(78.into()), 0.into());
+        assert_ne!(p.evaluate(90.into()), 0.into());
+        assert_ne!(p.evaluate(13.into()), 0.into());
+        assert_ne!(p.evaluate(57.into()), 0.into());
+        assert_ne!(p.evaluate(92.into()), 0.into());
+        assert_ne!(p.evaluate(46.into()), 0.into());
+        assert_ne!(p.evaluate(80.into()), 0.into());
+        let (q, v) = p.horner(12.into());
+        assert_eq!(q.len(), 1);
+        assert_eq!(v, 0.into());
+        let (q, v) = p.horner(34.into());
+        assert_eq!(q.len(), 1);
+        assert_ne!(v, 0.into());
+    }
 
-    // #[test]
-    // fn test_one_root() {
-    //     let p = from_roots(&[12.into()]);
-    //     assert_eq!(p.len(), 2);
-    //     assert_eq!(p.evaluate(12.into()), 0.into());
-    //     assert_ne!(p.evaluate(34.into()), 0.into());
-    //     assert_ne!(p.evaluate(56.into()), 0.into());
-    //     assert_ne!(p.evaluate(78.into()), 0.into());
-    //     assert_ne!(p.evaluate(90.into()), 0.into());
-    //     assert_ne!(p.evaluate(13.into()), 0.into());
-    //     assert_ne!(p.evaluate(57.into()), 0.into());
-    //     assert_ne!(p.evaluate(92.into()), 0.into());
-    //     assert_ne!(p.evaluate(46.into()), 0.into());
-    //     assert_ne!(p.evaluate(80.into()), 0.into());
-    //     let (q, v) = p.horner(12.into());
-    //     assert_eq!(q.len(), 1);
-    //     assert_eq!(v, 0.into());
-    //     let (q, v) = p.horner(34.into());
-    //     assert_eq!(q.len(), 1);
-    //     assert_ne!(v, 0.into());
-    // }
+    #[test]
+    fn test_three_roots() {
+        let p = from_roots::<Scalar>(&[12.into(), 34.into(), 56.into()]);
+        assert_eq!(p.len(), 4);
+        assert_eq!(p.evaluate(12.into()), 0.into());
+        assert_eq!(p.evaluate(34.into()), 0.into());
+        assert_eq!(p.evaluate(56.into()), 0.into());
+        assert_ne!(p.evaluate(78.into()), 0.into());
+        assert_ne!(p.evaluate(90.into()), 0.into());
+        assert_ne!(p.evaluate(13.into()), 0.into());
+        assert_ne!(p.evaluate(57.into()), 0.into());
+        assert_ne!(p.evaluate(92.into()), 0.into());
+        assert_ne!(p.evaluate(46.into()), 0.into());
+        assert_ne!(p.evaluate(80.into()), 0.into());
+        let (q, v) = p.horner(12.into());
+        assert_eq!(q.len(), 3);
+        assert_eq!(v, 0.into());
+        let (q, v) = q.horner(34.into());
+        assert_eq!(q.len(), 2);
+        assert_eq!(v, 0.into());
+        let (q, v) = q.horner(56.into());
+        assert_eq!(q.len(), 1);
+        assert_eq!(v, 0.into());
+        let (q, v) = p.horner(78.into());
+        assert_eq!(q.len(), 3);
+        assert_ne!(v, 0.into());
+        let (q, v) = p.horner(90.into());
+        assert_eq!(q.len(), 3);
+        assert_ne!(v, 0.into());
+    }
 
-    // #[test]
-    // fn test_three_roots() {
-    //     let p = from_roots(&[12.into(), 34.into(), 56.into()]);
-    //     assert_eq!(p.len(), 4);
-    //     assert_eq!(p.evaluate(12.into()), 0.into());
-    //     assert_eq!(p.evaluate(34.into()), 0.into());
-    //     assert_eq!(p.evaluate(56.into()), 0.into());
-    //     assert_ne!(p.evaluate(78.into()), 0.into());
-    //     assert_ne!(p.evaluate(90.into()), 0.into());
-    //     assert_ne!(p.evaluate(13.into()), 0.into());
-    //     assert_ne!(p.evaluate(57.into()), 0.into());
-    //     assert_ne!(p.evaluate(92.into()), 0.into());
-    //     assert_ne!(p.evaluate(46.into()), 0.into());
-    //     assert_ne!(p.evaluate(80.into()), 0.into());
-    //     let (q, v) = p.horner(12.into());
-    //     assert_eq!(q.len(), 3);
-    //     assert_eq!(v, 0.into());
-    //     let (q, v) = q.horner(34.into());
-    //     assert_eq!(q.len(), 2);
-    //     assert_eq!(v, 0.into());
-    //     let (q, v) = q.horner(56.into());
-    //     assert_eq!(q.len(), 1);
-    //     assert_eq!(v, 0.into());
-    //     let (q, v) = p.horner(78.into());
-    //     assert_eq!(q.len(), 3);
-    //     assert_ne!(v, 0.into());
-    //     let (q, v) = p.horner(90.into());
-    //     assert_eq!(q.len(), 3);
-    //     assert_ne!(v, 0.into());
-    // }
+    #[test]
+    fn test_three_roots_reverse_order() {
+        let p = from_roots::<Scalar>(&[56.into(), 34.into(), 12.into()]);
+        assert_eq!(p.len(), 4);
+        assert_eq!(p.evaluate(12.into()), 0.into());
+        assert_eq!(p.evaluate(34.into()), 0.into());
+        assert_eq!(p.evaluate(56.into()), 0.into());
+        assert_ne!(p.evaluate(78.into()), 0.into());
+        assert_ne!(p.evaluate(90.into()), 0.into());
+        assert_ne!(p.evaluate(13.into()), 0.into());
+        assert_ne!(p.evaluate(57.into()), 0.into());
+        assert_ne!(p.evaluate(92.into()), 0.into());
+        assert_ne!(p.evaluate(46.into()), 0.into());
+        assert_ne!(p.evaluate(80.into()), 0.into());
+        let (q, v) = p.horner(12.into());
+        assert_eq!(q.len(), 3);
+        assert_eq!(v, 0.into());
+        let (q, v) = q.horner(34.into());
+        assert_eq!(q.len(), 2);
+        assert_eq!(v, 0.into());
+        let (q, v) = q.horner(56.into());
+        assert_eq!(q.len(), 1);
+        assert_eq!(v, 0.into());
+        let (q, v) = p.horner(78.into());
+        assert_eq!(q.len(), 3);
+        assert_ne!(v, 0.into());
+        let (q, v) = p.horner(90.into());
+        assert_eq!(q.len(), 3);
+        assert_ne!(v, 0.into());
+    }
 
-    // #[test]
-    // fn test_three_roots_reverse_order() {
-    //     let p = from_roots(&[56.into(), 34.into(), 12.into()]);
-    //     assert_eq!(p.len(), 4);
-    //     assert_eq!(p.evaluate(12.into()), 0.into());
-    //     assert_eq!(p.evaluate(34.into()), 0.into());
-    //     assert_eq!(p.evaluate(56.into()), 0.into());
-    //     assert_ne!(p.evaluate(78.into()), 0.into());
-    //     assert_ne!(p.evaluate(90.into()), 0.into());
-    //     assert_ne!(p.evaluate(13.into()), 0.into());
-    //     assert_ne!(p.evaluate(57.into()), 0.into());
-    //     assert_ne!(p.evaluate(92.into()), 0.into());
-    //     assert_ne!(p.evaluate(46.into()), 0.into());
-    //     assert_ne!(p.evaluate(80.into()), 0.into());
-    //     let (q, v) = p.horner(12.into());
-    //     assert_eq!(q.len(), 3);
-    //     assert_eq!(v, 0.into());
-    //     let (q, v) = q.horner(34.into());
-    //     assert_eq!(q.len(), 2);
-    //     assert_eq!(v, 0.into());
-    //     let (q, v) = q.horner(56.into());
-    //     assert_eq!(q.len(), 1);
-    //     assert_eq!(v, 0.into());
-    //     let (q, v) = p.horner(78.into());
-    //     assert_eq!(q.len(), 3);
-    //     assert_ne!(v, 0.into());
-    //     let (q, v) = p.horner(90.into());
-    //     assert_eq!(q.len(), 3);
-    //     assert_ne!(v, 0.into());
-    // }
+    #[test]
+    fn test_seven_roots() {
+        let p = from_roots::<Scalar>(&[
+            12.into(),
+            34.into(),
+            56.into(),
+            78.into(),
+            90.into(),
+            13.into(),
+            57.into(),
+        ]);
+        assert_eq!(p.len(), 8);
+        assert_eq!(p.evaluate(12.into()), 0.into());
+        assert_eq!(p.evaluate(34.into()), 0.into());
+        assert_eq!(p.evaluate(56.into()), 0.into());
+        assert_eq!(p.evaluate(78.into()), 0.into());
+        assert_eq!(p.evaluate(90.into()), 0.into());
+        assert_eq!(p.evaluate(13.into()), 0.into());
+        assert_eq!(p.evaluate(57.into()), 0.into());
+        assert_ne!(p.evaluate(92.into()), 0.into());
+        assert_ne!(p.evaluate(46.into()), 0.into());
+        assert_ne!(p.evaluate(80.into()), 0.into());
+    }
 
-    // #[test]
-    // fn test_seven_roots() {
-    //     let p = from_roots(&[
-    //         12.into(),
-    //         34.into(),
-    //         56.into(),
-    //         78.into(),
-    //         90.into(),
-    //         13.into(),
-    //         57.into(),
-    //     ]);
-    //     assert_eq!(p.len(), 8);
-    //     assert_eq!(p.evaluate(12.into()), 0.into());
-    //     assert_eq!(p.evaluate(34.into()), 0.into());
-    //     assert_eq!(p.evaluate(56.into()), 0.into());
-    //     assert_eq!(p.evaluate(78.into()), 0.into());
-    //     assert_eq!(p.evaluate(90.into()), 0.into());
-    //     assert_eq!(p.evaluate(13.into()), 0.into());
-    //     assert_eq!(p.evaluate(57.into()), 0.into());
-    //     assert_ne!(p.evaluate(92.into()), 0.into());
-    //     assert_ne!(p.evaluate(46.into()), 0.into());
-    //     assert_ne!(p.evaluate(80.into()), 0.into());
-    // }
+    #[test]
+    fn test_seven_roots_reverse_order() {
+        let p = from_roots::<Scalar>(&[
+            57.into(),
+            13.into(),
+            90.into(),
+            78.into(),
+            56.into(),
+            34.into(),
+            12.into(),
+        ]);
+        assert_eq!(p.len(), 8);
+        assert_eq!(p.evaluate(12.into()), 0.into());
+        assert_eq!(p.evaluate(34.into()), 0.into());
+        assert_eq!(p.evaluate(56.into()), 0.into());
+        assert_eq!(p.evaluate(78.into()), 0.into());
+        assert_eq!(p.evaluate(90.into()), 0.into());
+        assert_eq!(p.evaluate(13.into()), 0.into());
+        assert_eq!(p.evaluate(57.into()), 0.into());
+        assert_ne!(p.evaluate(92.into()), 0.into());
+        assert_ne!(p.evaluate(46.into()), 0.into());
+        assert_ne!(p.evaluate(80.into()), 0.into());
+    }
 
-    // #[test]
-    // fn test_seven_roots_reverse_order() {
-    //     let p = from_roots(&[
-    //         57.into(),
-    //         13.into(),
-    //         90.into(),
-    //         78.into(),
-    //         56.into(),
-    //         34.into(),
-    //         12.into(),
-    //     ]);
-    //     assert_eq!(p.len(), 8);
-    //     assert_eq!(p.evaluate(12.into()), 0.into());
-    //     assert_eq!(p.evaluate(34.into()), 0.into());
-    //     assert_eq!(p.evaluate(56.into()), 0.into());
-    //     assert_eq!(p.evaluate(78.into()), 0.into());
-    //     assert_eq!(p.evaluate(90.into()), 0.into());
-    //     assert_eq!(p.evaluate(13.into()), 0.into());
-    //     assert_eq!(p.evaluate(57.into()), 0.into());
-    //     assert_ne!(p.evaluate(92.into()), 0.into());
-    //     assert_ne!(p.evaluate(46.into()), 0.into());
-    //     assert_ne!(p.evaluate(80.into()), 0.into());
-    // }
+    #[test]
+    fn test_duplicate_roots() {
+        assert!(
+            Polynomial::<Scalar>::from_roots(
+                &[
+                    12.into(),
+                    34.into(),
+                    56.into(),
+                    12.into(),
+                    90.into(),
+                    12.into(),
+                    57.into(),
+                ],
+                utils::get_random_scalar()
+            )
+            .is_err()
+        );
+    }
 
-    // #[test]
-    // fn test_duplicate_roots() {
-    //     assert!(
-    //         Polynomial::from_roots(
-    //             &[
-    //                 12.into(),
-    //                 34.into(),
-    //                 56.into(),
-    //                 12.into(),
-    //                 90.into(),
-    //                 12.into(),
-    //                 57.into(),
-    //             ],
-    //             utils::get_random_scalar()
-    //         )
-    //         .is_err()
-    //     );
-    // }
+    #[test]
+    fn test_interpolate_zero_points() {
+        let p = Polynomial::<Scalar>::interpolate(&[]).unwrap();
+        assert_eq!(p, Polynomial::default());
+    }
 
-    // #[test]
-    // fn test_interpolate_zero_points() {
-    //     let p = Polynomial::interpolate(&[]).unwrap();
-    //     assert_eq!(p, Polynomial::default());
-    // }
+    #[test]
+    fn test_interpolate_one_point1() {
+        let p = Polynomial::<Scalar>::interpolate(&[(12.into(), 34.into())]).unwrap();
+        assert_eq!(p.len(), 1);
+        assert_eq!(p.evaluate(12.into()), 34.into());
+    }
 
-    // #[test]
-    // fn test_interpolate_one_point1() {
-    //     let p = Polynomial::interpolate(&[(12.into(), 34.into())]).unwrap();
-    //     assert_eq!(p.len(), 1);
-    //     assert_eq!(p.evaluate(12.into()), 34.into());
-    // }
+    #[test]
+    fn test_interpolate_one_point2() {
+        let p = Polynomial::<Scalar>::interpolate(&[(34.into(), 56.into())]).unwrap();
+        assert_eq!(p.len(), 1);
+        assert_eq!(p.evaluate(34.into()), 56.into());
+    }
 
-    // #[test]
-    // fn test_interpolate_one_point2() {
-    //     let p = Polynomial::interpolate(&[(34.into(), 56.into())]).unwrap();
-    //     assert_eq!(p.len(), 1);
-    //     assert_eq!(p.evaluate(34.into()), 56.into());
-    // }
+    #[test]
+    fn test_interpolate_two_points1() {
+        let p =
+            Polynomial::<Scalar>::interpolate(&[(12.into(), 34.into()), (56.into(), 78.into())])
+                .unwrap();
+        assert_eq!(p.len(), 2);
+        assert_eq!(p.evaluate(12.into()), 34.into());
+        assert_eq!(p.evaluate(56.into()), 78.into());
+    }
 
-    // #[test]
-    // fn test_interpolate_two_points1() {
-    //     let p = Polynomial::interpolate(&[(12.into(), 34.into()), (56.into(), 78.into())]).unwrap();
-    //     assert_eq!(p.len(), 2);
-    //     assert_eq!(p.evaluate(12.into()), 34.into());
-    //     assert_eq!(p.evaluate(56.into()), 78.into());
-    // }
+    #[test]
+    fn test_interpolate_two_points2() {
+        let p =
+            Polynomial::<Scalar>::interpolate(&[(34.into(), 12.into()), (78.into(), 56.into())])
+                .unwrap();
+        assert_eq!(p.len(), 2);
+        assert_eq!(p.evaluate(34.into()), 12.into());
+        assert_eq!(p.evaluate(78.into()), 56.into());
+    }
 
-    // #[test]
-    // fn test_interpolate_two_points2() {
-    //     let p = Polynomial::interpolate(&[(34.into(), 12.into()), (78.into(), 56.into())]).unwrap();
-    //     assert_eq!(p.len(), 2);
-    //     assert_eq!(p.evaluate(34.into()), 12.into());
-    //     assert_eq!(p.evaluate(78.into()), 56.into());
-    // }
+    #[test]
+    fn test_interpolate_three_points1() {
+        let p = Polynomial::<Scalar>::interpolate(&[
+            (12.into(), 34.into()),
+            (56.into(), 78.into()),
+            (90.into(), 12.into()),
+        ])
+        .unwrap();
+        assert_eq!(p.len(), 3);
+        assert_eq!(p.evaluate(12.into()), 34.into());
+        assert_eq!(p.evaluate(56.into()), 78.into());
+        assert_eq!(p.evaluate(90.into()), 12.into());
+    }
 
-    // #[test]
-    // fn test_interpolate_three_points1() {
-    //     let p = Polynomial::interpolate(&[
-    //         (12.into(), 34.into()),
-    //         (56.into(), 78.into()),
-    //         (90.into(), 12.into()),
-    //     ])
-    //     .unwrap();
-    //     assert_eq!(p.len(), 3);
-    //     assert_eq!(p.evaluate(12.into()), 34.into());
-    //     assert_eq!(p.evaluate(56.into()), 78.into());
-    //     assert_eq!(p.evaluate(90.into()), 12.into());
-    // }
+    #[test]
+    fn test_interpolate_three_points2() {
+        let p = Polynomial::<Scalar>::interpolate(&[
+            (34.into(), 12.into()),
+            (78.into(), 56.into()),
+            (12.into(), 90.into()),
+        ])
+        .unwrap();
+        assert_eq!(p.len(), 3);
+        assert_eq!(p.evaluate(34.into()), 12.into());
+        assert_eq!(p.evaluate(78.into()), 56.into());
+        assert_eq!(p.evaluate(12.into()), 90.into());
+    }
 
-    // #[test]
-    // fn test_interpolate_three_points2() {
-    //     let p = Polynomial::interpolate(&[
-    //         (34.into(), 12.into()),
-    //         (78.into(), 56.into()),
-    //         (12.into(), 90.into()),
-    //     ])
-    //     .unwrap();
-    //     assert_eq!(p.len(), 3);
-    //     assert_eq!(p.evaluate(34.into()), 12.into());
-    //     assert_eq!(p.evaluate(78.into()), 56.into());
-    //     assert_eq!(p.evaluate(12.into()), 90.into());
-    // }
+    #[test]
+    fn test_duplicate_coordinates() {
+        assert!(
+            Polynomial::<Scalar>::interpolate(&[
+                (12.into(), 34.into()),
+                (56.into(), 78.into()),
+                (12.into(), 90.into()),
+            ])
+            .is_err()
+        );
+    }
 
-    // #[test]
-    // fn test_duplicate_coordinates() {
-    //     assert!(
-    //         Polynomial::interpolate(&[
-    //             (12.into(), 34.into()),
-    //             (56.into(), 78.into()),
-    //             (12.into(), 90.into()),
-    //         ])
-    //         .is_err()
-    //     );
-    // }
+    #[test]
+    fn test_add_commitments1() {
+        let p1 = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let p2 = from_roots(&[78.into(), 90.into()]);
+        assert_eq!(p1.commitment() + p2.commitment(), (p1 + p2).commitment());
+    }
 
-    // #[test]
-    // fn test_add_commitments1() {
-    //     let p1 = from_roots(&[12.into(), 34.into(), 56.into()]);
-    //     let p2 = from_roots(&[78.into(), 90.into()]);
-    //     assert_eq!(p1.commitment() + p2.commitment(), (p1 + p2).commitment());
-    // }
+    #[test]
+    fn test_add_commitments2() {
+        let p1 = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c1 = p1.commitment();
+        let p2 = from_roots(&[78.into(), 90.into()]);
+        let c2 = p2.commitment();
+        let mut p3 = p1;
+        p3 += p2;
+        assert_eq!(c1 + c2, p3.commitment());
+    }
 
-    // #[test]
-    // fn test_add_commitments2() {
-    //     let p1 = from_roots(&[12.into(), 34.into(), 56.into()]);
-    //     let c1 = p1.commitment();
-    //     let p2 = from_roots(&[78.into(), 90.into()]);
-    //     let c2 = p2.commitment();
-    //     let mut p3 = p1;
-    //     p3 += p2;
-    //     assert_eq!(c1 + c2, p3.commitment());
-    // }
+    #[test]
+    fn test_subtract_commitments1() {
+        let p1 = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let p2 = from_roots(&[78.into(), 90.into()]);
+        assert_eq!(p1.commitment() - p2.commitment(), (p1 - p2).commitment());
+    }
 
-    // #[test]
-    // fn test_subtract_commitments1() {
-    //     let p1 = from_roots(&[12.into(), 34.into(), 56.into()]);
-    //     let p2 = from_roots(&[78.into(), 90.into()]);
-    //     assert_eq!(p1.commitment() - p2.commitment(), (p1 - p2).commitment());
-    // }
+    #[test]
+    fn test_subtract_commitments2() {
+        let p1 = from_roots(&[12.into(), 34.into(), 56.into()]);
+        let c1 = p1.commitment();
+        let p2 = from_roots(&[78.into(), 90.into()]);
+        let c2 = p2.commitment();
+        let mut p3 = p1;
+        p3 -= p2;
+        assert_eq!(c1 - c2, p3.commitment());
+    }
 
-    // #[test]
-    // fn test_subtract_commitments2() {
-    //     let p1 = from_roots(&[12.into(), 34.into(), 56.into()]);
-    //     let c1 = p1.commitment();
-    //     let p2 = from_roots(&[78.into(), 90.into()]);
-    //     let c2 = p2.commitment();
-    //     let mut p3 = p1;
-    //     p3 -= p2;
-    //     assert_eq!(c1 - c2, p3.commitment());
-    // }
+    #[test]
+    fn test_multiply_commitment1() {
+        let p = from_roots::<BlsScalar>(&[12.into(), 34.into()]);
+        let a = BlsScalar::from(56);
+        assert_eq!(p.commitment() * a, (p * a).commitment());
+    }
 
-    // #[test]
-    // fn test_multiply_commitment1() {
-    //     let p = from_roots(&[12.into(), 34.into()]);
-    //     let a = Scalar::from(56);
-    //     assert_eq!(p.commitment() * a, (p * a).commitment());
-    // }
+    #[test]
+    fn test_multiply_commitment2() {
+        let mut p = from_roots::<BlsScalar>(&[12.into(), 34.into()]);
+        let c = p.commitment();
+        let a = BlsScalar::from(56);
+        p *= a;
+        assert_eq!(c * a, p.commitment());
+    }
 
-    // #[test]
-    // fn test_multiply_commitment2() {
-    //     let mut p = from_roots(&[12.into(), 34.into()]);
-    //     let c = p.commitment();
-    //     let a = Scalar::from(56);
-    //     p *= a;
-    //     assert_eq!(c * a, p.commitment());
-    // }
+    fn domain_element<F: PrimeField + Ord>(i: usize, n: usize) -> F {
+        let omega = Polynomial::<F>::root_of_unity_for_domain(n.next_power_of_two());
+        omega.pow_vartime([i as u64, 0, 0, 0])
+    }
 
-    // fn domain_element(i: usize, n: usize) -> Scalar {
-    //     let omega = Polynomial::root_of_unity_for_domain(n.next_power_of_two());
-    //     omega.pow_vartime([i as u64, 0, 0, 0])
-    // }
+    #[test]
+    fn test_encode_one_value1() {
+        let p1 = Polynomial::<BlsScalar>::encode_list(vec![42.into()], false);
+        let p2 = Polynomial::<BlsScalar>::encode_list(vec![42.into()], false);
+        assert_eq!(p1.len(), 1);
+        assert_eq!(p2.len(), 1);
+        assert_eq!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 1)), 42.into());
+        assert_eq!(p1.evaluate_domain_element(0, 1), 42.into());
+        assert_eq!(p2.evaluate(domain_element(0, 1)), 42.into());
+        assert_eq!(p2.evaluate_domain_element(0, 1), 42.into());
+    }
 
-    // #[test]
-    // fn test_encode_one_value1() {
-    //     let p1 = Polynomial::encode_list(vec![42.into()], false);
-    //     let p2 = Polynomial::encode_list(vec![42.into()], false);
-    //     assert_eq!(p1.len(), 1);
-    //     assert_eq!(p2.len(), 1);
-    //     assert_eq!(p1.commitment(), p2.commitment());
-    //     assert_eq!(p1.evaluate(domain_element(0, 1)), 42.into());
-    //     assert_eq!(p1.evaluate_domain_element(0, 1), 42.into());
-    //     assert_eq!(p2.evaluate(domain_element(0, 1)), 42.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 1), 42.into());
-    // }
+    #[test]
+    fn test_encode_one_value2() {
+        let p1 = Polynomial::<BlsScalar>::encode_list(vec![42.into()], false);
+        let p2 = Polynomial::<BlsScalar>::encode_list(vec![123.into()], false);
+        assert_eq!(p2.len(), 1);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p2.evaluate(domain_element(0, 1)), 123.into());
+        assert_eq!(p2.evaluate_domain_element(0, 1), 123.into());
+    }
 
-    // #[test]
-    // fn test_encode_one_value2() {
-    //     let p1 = Polynomial::encode_list(vec![42.into()], false);
-    //     let p2 = Polynomial::encode_list(vec![123.into()], false);
-    //     assert_eq!(p2.len(), 1);
-    //     assert_ne!(p1.commitment(), p2.commitment());
-    //     assert_eq!(p2.evaluate(domain_element(0, 1)), 123.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 1), 123.into());
-    // }
+    #[test]
+    fn test_encode_one_value_blinded() {
+        let p1 = Polynomial::<BlsScalar>::encode_list(vec![123.into()], true);
+        let p2 = Polynomial::<BlsScalar>::encode_list(vec![123.into()], true);
+        assert_eq!(p1.len(), 2);
+        assert_eq!(p2.len(), 2);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 1)), 123.into());
+        assert_eq!(p1.evaluate_domain_element(0, 1), 123.into());
+        assert_eq!(p2.evaluate(domain_element(0, 1)), 123.into());
+        assert_eq!(p2.evaluate_domain_element(0, 1), 123.into());
+    }
 
-    // #[test]
-    // fn test_encode_one_value_blinded() {
-    //     let p1 = Polynomial::encode_list(vec![123.into()], true);
-    //     let p2 = Polynomial::encode_list(vec![123.into()], true);
-    //     assert_eq!(p1.len(), 2);
-    //     assert_eq!(p2.len(), 2);
-    //     assert_ne!(p1.commitment(), p2.commitment());
-    //     assert_eq!(p1.evaluate(domain_element(0, 1)), 123.into());
-    //     assert_eq!(p1.evaluate_domain_element(0, 1), 123.into());
-    //     assert_eq!(p2.evaluate(domain_element(0, 1)), 123.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 1), 123.into());
-    // }
+    #[test]
+    fn test_encode_two_values1() {
+        let p1 = Polynomial::<BlsScalar>::encode_list(vec![12.into(), 34.into()], false);
+        let p2 = Polynomial::<BlsScalar>::encode_list(vec![12.into(), 34.into()], false);
+        assert_eq!(p1.len(), 2);
+        assert_eq!(p2.len(), 2);
+        assert_eq!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 2)), 12.into());
+        assert_eq!(p1.evaluate_domain_element(0, 2), 12.into());
+        assert_eq!(p1.evaluate(domain_element(1, 2)), 34.into());
+        assert_eq!(p1.evaluate_domain_element(1, 2), 34.into());
+        assert_eq!(p2.evaluate(domain_element(0, 2)), 12.into());
+        assert_eq!(p2.evaluate_domain_element(0, 2), 12.into());
+        assert_eq!(p2.evaluate(domain_element(1, 2)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(1, 2), 34.into());
+    }
 
-    // #[test]
-    // fn test_encode_two_values1() {
-    //     let p1 = Polynomial::encode_list(vec![12.into(), 34.into()], false);
-    //     let p2 = Polynomial::encode_list(vec![12.into(), 34.into()], false);
-    //     assert_eq!(p1.len(), 2);
-    //     assert_eq!(p2.len(), 2);
-    //     assert_eq!(p1.commitment(), p2.commitment());
-    //     assert_eq!(p1.evaluate(domain_element(0, 2)), 12.into());
-    //     assert_eq!(p1.evaluate_domain_element(0, 2), 12.into());
-    //     assert_eq!(p1.evaluate(domain_element(1, 2)), 34.into());
-    //     assert_eq!(p1.evaluate_domain_element(1, 2), 34.into());
-    //     assert_eq!(p2.evaluate(domain_element(0, 2)), 12.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 2), 12.into());
-    //     assert_eq!(p2.evaluate(domain_element(1, 2)), 34.into());
-    //     assert_eq!(p2.evaluate_domain_element(1, 2), 34.into());
-    // }
+    #[test]
+    fn test_encode_two_values2() {
+        let p1 = Polynomial::<BlsScalar>::encode_list(vec![12.into(), 34.into()], false);
+        let p2 = Polynomial::<BlsScalar>::encode_list(vec![78.into(), 56.into()], false);
+        assert_eq!(p1.len(), 2);
+        assert_eq!(p2.len(), 2);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p2.evaluate(domain_element(0, 2)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(0, 2), 78.into());
+        assert_eq!(p2.evaluate(domain_element(1, 2)), 56.into());
+        assert_eq!(p2.evaluate_domain_element(1, 2), 56.into());
+    }
 
-    // #[test]
-    // fn test_encode_two_values2() {
-    //     let p1 = Polynomial::encode_list(vec![12.into(), 34.into()], false);
-    //     let p2 = Polynomial::encode_list(vec![78.into(), 56.into()], false);
-    //     assert_eq!(p1.len(), 2);
-    //     assert_eq!(p2.len(), 2);
-    //     assert_ne!(p1.commitment(), p2.commitment());
-    //     assert_eq!(p2.evaluate(domain_element(0, 2)), 78.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 2), 78.into());
-    //     assert_eq!(p2.evaluate(domain_element(1, 2)), 56.into());
-    //     assert_eq!(p2.evaluate_domain_element(1, 2), 56.into());
-    // }
+    #[test]
+    fn test_encode_two_values_blinded() {
+        let p1 = Polynomial::<BlsScalar>::encode_list(vec![78.into(), 56.into()], true);
+        let p2 = Polynomial::<BlsScalar>::encode_list(vec![78.into(), 56.into()], true);
+        assert_eq!(p1.len(), 3);
+        assert_eq!(p2.len(), 3);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 2)), 78.into());
+        assert_eq!(p1.evaluate_domain_element(0, 2), 78.into());
+        assert_eq!(p1.evaluate(domain_element(1, 2)), 56.into());
+        assert_eq!(p1.evaluate_domain_element(1, 2), 56.into());
+        assert_eq!(p2.evaluate(domain_element(0, 2)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(0, 2), 78.into());
+        assert_eq!(p2.evaluate(domain_element(1, 2)), 56.into());
+        assert_eq!(p2.evaluate_domain_element(1, 2), 56.into());
+    }
 
-    // #[test]
-    // fn test_encode_two_values_blinded() {
-    //     let p1 = Polynomial::encode_list(vec![78.into(), 56.into()], true);
-    //     let p2 = Polynomial::encode_list(vec![78.into(), 56.into()], true);
-    //     assert_eq!(p1.len(), 3);
-    //     assert_eq!(p2.len(), 3);
-    //     assert_ne!(p1.commitment(), p2.commitment());
-    //     assert_eq!(p1.evaluate(domain_element(0, 2)), 78.into());
-    //     assert_eq!(p1.evaluate_domain_element(0, 2), 78.into());
-    //     assert_eq!(p1.evaluate(domain_element(1, 2)), 56.into());
-    //     assert_eq!(p1.evaluate_domain_element(1, 2), 56.into());
-    //     assert_eq!(p2.evaluate(domain_element(0, 2)), 78.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 2), 78.into());
-    //     assert_eq!(p2.evaluate(domain_element(1, 2)), 56.into());
-    //     assert_eq!(p2.evaluate_domain_element(1, 2), 56.into());
-    // }
+    #[test]
+    fn test_encode_three_values1() {
+        let p1 = Polynomial::<BlsScalar>::encode_list(vec![12.into(), 34.into(), 56.into()], false);
+        let p2 = Polynomial::<BlsScalar>::encode_list(vec![12.into(), 34.into(), 56.into()], false);
+        assert_eq!(p1.len(), 4);
+        assert_eq!(p2.len(), 4);
+        assert_eq!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 3)), 12.into());
+        assert_eq!(p1.evaluate_domain_element(0, 3), 12.into());
+        assert_eq!(p1.evaluate(domain_element(0, 4)), 12.into());
+        assert_eq!(p1.evaluate_domain_element(0, 4), 12.into());
+        assert_eq!(p1.evaluate(domain_element(1, 3)), 34.into());
+        assert_eq!(p1.evaluate_domain_element(1, 3), 34.into());
+        assert_eq!(p1.evaluate(domain_element(1, 4)), 34.into());
+        assert_eq!(p1.evaluate_domain_element(1, 4), 34.into());
+        assert_eq!(p1.evaluate(domain_element(2, 3)), 56.into());
+        assert_eq!(p1.evaluate_domain_element(2, 3), 56.into());
+        assert_eq!(p1.evaluate(domain_element(2, 4)), 56.into());
+        assert_eq!(p1.evaluate_domain_element(2, 4), 56.into());
+        assert_eq!(p1.evaluate(domain_element(3, 4)), 0.into());
+        assert_eq!(p1.evaluate_domain_element(3, 4), 0.into());
+        assert_eq!(p2.evaluate(domain_element(0, 3)), 12.into());
+        assert_eq!(p2.evaluate_domain_element(0, 3), 12.into());
+        assert_eq!(p2.evaluate(domain_element(0, 4)), 12.into());
+        assert_eq!(p2.evaluate_domain_element(0, 4), 12.into());
+        assert_eq!(p2.evaluate(domain_element(1, 3)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(1, 3), 34.into());
+        assert_eq!(p2.evaluate(domain_element(1, 4)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(1, 4), 34.into());
+        assert_eq!(p2.evaluate(domain_element(2, 3)), 56.into());
+        assert_eq!(p2.evaluate_domain_element(2, 3), 56.into());
+        assert_eq!(p2.evaluate(domain_element(2, 4)), 56.into());
+        assert_eq!(p2.evaluate_domain_element(2, 4), 56.into());
+        assert_eq!(p2.evaluate(domain_element(3, 4)), 0.into());
+        assert_eq!(p2.evaluate_domain_element(3, 4), 0.into());
+    }
 
-    // #[test]
-    // fn test_encode_three_values1() {
-    //     let p1 = Polynomial::encode_list(vec![12.into(), 34.into(), 56.into()], false);
-    //     let p2 = Polynomial::encode_list(vec![12.into(), 34.into(), 56.into()], false);
-    //     assert_eq!(p1.len(), 4);
-    //     assert_eq!(p2.len(), 4);
-    //     assert_eq!(p1.commitment(), p2.commitment());
-    //     assert_eq!(p1.evaluate(domain_element(0, 3)), 12.into());
-    //     assert_eq!(p1.evaluate_domain_element(0, 3), 12.into());
-    //     assert_eq!(p1.evaluate(domain_element(0, 4)), 12.into());
-    //     assert_eq!(p1.evaluate_domain_element(0, 4), 12.into());
-    //     assert_eq!(p1.evaluate(domain_element(1, 3)), 34.into());
-    //     assert_eq!(p1.evaluate_domain_element(1, 3), 34.into());
-    //     assert_eq!(p1.evaluate(domain_element(1, 4)), 34.into());
-    //     assert_eq!(p1.evaluate_domain_element(1, 4), 34.into());
-    //     assert_eq!(p1.evaluate(domain_element(2, 3)), 56.into());
-    //     assert_eq!(p1.evaluate_domain_element(2, 3), 56.into());
-    //     assert_eq!(p1.evaluate(domain_element(2, 4)), 56.into());
-    //     assert_eq!(p1.evaluate_domain_element(2, 4), 56.into());
-    //     assert_eq!(p1.evaluate(domain_element(3, 4)), 0.into());
-    //     assert_eq!(p1.evaluate_domain_element(3, 4), 0.into());
-    //     assert_eq!(p2.evaluate(domain_element(0, 3)), 12.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 3), 12.into());
-    //     assert_eq!(p2.evaluate(domain_element(0, 4)), 12.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 4), 12.into());
-    //     assert_eq!(p2.evaluate(domain_element(1, 3)), 34.into());
-    //     assert_eq!(p2.evaluate_domain_element(1, 3), 34.into());
-    //     assert_eq!(p2.evaluate(domain_element(1, 4)), 34.into());
-    //     assert_eq!(p2.evaluate_domain_element(1, 4), 34.into());
-    //     assert_eq!(p2.evaluate(domain_element(2, 3)), 56.into());
-    //     assert_eq!(p2.evaluate_domain_element(2, 3), 56.into());
-    //     assert_eq!(p2.evaluate(domain_element(2, 4)), 56.into());
-    //     assert_eq!(p2.evaluate_domain_element(2, 4), 56.into());
-    //     assert_eq!(p2.evaluate(domain_element(3, 4)), 0.into());
-    //     assert_eq!(p2.evaluate_domain_element(3, 4), 0.into());
-    // }
+    #[test]
+    fn test_encode_three_values2() {
+        let p1 = Polynomial::<BlsScalar>::encode_list(vec![12.into(), 34.into(), 56.into()], false);
+        let p2 = Polynomial::<BlsScalar>::encode_list(vec![90.into(), 78.into(), 34.into()], false);
+        assert_eq!(p1.len(), 4);
+        assert_eq!(p2.len(), 4);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p2.evaluate(domain_element(0, 3)), 90.into());
+        assert_eq!(p2.evaluate_domain_element(0, 3), 90.into());
+        assert_eq!(p2.evaluate(domain_element(0, 4)), 90.into());
+        assert_eq!(p2.evaluate_domain_element(0, 4), 90.into());
+        assert_eq!(p2.evaluate(domain_element(1, 3)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(1, 3), 78.into());
+        assert_eq!(p2.evaluate(domain_element(1, 4)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(1, 4), 78.into());
+        assert_eq!(p2.evaluate(domain_element(2, 3)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(2, 3), 34.into());
+        assert_eq!(p2.evaluate(domain_element(2, 4)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(2, 4), 34.into());
+        assert_eq!(p2.evaluate(domain_element(3, 4)), 0.into());
+        assert_eq!(p2.evaluate_domain_element(3, 4), 0.into());
+    }
 
-    // #[test]
-    // fn test_encode_three_values2() {
-    //     let p1 = Polynomial::encode_list(vec![12.into(), 34.into(), 56.into()], false);
-    //     let p2 = Polynomial::encode_list(vec![90.into(), 78.into(), 34.into()], false);
-    //     assert_eq!(p1.len(), 4);
-    //     assert_eq!(p2.len(), 4);
-    //     assert_ne!(p1.commitment(), p2.commitment());
-    //     assert_eq!(p2.evaluate(domain_element(0, 3)), 90.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 3), 90.into());
-    //     assert_eq!(p2.evaluate(domain_element(0, 4)), 90.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 4), 90.into());
-    //     assert_eq!(p2.evaluate(domain_element(1, 3)), 78.into());
-    //     assert_eq!(p2.evaluate_domain_element(1, 3), 78.into());
-    //     assert_eq!(p2.evaluate(domain_element(1, 4)), 78.into());
-    //     assert_eq!(p2.evaluate_domain_element(1, 4), 78.into());
-    //     assert_eq!(p2.evaluate(domain_element(2, 3)), 34.into());
-    //     assert_eq!(p2.evaluate_domain_element(2, 3), 34.into());
-    //     assert_eq!(p2.evaluate(domain_element(2, 4)), 34.into());
-    //     assert_eq!(p2.evaluate_domain_element(2, 4), 34.into());
-    //     assert_eq!(p2.evaluate(domain_element(3, 4)), 0.into());
-    //     assert_eq!(p2.evaluate_domain_element(3, 4), 0.into());
-    // }
+    #[test]
+    fn test_encode_three_values_blinded() {
+        let p1 = Polynomial::<BlsScalar>::encode_list(vec![90.into(), 78.into(), 34.into()], true);
+        let p2 = Polynomial::<BlsScalar>::encode_list(vec![90.into(), 78.into(), 34.into()], true);
+        assert_eq!(p1.len(), 5);
+        assert_eq!(p2.len(), 5);
+        assert_ne!(p1.commitment(), p2.commitment());
+        assert_eq!(p1.evaluate(domain_element(0, 3)), 90.into());
+        assert_eq!(p1.evaluate_domain_element(0, 3), 90.into());
+        assert_eq!(p1.evaluate(domain_element(0, 4)), 90.into());
+        assert_eq!(p1.evaluate_domain_element(0, 4), 90.into());
+        assert_eq!(p1.evaluate(domain_element(1, 3)), 78.into());
+        assert_eq!(p1.evaluate_domain_element(1, 3), 78.into());
+        assert_eq!(p1.evaluate(domain_element(1, 4)), 78.into());
+        assert_eq!(p1.evaluate_domain_element(1, 4), 78.into());
+        assert_eq!(p1.evaluate(domain_element(2, 3)), 34.into());
+        assert_eq!(p1.evaluate_domain_element(2, 3), 34.into());
+        assert_eq!(p1.evaluate(domain_element(2, 4)), 34.into());
+        assert_eq!(p1.evaluate_domain_element(2, 4), 34.into());
+        assert_eq!(p1.evaluate(domain_element(3, 4)), 0.into());
+        assert_eq!(p1.evaluate_domain_element(3, 4), 0.into());
+        assert_eq!(p2.evaluate(domain_element(0, 3)), 90.into());
+        assert_eq!(p2.evaluate_domain_element(0, 3), 90.into());
+        assert_eq!(p2.evaluate(domain_element(0, 4)), 90.into());
+        assert_eq!(p2.evaluate_domain_element(0, 4), 90.into());
+        assert_eq!(p2.evaluate(domain_element(1, 3)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(1, 3), 78.into());
+        assert_eq!(p2.evaluate(domain_element(1, 4)), 78.into());
+        assert_eq!(p2.evaluate_domain_element(1, 4), 78.into());
+        assert_eq!(p2.evaluate(domain_element(2, 3)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(2, 3), 34.into());
+        assert_eq!(p2.evaluate(domain_element(2, 4)), 34.into());
+        assert_eq!(p2.evaluate_domain_element(2, 4), 34.into());
+        assert_eq!(p2.evaluate(domain_element(3, 4)), 0.into());
+        assert_eq!(p2.evaluate_domain_element(3, 4), 0.into());
+    }
 
-    // #[test]
-    // fn test_encode_three_values_blinded() {
-    //     let p1 = Polynomial::encode_list(vec![90.into(), 78.into(), 34.into()], true);
-    //     let p2 = Polynomial::encode_list(vec![90.into(), 78.into(), 34.into()], true);
-    //     assert_eq!(p1.len(), 5);
-    //     assert_eq!(p2.len(), 5);
-    //     assert_ne!(p1.commitment(), p2.commitment());
-    //     assert_eq!(p1.evaluate(domain_element(0, 3)), 90.into());
-    //     assert_eq!(p1.evaluate_domain_element(0, 3), 90.into());
-    //     assert_eq!(p1.evaluate(domain_element(0, 4)), 90.into());
-    //     assert_eq!(p1.evaluate_domain_element(0, 4), 90.into());
-    //     assert_eq!(p1.evaluate(domain_element(1, 3)), 78.into());
-    //     assert_eq!(p1.evaluate_domain_element(1, 3), 78.into());
-    //     assert_eq!(p1.evaluate(domain_element(1, 4)), 78.into());
-    //     assert_eq!(p1.evaluate_domain_element(1, 4), 78.into());
-    //     assert_eq!(p1.evaluate(domain_element(2, 3)), 34.into());
-    //     assert_eq!(p1.evaluate_domain_element(2, 3), 34.into());
-    //     assert_eq!(p1.evaluate(domain_element(2, 4)), 34.into());
-    //     assert_eq!(p1.evaluate_domain_element(2, 4), 34.into());
-    //     assert_eq!(p1.evaluate(domain_element(3, 4)), 0.into());
-    //     assert_eq!(p1.evaluate_domain_element(3, 4), 0.into());
-    //     assert_eq!(p2.evaluate(domain_element(0, 3)), 90.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 3), 90.into());
-    //     assert_eq!(p2.evaluate(domain_element(0, 4)), 90.into());
-    //     assert_eq!(p2.evaluate_domain_element(0, 4), 90.into());
-    //     assert_eq!(p2.evaluate(domain_element(1, 3)), 78.into());
-    //     assert_eq!(p2.evaluate_domain_element(1, 3), 78.into());
-    //     assert_eq!(p2.evaluate(domain_element(1, 4)), 78.into());
-    //     assert_eq!(p2.evaluate_domain_element(1, 4), 78.into());
-    //     assert_eq!(p2.evaluate(domain_element(2, 3)), 34.into());
-    //     assert_eq!(p2.evaluate_domain_element(2, 3), 34.into());
-    //     assert_eq!(p2.evaluate(domain_element(2, 4)), 34.into());
-    //     assert_eq!(p2.evaluate_domain_element(2, 4), 34.into());
-    //     assert_eq!(p2.evaluate(domain_element(3, 4)), 0.into());
-    //     assert_eq!(p2.evaluate_domain_element(3, 4), 0.into());
-    // }
+    #[test]
+    fn test_encode_four_values() {
+        let p = Polynomial::<BlsScalar>::encode_list(
+            vec![12.into(), 34.into(), 56.into(), 78.into()],
+            false,
+        );
+        assert_eq!(p.len(), 4);
+        assert_eq!(p.evaluate(domain_element(0, 4)), 12.into());
+        assert_eq!(p.evaluate_domain_element(0, 4), 12.into());
+        assert_eq!(p.evaluate(domain_element(1, 4)), 34.into());
+        assert_eq!(p.evaluate_domain_element(1, 4), 34.into());
+        assert_eq!(p.evaluate(domain_element(2, 4)), 56.into());
+        assert_eq!(p.evaluate_domain_element(2, 4), 56.into());
+        assert_eq!(p.evaluate(domain_element(3, 4)), 78.into());
+        assert_eq!(p.evaluate_domain_element(3, 4), 78.into());
+    }
 
-    // #[test]
-    // fn test_encode_four_values() {
-    //     let p = Polynomial::encode_list(vec![12.into(), 34.into(), 56.into(), 78.into()], false);
-    //     assert_eq!(p.len(), 4);
-    //     assert_eq!(p.evaluate(domain_element(0, 4)), 12.into());
-    //     assert_eq!(p.evaluate_domain_element(0, 4), 12.into());
-    //     assert_eq!(p.evaluate(domain_element(1, 4)), 34.into());
-    //     assert_eq!(p.evaluate_domain_element(1, 4), 34.into());
-    //     assert_eq!(p.evaluate(domain_element(2, 4)), 56.into());
-    //     assert_eq!(p.evaluate_domain_element(2, 4), 56.into());
-    //     assert_eq!(p.evaluate(domain_element(3, 4)), 78.into());
-    //     assert_eq!(p.evaluate_domain_element(3, 4), 78.into());
-    // }
+    #[test]
+    fn test_multiply_empty() {
+        let p1 = Polynomial::<Scalar>::default();
+        let p2 = Polynomial::<Scalar>::default();
+        assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
+    }
 
-    // #[test]
-    // fn test_multiply_empty() {
-    //     let p1 = Polynomial::default();
-    //     let p2 = Polynomial::default();
-    //     assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
-    // }
+    #[test]
+    fn test_multiply_empty_by_non_empty() {
+        let p1 = Polynomial::<Scalar>::default();
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![12.into(), 34.into()],
+        };
+        assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
+    }
 
-    // #[test]
-    // fn test_multiply_empty_by_non_empty() {
-    //     let p1 = Polynomial::default();
-    //     let p2 = Polynomial {
-    //         coefficients: vec![12.into(), 34.into()],
-    //     };
-    //     assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
-    // }
+    #[test]
+    fn test_multiply_non_empty_by_empty() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![56.into(), 78.into()],
+        };
+        let p2 = Polynomial::<Scalar>::default();
+        assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
+    }
 
-    // #[test]
-    // fn test_multiply_non_empty_by_empty() {
-    //     let p1 = Polynomial {
-    //         coefficients: vec![56.into(), 78.into()],
-    //     };
-    //     let p2 = Polynomial::default();
-    //     assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
-    // }
+    #[test]
+    fn test_multiply_constant() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![3.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![12.into(), 34.into(), 56.into()],
+        };
+        assert_eq!(
+            p1.multiply(p2).unwrap(),
+            Polynomial {
+                coefficients: vec![36.into(), 102.into(), 168.into()]
+            }
+        );
+    }
 
-    // #[test]
-    // fn test_multiply_constant() {
-    //     let p1 = Polynomial {
-    //         coefficients: vec![3.into()],
-    //     };
-    //     let p2 = Polynomial {
-    //         coefficients: vec![12.into(), 34.into(), 56.into()],
-    //     };
-    //     assert_eq!(
-    //         p1.multiply(p2).unwrap(),
-    //         Polynomial {
-    //             coefficients: vec![36.into(), 102.into(), 168.into()]
-    //         }
-    //     );
-    // }
+    #[test]
+    fn test_multiply_by_constant() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![12.into(), 34.into(), 56.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into()],
+        };
+        assert_eq!(
+            p1.multiply(p2).unwrap(),
+            Polynomial {
+                coefficients: vec![36.into(), 102.into(), 168.into()]
+            }
+        );
+    }
 
-    // #[test]
-    // fn test_multiply_by_constant() {
-    //     let p1 = Polynomial {
-    //         coefficients: vec![12.into(), 34.into(), 56.into()],
-    //     };
-    //     let p2 = Polynomial {
-    //         coefficients: vec![3.into()],
-    //     };
-    //     assert_eq!(
-    //         p1.multiply(p2).unwrap(),
-    //         Polynomial {
-    //             coefficients: vec![36.into(), 102.into(), 168.into()]
-    //         }
-    //     );
-    // }
+    #[test]
+    fn test_multiply_constant_by_constant() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![12.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![34.into()],
+        };
+        assert_eq!(
+            p1.multiply(p2).unwrap(),
+            Polynomial {
+                coefficients: vec![408.into()]
+            }
+        );
+    }
 
-    // #[test]
-    // fn test_multiply_constant_by_constant() {
-    //     let p1 = Polynomial {
-    //         coefficients: vec![12.into()],
-    //     };
-    //     let p2 = Polynomial {
-    //         coefficients: vec![34.into()],
-    //     };
-    //     assert_eq!(
-    //         p1.multiply(p2).unwrap(),
-    //         Polynomial {
-    //             coefficients: vec![408.into()]
-    //         }
-    //     );
-    // }
+    #[test]
+    fn test_multiply_polynomials1() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 10.into(), 8.into()],
+        };
+        assert_eq!(p1.clone().multiply(p2.clone()).unwrap(), result);
+        assert_eq!(p2.multiply(p1).unwrap(), result);
+    }
 
-    // #[test]
-    // fn test_multiply_polynomials1() {
-    //     let p1 = Polynomial {
-    //         coefficients: vec![1.into(), 2.into()],
-    //     };
-    //     let p2 = Polynomial {
-    //         coefficients: vec![3.into(), 4.into()],
-    //     };
-    //     let result = Polynomial {
-    //         coefficients: vec![3.into(), 10.into(), 8.into()],
-    //     };
-    //     assert_eq!(p1.clone().multiply(p2.clone()).unwrap(), result);
-    //     assert_eq!(p2.multiply(p1).unwrap(), result);
-    // }
+    #[test]
+    fn test_multiply_polynomials2() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into(), 5.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 10.into(), 13.into(), 10.into()],
+        };
+        assert_eq!(p1.clone().multiply(p2.clone()).unwrap(), result);
+        assert_eq!(p2.multiply(p1).unwrap(), result);
+    }
 
-    // #[test]
-    // fn test_multiply_polynomials2() {
-    //     let p1 = Polynomial {
-    //         coefficients: vec![1.into(), 2.into()],
-    //     };
-    //     let p2 = Polynomial {
-    //         coefficients: vec![3.into(), 4.into(), 5.into()],
-    //     };
-    //     let result = Polynomial {
-    //         coefficients: vec![3.into(), 10.into(), 13.into(), 10.into()],
-    //     };
-    //     assert_eq!(p1.clone().multiply(p2.clone()).unwrap(), result);
-    //     assert_eq!(p2.multiply(p1).unwrap(), result);
-    // }
+    #[test]
+    fn test_multiply_one_polynomial() {
+        let p = Polynomial::<Scalar> {
+            coefficients: vec![12.into(), 34.into()],
+        };
+        assert_eq!(Polynomial::multiply_many([p.clone()]).unwrap(), p);
+    }
 
-    // #[test]
-    // fn test_multiply_one_polynomial() {
-    //     let p = Polynomial {
-    //         coefficients: vec![12.into(), 34.into()],
-    //     };
-    //     assert_eq!(Polynomial::multiply_many([p.clone()]).unwrap(), p);
-    // }
+    #[test]
+    fn test_multiply_two_polynomials() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into(), 5.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 10.into(), 13.into(), 10.into()],
+        };
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p2.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(Polynomial::multiply_many([p2, p1]).unwrap(), result);
+    }
 
-    // #[test]
-    // fn test_multiply_two_polynomials() {
-    //     let p1 = Polynomial {
-    //         coefficients: vec![1.into(), 2.into()],
-    //     };
-    //     let p2 = Polynomial {
-    //         coefficients: vec![3.into(), 4.into(), 5.into()],
-    //     };
-    //     let result = Polynomial {
-    //         coefficients: vec![3.into(), 10.into(), 13.into(), 10.into()],
-    //     };
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p1.clone(), p2.clone()]).unwrap(),
-    //         result
-    //     );
-    //     assert_eq!(Polynomial::multiply_many([p2, p1]).unwrap(), result);
-    // }
+    #[test]
+    fn test_multiply_three_polynomials() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into(), 5.into()],
+        };
+        let p3 = Polynomial::<Scalar> {
+            coefficients: vec![6.into(), 7.into(), 8.into(), 9.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![
+                18.into(),
+                81.into(),
+                172.into(),
+                258.into(),
+                264.into(),
+                197.into(),
+                90.into(),
+            ],
+        };
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p2.clone(), p3.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p3.clone(), p2.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p2.clone(), p1.clone(), p3.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p2.clone(), p3.clone(), p1.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p3.clone(), p1.clone(), p2.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p3.clone(), p2.clone(), p1.clone()]).unwrap(),
+            result
+        );
+    }
 
-    // #[test]
-    // fn test_multiply_three_polynomials() {
-    //     let p1 = Polynomial {
-    //         coefficients: vec![1.into(), 2.into()],
-    //     };
-    //     let p2 = Polynomial {
-    //         coefficients: vec![3.into(), 4.into(), 5.into()],
-    //     };
-    //     let p3 = Polynomial {
-    //         coefficients: vec![6.into(), 7.into(), 8.into(), 9.into()],
-    //     };
-    //     let result = Polynomial {
-    //         coefficients: vec![
-    //             18.into(),
-    //             81.into(),
-    //             172.into(),
-    //             258.into(),
-    //             264.into(),
-    //             197.into(),
-    //             90.into(),
-    //         ],
-    //     };
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p1.clone(), p2.clone(), p3.clone()]).unwrap(),
-    //         result
-    //     );
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p1.clone(), p3.clone(), p2.clone()]).unwrap(),
-    //         result
-    //     );
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p2.clone(), p1.clone(), p3.clone()]).unwrap(),
-    //         result
-    //     );
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p2.clone(), p3.clone(), p1.clone()]).unwrap(),
-    //         result
-    //     );
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p3.clone(), p1.clone(), p2.clone()]).unwrap(),
-    //         result
-    //     );
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p3.clone(), p2.clone(), p1.clone()]).unwrap(),
-    //         result
-    //     );
-    // }
+    #[test]
+    fn test_multiply_four_polynomials() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into()],
+        };
+        let p3 = Polynomial::<Scalar> {
+            coefficients: vec![5.into(), 6.into()],
+        };
+        let p4 = Polynomial::<Scalar> {
+            coefficients: vec![7.into(), 8.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![105.into(), 596.into(), 1244.into(), 1136.into(), 384.into()],
+        };
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p2.clone(), p3.clone(), p4.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p2.clone(), p4.clone(), p3.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p3.clone(), p2.clone(), p4.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p3.clone(), p4.clone(), p2.clone()]).unwrap(),
+            result
+        );
+        // okay, not gonna try all permutations -- too much typing for too little gain.
+    }
 
-    // #[test]
-    // fn test_multiply_four_polynomials() {
-    //     let p1 = Polynomial {
-    //         coefficients: vec![1.into(), 2.into()],
-    //     };
-    //     let p2 = Polynomial {
-    //         coefficients: vec![3.into(), 4.into()],
-    //     };
-    //     let p3 = Polynomial {
-    //         coefficients: vec![5.into(), 6.into()],
-    //     };
-    //     let p4 = Polynomial {
-    //         coefficients: vec![7.into(), 8.into()],
-    //     };
-    //     let result = Polynomial {
-    //         coefficients: vec![105.into(), 596.into(), 1244.into(), 1136.into(), 384.into()],
-    //     };
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p1.clone(), p2.clone(), p3.clone(), p4.clone()]).unwrap(),
-    //         result
-    //     );
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p1.clone(), p2.clone(), p4.clone(), p3.clone()]).unwrap(),
-    //         result
-    //     );
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p1.clone(), p3.clone(), p2.clone(), p4.clone()]).unwrap(),
-    //         result
-    //     );
-    //     assert_eq!(
-    //         Polynomial::multiply_many([p1.clone(), p3.clone(), p4.clone(), p2.clone()]).unwrap(),
-    //         result
-    //     );
-    //     // okay, not gonna try all permutations -- too much typing for too little gain.
-    // }
+    #[test]
+    fn test_divide_zero_by_zero() {
+        let z = Polynomial::<Scalar> {
+            coefficients: vec![
+                Scalar::ZERO - Scalar::from(1),
+                0.into(),
+                0.into(),
+                0.into(),
+                1.into(),
+            ],
+        };
+        assert_eq!(
+            z.divide_by_zero(4).unwrap(),
+            Polynomial {
+                coefficients: vec![1.into()]
+            }
+        );
+    }
 
-    // #[test]
-    // fn test_divide_zero_by_zero() {
-    //     let z = Polynomial {
-    //         coefficients: vec![
-    //             Scalar::ZERO - Scalar::from(1),
-    //             0.into(),
-    //             0.into(),
-    //             0.into(),
-    //             1.into(),
-    //         ],
-    //     };
-    //     assert_eq!(
-    //         z.divide_by_zero(4).unwrap(),
-    //         Polynomial {
-    //             coefficients: vec![1.into()]
-    //         }
-    //     );
-    // }
+    #[test]
+    fn test_non_trivial_quotient1() {
+        let ql =
+            Polynomial::<Scalar>::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()], false);
+        let qr =
+            Polynomial::<Scalar>::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()], false);
+        let qo = Polynomial::<Scalar>::encode_list(vec![-Scalar::from(1); 4], false);
+        let qm =
+            Polynomial::<Scalar>::encode_list(vec![1.into(), 1.into(), 0.into(), 0.into()], false);
+        let qc = Polynomial::<Scalar>::encode_list(vec![Scalar::ZERO; 4], false);
+        let l =
+            Polynomial::<Scalar>::encode_list(vec![3.into(), 9.into(), 3.into(), 30.into()], false);
+        let r =
+            Polynomial::<Scalar>::encode_list(vec![3.into(), 3.into(), 27.into(), 5.into()], false);
+        let o = Polynomial::<Scalar>::encode_list(
+            vec![9.into(), 27.into(), 30.into(), 35.into()],
+            false,
+        );
+        let lr = l.clone().multiply(r.clone()).unwrap();
+        let p = ql.multiply(l).unwrap()
+            + qr.multiply(r).unwrap()
+            + qo.multiply(o).unwrap()
+            + qm.multiply(lr).unwrap()
+            + qc;
+        let q = p.divide_by_zero(4).unwrap();
+        assert_eq!(q.len(), 6);
+    }
 
-    // #[test]
-    // fn test_non_trivial_quotient1() {
-    //     let ql = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()], false);
-    //     let qr = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()], false);
-    //     let qo = Polynomial::encode_list(vec![-Scalar::from(1); 4], false);
-    //     let qm = Polynomial::encode_list(vec![1.into(), 1.into(), 0.into(), 0.into()], false);
-    //     let qc = Polynomial::encode_list(vec![Scalar::ZERO; 4], false);
-    //     let l = Polynomial::encode_list(vec![3.into(), 9.into(), 3.into(), 30.into()], false);
-    //     let r = Polynomial::encode_list(vec![3.into(), 3.into(), 27.into(), 5.into()], false);
-    //     let o = Polynomial::encode_list(vec![9.into(), 27.into(), 30.into(), 35.into()], false);
-    //     let lr = l.clone().multiply(r.clone()).unwrap();
-    //     let p = ql.multiply(l).unwrap()
-    //         + qr.multiply(r).unwrap()
-    //         + qo.multiply(o).unwrap()
-    //         + qm.multiply(lr).unwrap()
-    //         + qc;
-    //     let q = p.divide_by_zero(4).unwrap();
-    //     assert_eq!(q.len(), 6);
-    // }
+    #[test]
+    fn test_non_trivial_quotient2() {
+        let ql =
+            Polynomial::<Scalar>::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()], false);
+        let qr =
+            Polynomial::<Scalar>::encode_list(vec![0.into(), 0.into(), 1.into(), 5.into()], false);
+        let qo = Polynomial::<Scalar>::encode_list(vec![-Scalar::from(1); 4], false);
+        let qm =
+            Polynomial::<Scalar>::encode_list(vec![1.into(), 1.into(), 0.into(), 0.into()], false);
+        let qc = Polynomial::<Scalar>::encode_list(vec![Scalar::ZERO; 4], false);
+        let l =
+            Polynomial::<Scalar>::encode_list(vec![3.into(), 9.into(), 3.into(), 30.into()], false);
+        let r =
+            Polynomial::<Scalar>::encode_list(vec![3.into(), 3.into(), 27.into(), 1.into()], false);
+        let o = Polynomial::<Scalar>::encode_list(
+            vec![9.into(), 27.into(), 30.into(), 35.into()],
+            false,
+        );
+        let lr = l.clone().multiply(r.clone()).unwrap();
+        let p = ql.multiply(l).unwrap()
+            + qr.multiply(r).unwrap()
+            + qo.multiply(o).unwrap()
+            + qm.multiply(lr).unwrap()
+            + qc;
+        let q = p.divide_by_zero(4).unwrap();
+        assert_eq!(q.len(), 6);
+    }
 
-    // #[test]
-    // fn test_non_trivial_quotient2() {
-    //     let ql = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 1.into()], false);
-    //     let qr = Polynomial::encode_list(vec![0.into(), 0.into(), 1.into(), 5.into()], false);
-    //     let qo = Polynomial::encode_list(vec![-Scalar::from(1); 4], false);
-    //     let qm = Polynomial::encode_list(vec![1.into(), 1.into(), 0.into(), 0.into()], false);
-    //     let qc = Polynomial::encode_list(vec![Scalar::ZERO; 4], false);
-    //     let l = Polynomial::encode_list(vec![3.into(), 9.into(), 3.into(), 30.into()], false);
-    //     let r = Polynomial::encode_list(vec![3.into(), 3.into(), 27.into(), 1.into()], false);
-    //     let o = Polynomial::encode_list(vec![9.into(), 27.into(), 30.into(), 35.into()], false);
-    //     let lr = l.clone().multiply(r.clone()).unwrap();
-    //     let p = ql.multiply(l).unwrap()
-    //         + qr.multiply(r).unwrap()
-    //         + qo.multiply(o).unwrap()
-    //         + qm.multiply(lr).unwrap()
-    //         + qc;
-    //     let q = p.divide_by_zero(4).unwrap();
-    //     assert_eq!(q.len(), 6);
-    // }
+    #[test]
+    fn test_lagrange0_1() {
+        let n = 1;
+        let l0 = Polynomial::lagrange0(n);
+        assert_eq!(l0.evaluate(1.into()), 1.into());
+    }
 
-    // #[test]
-    // fn test_lagrange0_1() {
-    //     let n = 1;
-    //     let l0 = Polynomial::lagrange0(n);
-    //     assert_eq!(l0.evaluate(1.into()), 1.into());
-    // }
+    #[test]
+    fn test_lagrange0_2() {
+        let n = 2;
+        let omega = Polynomial::domain_element(1, n);
+        let l0 = Polynomial::lagrange0(n);
+        assert_eq!(l0.evaluate(1.into()), 1.into());
+        assert_eq!(l0.evaluate(omega), 0.into());
+    }
 
-    // #[test]
-    // fn test_lagrange0_2() {
-    //     let n = 2;
-    //     let omega = Polynomial::domain_element(1, n);
-    //     let l0 = Polynomial::lagrange0(n);
-    //     assert_eq!(l0.evaluate(1.into()), 1.into());
-    //     assert_eq!(l0.evaluate(omega), 0.into());
-    // }
+    #[test]
+    fn test_lagrange0_4() {
+        let n = 4;
+        let omega = Polynomial::domain_element(1, n);
+        let l0 = Polynomial::lagrange0(n);
+        assert_eq!(l0.evaluate(1.into()), 1.into());
+        assert_eq!(l0.evaluate(omega), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([2, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([3, 0, 0, 0])), 0.into());
+    }
 
-    // #[test]
-    // fn test_lagrange0_4() {
-    //     let n = 4;
-    //     let omega = Polynomial::domain_element(1, n);
-    //     let l0 = Polynomial::lagrange0(n);
-    //     assert_eq!(l0.evaluate(1.into()), 1.into());
-    //     assert_eq!(l0.evaluate(omega), 0.into());
-    //     assert_eq!(l0.evaluate(omega.pow_vartime([2, 0, 0, 0])), 0.into());
-    //     assert_eq!(l0.evaluate(omega.pow_vartime([3, 0, 0, 0])), 0.into());
-    // }
-
-    // #[test]
-    // fn test_lagrange0_8() {
-    //     let n = 8;
-    //     let omega = Polynomial::domain_element(1, n);
-    //     let l0 = Polynomial::lagrange0(n);
-    //     assert_eq!(l0.evaluate(1.into()), 1.into());
-    //     assert_eq!(l0.evaluate(omega), 0.into());
-    //     assert_eq!(l0.evaluate(omega.pow_vartime([2, 0, 0, 0])), 0.into());
-    //     assert_eq!(l0.evaluate(omega.pow_vartime([3, 0, 0, 0])), 0.into());
-    //     assert_eq!(l0.evaluate(omega.pow_vartime([4, 0, 0, 0])), 0.into());
-    //     assert_eq!(l0.evaluate(omega.pow_vartime([5, 0, 0, 0])), 0.into());
-    //     assert_eq!(l0.evaluate(omega.pow_vartime([6, 0, 0, 0])), 0.into());
-    //     assert_eq!(l0.evaluate(omega.pow_vartime([7, 0, 0, 0])), 0.into());
-    // }
+    #[test]
+    fn test_lagrange0_8() {
+        let n = 8;
+        let omega = Polynomial::domain_element(1, n);
+        let l0 = Polynomial::lagrange0(n);
+        assert_eq!(l0.evaluate(1.into()), 1.into());
+        assert_eq!(l0.evaluate(omega), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([2, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([3, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([4, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([5, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([6, 0, 0, 0])), 0.into());
+        assert_eq!(l0.evaluate(omega.pow_vartime([7, 0, 0, 0])), 0.into());
+    }
 }
