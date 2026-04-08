@@ -812,6 +812,13 @@ mod tests {
         assert_eq!(Scalar::TWO_INV, Scalar::from(2).invert().unwrap());
         assert_eq!(Scalar::MULTIPLICATIVE_GENERATOR, 15.into());
         assert!(Scalar::ROOT_OF_UNITY > Scalar::ONE);
+        for i in 0..Scalar::S {
+            assert_ne!(
+                Scalar::ROOT_OF_UNITY
+                    .pow_vartime(Scalar::from(2).pow_vartime([i as u64, 0, 0, 0]).to_le_u64()),
+                Scalar::ONE
+            );
+        }
         assert_eq!(
             Scalar::ROOT_OF_UNITY.pow_vartime(
                 Scalar::from(2)
@@ -825,6 +832,13 @@ mod tests {
             Scalar::ONE
         );
         assert!(Scalar::THREE_ADIC_ROOT_OF_UNITY > Scalar::ONE);
+        for i in 0..Scalar::T {
+            assert_ne!(
+                Scalar::THREE_ADIC_ROOT_OF_UNITY
+                    .pow_vartime(Scalar::from(3).pow_vartime([i as u64, 0, 0, 0]).to_le_u64()),
+                Scalar::ONE
+            );
+        }
         assert_eq!(
             Scalar::THREE_ADIC_ROOT_OF_UNITY.pow_vartime(
                 Scalar::from(3)
