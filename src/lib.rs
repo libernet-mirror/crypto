@@ -14,7 +14,6 @@ mod params;
 pub mod account;
 pub mod bls;
 pub mod bluesky;
-pub mod fri;
 pub mod kzg;
 pub mod merkle;
 pub mod pem;
