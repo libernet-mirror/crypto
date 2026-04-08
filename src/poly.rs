@@ -4,6 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar as BlsScalar};
 use ff::{Field, PrimeField};
 use group::Group;
+use primitive_types::U256;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::sync::LazyLock;
 
@@ -173,7 +174,7 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         }
     }
 
-    /// Computes a primitive n-th root of unity.
+    /// Computes an n-th root of unity.
     ///
     /// REQUIRES: `n` must be a power of two less than or equal to 2^S, with `S` being the 2-adicity
     /// of the field `F` (supplied as `F::S`).
@@ -181,8 +182,8 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         assert!(n.is_power_of_two());
         let trailing_zeros = n.trailing_zeros();
         assert!(trailing_zeros <= F::S);
-        let exponent = 1u64 << (F::S - trailing_zeros);
-        F::ROOT_OF_UNITY.pow_vartime([exponent, 0, 0, 0])
+        let exponent = U256::one() << (F::S - trailing_zeros);
+        F::ROOT_OF_UNITY.pow_vartime(exponent)
     }
 
     /// Interpolates a polynomial that encodes an ordered list of values.
@@ -211,7 +212,7 @@ impl<F: PrimeField + Ord> Polynomial<F> {
     pub fn encode_list(mut values: Vec<F>, blind: bool) -> Self {
         let n = values.len();
         assert!(n > 0);
-        assert!(n as u64 <= 1u64 << F::S);
+        assert!(U256::from(n as u64) <= U256::one() << F::S);
         let n = n.next_power_of_two();
         values.reserve(n + if blind { 1 } else { 0 });
         values.resize(n, 0.into());
