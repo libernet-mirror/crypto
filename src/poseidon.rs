@@ -743,9 +743,9 @@ mod tests {
         assert_eq!(
             permutation::<BlueSkyConfig3, Scalar, 3>([0.into(), 1.into(), 2.into()]),
             [
-                parse_scalar("0x65370fb2741e69826dfce65c057df95840cc1ba84e5a2a78d247cd3abbc8d24f"),
-                parse_scalar("0x516d29bd3c593f536011f5cf6f9c7ec0c13b3c1d40b58c6f1adfbea7cef701aa"),
-                parse_scalar("0x2b7ccc54fc2614a044372db43483b62b3044574e2d9e516a7c8162aa2af4b507"),
+                parse_scalar("0x6f30582cde48a25b26015b7f718ba2fb359e93029caf04d8d0b3e66b1d46b941"),
+                parse_scalar("0x5de8159372063ce76403529bb1a9725461b96467035d906400ff48d0937f9db6"),
+                parse_scalar("0x3c88b37dc6d14d08960b6fe58344e09194d11a930ce9f60cc90294683fac4b9f"),
             ]
         );
     }
@@ -755,10 +755,10 @@ mod tests {
         assert_eq!(
             permutation::<BlueSkyConfig4, Scalar, 4>([0.into(), 1.into(), 2.into(), 3.into()]),
             [
-                parse_scalar("0x21ceb57077b950023adb5c9d1912bac28d9bc3ee5d871f7eff86be4e79b105dc"),
-                parse_scalar("0x37e6b98b05fcc4cf9750887a0a15db2abd4c702ed38f2896c21fd1cf023e2b7c"),
-                parse_scalar("0x5305e6d7d5890c75afe7760351dd000cafe891e8ffb2ba4e62ccd571906901d3"),
-                parse_scalar("0x20e6de3116aec90c3e3ce05db2aeced836a619f61b187c34a054f29df7cfdca0"),
+                parse_scalar("0x775049834d9decb40ec5a109116a27527fa9105a3521cee8a42777788fda1501"),
+                parse_scalar("0x630ded08b39ceac4859c9ab6d14b548f48d01164ce1efada3a7a868f7d9248cb"),
+                parse_scalar("0x14b47f414dececb9936dcbb89e2fdd8511c44acb30439d1d23e48119b1c03b4f"),
+                parse_scalar("0x72de70292ce1ac7f30b859d04bbb6de5377288c1192a08863c34e11bc9269c4c"),
             ]
         );
     }
