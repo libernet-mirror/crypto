@@ -899,921 +899,920 @@ mod tests {
         );
         assert!(
             Scalar::from_repr_vartime(&[
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-                72, 122, 216, 10, 219, 186, 255, 255, 127
+                1, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
             ])
             .is_none()
         );
     }
 
-    // #[test]
-    // fn test_from_repr_canonical() {
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //             0, 0, 0, 0,
-    //         ])),
-    //         "0x0000000000000000000000000000000000000000000000000000000000000000"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //             0, 0, 0, 0,
-    //         ])),
-    //         "0x0000000000000000000000000000000000000000000000000000000000000001"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-    //             24, 25, 26, 27, 28, 29, 30, 31, 32
-    //         ])),
-    //         "0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 47, 10, 150,
-    //             186, 185, 167, 254, 38, 41, 72, 122, 216, 10, 219, 186, 255, 255, 127
-    //         ])),
-    //         "0x7fffffbadb0ad87a482926fea7b9ba960a2fffffffffffffffffffffffffffff"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-    //             72, 122, 216, 10, 219, 186, 255, 255, 127
-    //         ])),
-    //         "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-    //             72, 122, 216, 10, 219, 186, 255, 255, 127
-    //         ])),
-    //         "0x0000000000000000000000000000000000000000000000000000000000000000"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-    //             72, 122, 216, 10, 219, 186, 255, 255, 127
-    //         ])),
-    //         "0x0000000000000000000000000000000000000000000000000000000000000001"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 20, 44, 117, 115, 79, 253, 77, 82,
-    //             144, 244, 176, 21, 182, 117, 255, 255, 255
-    //         ])),
-    //         "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 20, 44, 117, 115, 79, 253, 77, 82,
-    //             144, 244, 176, 21, 182, 117, 255, 255, 255
-    //         ])),
-    //         "0x0000000000000000000000000000000000000000000000000000000000000000"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 20, 44, 117, 115, 79, 253, 77, 82,
-    //             144, 244, 176, 21, 182, 117, 255, 255, 255
-    //         ])),
-    //         "0x0000000000000000000000000000000000000000000000000000000000000001"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             254, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    //             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    //         ])),
-    //         "0x0000008a49ea4f0b6fadb202b08c8ad3eb9ffffffffffffffffffffffffffffc"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(Scalar::from_repr_canonical(&[
-    //             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    //             255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    //         ])),
-    //         "0x0000008a49ea4f0b6fadb202b08c8ad3eb9ffffffffffffffffffffffffffffd"
-    //     );
-    // }
+    #[test]
+    fn test_from_repr_canonical() {
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32
+            ])),
+            "0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                255, 255, 255, 255, 255, 255, 255, 191, 71, 85, 155, 158, 242, 221, 115, 6, 254,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
+            ])),
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547bfffffffffffffff"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                0, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
+            ])),
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                1, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                2, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                1, 0, 0, 0, 0, 0, 0, 128, 143, 170, 54, 61, 229, 187, 231, 12, 252, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255
+            ])),
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                2, 0, 0, 0, 0, 0, 0, 128, 143, 170, 54, 61, 229, 187, 231, 12, 252, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                3, 0, 0, 0, 0, 0, 0, 128, 143, 170, 54, 61, 229, 187, 231, 12, 252, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255
+            ])),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                254, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            ])),
+            "0x00000000000000000000000000000003f318441ac2c955707ffffffffffffffc"
+        );
+        assert_eq!(
+            format_scalar(Scalar::from_repr_canonical(&[
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+            ])),
+            "0x00000000000000000000000000000003f318441ac2c955707ffffffffffffffd"
+        );
+    }
 
-    // fn from_repr_wide(u512: U512) -> Scalar {
-    //     Scalar::from_repr_wide(&u512.to_little_endian())
-    // }
+    fn from_repr_wide(u512: U512) -> Scalar {
+        Scalar::from_repr_wide(&u512.to_little_endian())
+    }
 
-    // #[test]
-    // fn test_from_repr_wide() {
-    //     assert_eq!(
-    //         from_repr_wide("0x53acd3dc79d20203e9e60026cdb75d037f9cbb33eded8b767a8dfbee9bff090ecf26226e4d9d26b20b854b21b423ea28becd7445365e1fd349ed4af9c16baf97".parse().unwrap()),
-    //         parse_scalar("0x5807d7340b99b478a10bcacd6fefef4c2df17bdee2f9c5353e307f113a60d6e5"),
-    //     );
-    //     assert_eq!(
-    //         from_repr_wide("0x76f63d96682cea5050cd80435b9c53c6b9298bb03e2fc5d726094917e80782c0f9cd0bc49eb092a199116130b24377ed6a5fe01bc95ce0a8cca77dbb1d10922b".parse().unwrap()),
-    //         parse_scalar("0x49edffbd1c10c843ab8beda2fddf2b976758e6d3a9a5fc702ef433ab97eb570e"),
-    //     );
-    // }
+    #[test]
+    fn test_from_repr_wide() {
+        assert_eq!(
+            from_repr_wide("0x53acd3dc79d20203e9e60026cdb75d037f9cbb33eded8b767a8dfbee9bff090ecf26226e4d9d26b20b854b21b423ea28becd7445365e1fd349ed4af9c16baf97".parse().unwrap()),
+            parse_scalar("0x11ae20d001e52b42470886f49871dc9c79c9021fd09a19eb527c213ab2f3db10"),
+        );
+        assert_eq!(
+            from_repr_wide("0x76f63d96682cea5050cd80435b9c53c6b9298bb03e2fc5d726094917e80782c0f9cd0bc49eb092a199116130b24377ed6a5fe01bc95ce0a8cca77dbb1d10922b".parse().unwrap()),
+            parse_scalar("0x45ce5572614df708a441e89f8982660fa7a904b470690ef76e4eb2a895402be7"),
+        );
+    }
 
-    // #[test]
-    // fn test_from_le_u64() {
-    //     assert_eq!(
-    //         Scalar::from_le_u64([1, 2, 3, 4]).unwrap(),
-    //         parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from_le_u64_vartime([1, 2, 3, 4]).unwrap(),
-    //         parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from_le_u64([
-    //             0x12f64a812ff7b02eu64,
-    //             0x1eaa2e32b4f74374u64,
-    //             0x03dd6b282eece85bu64,
-    //             0x6deb006ce96c1becu64,
-    //         ])
-    //         .unwrap(),
-    //         parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from_le_u64_vartime([
-    //             0x12f64a812ff7b02eu64,
-    //             0x1eaa2e32b4f74374u64,
-    //             0x03dd6b282eece85bu64,
-    //             0x6deb006ce96c1becu64,
-    //         ])
-    //         .unwrap(),
-    //         parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from_le_u64([
-    //             0x0000000000000000u64,
-    //             0x0a30000000000000u64,
-    //             0x482926fea7b9ba96u64,
-    //             0x7fffffbadb0ad87au64,
-    //         ])
-    //         .unwrap(),
-    //         parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from_le_u64_vartime([
-    //             0x0000000000000000u64,
-    //             0x0a30000000000000u64,
-    //             0x482926fea7b9ba96u64,
-    //             0x7fffffbadb0ad87au64,
-    //         ])
-    //         .unwrap(),
-    //         parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
-    //     );
-    //     assert!(
-    //         Scalar::from_le_u64([
-    //             0x0000000000000001u64,
-    //             0x0a30000000000000u64,
-    //             0x482926fea7b9ba96u64,
-    //             0x7fffffbadb0ad87au64,
-    //         ])
-    //         .into_option()
-    //         .is_none()
-    //     );
-    //     assert!(
-    //         Scalar::from_le_u64_vartime([
-    //             0x0000000000000001u64,
-    //             0x0a30000000000000u64,
-    //             0x482926fea7b9ba96u64,
-    //             0x7fffffbadb0ad87au64,
-    //         ])
-    //         .is_none()
-    //     );
-    // }
+    #[test]
+    fn test_from_le_u64() {
+        assert_eq!(
+            Scalar::from_le_u64([1, 2, 3, 4]).unwrap(),
+            parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
+        );
+        assert_eq!(
+            Scalar::from_le_u64_vartime([1, 2, 3, 4]).unwrap(),
+            parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
+        );
+        assert_eq!(
+            Scalar::from_le_u64([
+                0x12f64a812ff7b02eu64,
+                0x1eaa2e32b4f74374u64,
+                0x03dd6b282eece85bu64,
+                0x6deb006ce96c1becu64,
+            ])
+            .unwrap(),
+            parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
+        );
+        assert_eq!(
+            Scalar::from_le_u64_vartime([
+                0x12f64a812ff7b02eu64,
+                0x1eaa2e32b4f74374u64,
+                0x03dd6b282eece85bu64,
+                0x6deb006ce96c1becu64,
+            ])
+            .unwrap(),
+            parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
+        );
+        assert_eq!(
+            Scalar::from_le_u64([
+                0xc000000000000000u64,
+                0x0673ddf29e9b5547u64,
+                0xfffffffffffffffeu64,
+                0x7fffffffffffffffu64,
+            ])
+            .unwrap(),
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
+        );
+        assert_eq!(
+            Scalar::from_le_u64_vartime([
+                0xc000000000000000u64,
+                0x0673ddf29e9b5547u64,
+                0xfffffffffffffffeu64,
+                0x7fffffffffffffffu64,
+            ])
+            .unwrap(),
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
+        );
+        assert!(
+            Scalar::from_le_u64([
+                0xc000000000000001u64,
+                0x0673ddf29e9b5547u64,
+                0xfffffffffffffffeu64,
+                0x7fffffffffffffffu64,
+            ])
+            .into_option()
+            .is_none()
+        );
+        assert!(
+            Scalar::from_le_u64_vartime([
+                0xc000000000000001u64,
+                0x0673ddf29e9b5547u64,
+                0xfffffffffffffffeu64,
+                0x7fffffffffffffffu64,
+            ])
+            .is_none()
+        );
+    }
 
-    // #[test]
-    // fn test_to_le_u64() {
-    //     assert_eq!(
-    //         parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
-    //             .to_le_u64(),
-    //         [1, 2, 3, 4]
-    //     );
-    //     assert_eq!(
-    //         parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
-    //             .to_le_u64(),
-    //         [
-    //             0x12f64a812ff7b02eu64,
-    //             0x1eaa2e32b4f74374u64,
-    //             0x03dd6b282eece85bu64,
-    //             0x6deb006ce96c1becu64,
-    //         ]
-    //     );
-    //     assert_eq!(
-    //         parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
-    //             .to_le_u64(),
-    //         [
-    //             0x0000000000000000u64,
-    //             0x0a30000000000000u64,
-    //             0x482926fea7b9ba96u64,
-    //             0x7fffffbadb0ad87au64,
-    //         ]
-    //     );
-    // }
+    #[test]
+    fn test_to_le_u64() {
+        assert_eq!(
+            parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
+                .to_le_u64(),
+            [1, 2, 3, 4]
+        );
+        assert_eq!(
+            parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
+                .to_le_u64(),
+            [
+                0x12f64a812ff7b02eu64,
+                0x1eaa2e32b4f74374u64,
+                0x03dd6b282eece85bu64,
+                0x6deb006ce96c1becu64,
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
+                .to_le_u64(),
+            [
+                0xc000000000000000u64,
+                0x0673ddf29e9b5547u64,
+                0xfffffffffffffffeu64,
+                0x7fffffffffffffffu64,
+            ]
+        );
+    }
 
-    // #[test]
-    // fn test_from_u64() {
-    //     assert_eq!(
-    //         Scalar::from(0),
-    //         parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000000")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from(1),
-    //         parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000001")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from(2),
-    //         parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000002")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from(42),
-    //         parse_scalar("0x000000000000000000000000000000000000000000000000000000000000002a")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from(u64::MAX - 2),
-    //         parse_scalar("0x000000000000000000000000000000000000000000000000fffffffffffffffd")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from(u64::MAX - 1),
-    //         parse_scalar("0x000000000000000000000000000000000000000000000000fffffffffffffffe")
-    //     );
-    //     assert_eq!(
-    //         Scalar::from(u64::MAX),
-    //         parse_scalar("0x000000000000000000000000000000000000000000000000ffffffffffffffff")
-    //     );
-    // }
+    #[test]
+    fn test_from_u64() {
+        assert_eq!(
+            Scalar::from(0),
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000000")
+        );
+        assert_eq!(
+            Scalar::from(1),
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000001")
+        );
+        assert_eq!(
+            Scalar::from(2),
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000002")
+        );
+        assert_eq!(
+            Scalar::from(42),
+            parse_scalar("0x000000000000000000000000000000000000000000000000000000000000002a")
+        );
+        assert_eq!(
+            Scalar::from(u64::MAX - 2),
+            parse_scalar("0x000000000000000000000000000000000000000000000000fffffffffffffffd")
+        );
+        assert_eq!(
+            Scalar::from(u64::MAX - 1),
+            parse_scalar("0x000000000000000000000000000000000000000000000000fffffffffffffffe")
+        );
+        assert_eq!(
+            Scalar::from(u64::MAX),
+            parse_scalar("0x000000000000000000000000000000000000000000000000ffffffffffffffff")
+        );
+    }
 
-    // #[test]
-    // fn test_try_from_u256() {
-    //     assert_eq!(
-    //         Scalar::try_from(
-    //             "0x0000000000000004000000000000000300000000000000020000000000000001"
-    //                 .parse::<U256>()
-    //                 .unwrap()
-    //         )
-    //         .unwrap(),
-    //         parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
-    //     );
-    //     assert_eq!(
-    //         Scalar::try_from(
-    //             "0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e"
-    //                 .parse::<U256>()
-    //                 .unwrap()
-    //         )
-    //         .unwrap(),
-    //         parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
-    //     );
-    //     assert_eq!(
-    //         Scalar::try_from(
-    //             "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
-    //                 .parse::<U256>()
-    //                 .unwrap()
-    //         )
-    //         .unwrap(),
-    //         parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
-    //     );
-    //     assert!(
-    //         Scalar::try_from(
-    //             "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000001"
-    //                 .parse::<U256>()
-    //                 .unwrap()
-    //         )
-    //         .is_err()
-    //     );
-    // }
+    #[test]
+    fn test_try_from_u256() {
+        assert_eq!(
+            Scalar::try_from(
+                "0x0000000000000004000000000000000300000000000000020000000000000001"
+                    .parse::<U256>()
+                    .unwrap()
+            )
+            .unwrap(),
+            parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
+        );
+        assert_eq!(
+            Scalar::try_from(
+                "0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e"
+                    .parse::<U256>()
+                    .unwrap()
+            )
+            .unwrap(),
+            parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
+        );
+        assert_eq!(
+            Scalar::try_from(
+                "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
+                    .parse::<U256>()
+                    .unwrap()
+            )
+            .unwrap(),
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
+        );
+        assert!(
+            Scalar::try_from(
+                "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000001"
+                    .parse::<U256>()
+                    .unwrap()
+            )
+            .is_err()
+        );
+    }
 
-    // #[test]
-    // fn test_to_u256() {
-    //     assert_eq!(
-    //         parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
-    //             .to_u256(),
-    //         "0x0000000000000004000000000000000300000000000000020000000000000001"
-    //             .parse()
-    //             .unwrap()
-    //     );
-    //     assert_eq!(
-    //         parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
-    //             .to_u256(),
-    //         "0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e"
-    //             .parse()
-    //             .unwrap()
-    //     );
-    //     assert_eq!(
-    //         parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
-    //             .to_u256(),
-    //         "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
-    //             .parse()
-    //             .unwrap()
-    //     );
-    // }
+    #[test]
+    fn test_to_u256() {
+        assert_eq!(
+            parse_scalar("0x0000000000000004000000000000000300000000000000020000000000000001")
+                .to_u256(),
+            "0x0000000000000004000000000000000300000000000000020000000000000001"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(
+            parse_scalar("0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e")
+                .to_u256(),
+            "0x6deb006ce96c1bec03dd6b282eece85b1eaa2e32b4f7437412f64a812ff7b02e"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
+                .to_u256(),
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
+                .parse()
+                .unwrap()
+        );
+    }
 
-    // #[test]
-    // fn test_from_repr() {
-    //     assert_eq!(
-    //         format_scalar(
-    //             Scalar::from_repr([
-    //                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //                 0, 0, 0, 0, 0, 0,
-    //             ])
-    //             .unwrap()
-    //         ),
-    //         "0x0000000000000000000000000000000000000000000000000000000000000000"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(
-    //             Scalar::from_repr([
-    //                 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //                 0, 0, 0, 0, 0, 0,
-    //             ])
-    //             .unwrap()
-    //         ),
-    //         "0x0000000000000000000000000000000000000000000000000000000000000001"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(
-    //             Scalar::from_repr([
-    //                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
-    //                 23, 24, 25, 26, 27, 28, 29, 30, 31, 32
-    //             ])
-    //             .unwrap()
-    //         ),
-    //         "0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201"
-    //     );
-    //     assert_eq!(
-    //         format_scalar(
-    //             Scalar::from_repr([
-    //                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38,
-    //                 41, 72, 122, 216, 10, 219, 186, 255, 255, 127
-    //             ])
-    //             .unwrap()
-    //         ),
-    //         "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
-    //     );
-    //     assert!(
-    //         Scalar::from_repr([
-    //             1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-    //             72, 122, 216, 10, 219, 186, 255, 255, 127
-    //         ])
-    //         .into_option()
-    //         .is_none()
-    //     );
-    // }
+    #[test]
+    fn test_from_repr() {
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr([
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ])
+                .unwrap()
+            ),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr([
+                    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ])
+                .unwrap()
+            ),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr([
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                    23, 24, 25, 26, 27, 28, 29, 30, 31, 32
+                ])
+                .unwrap()
+            ),
+            "0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_repr([
+                    0, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255,
+                    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
+                ])
+                .unwrap()
+            ),
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
+        );
+        assert!(
+            Scalar::from_repr([
+                1, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
+            ])
+            .into_option()
+            .is_none()
+        );
+    }
 
-    // #[test]
-    // fn test_to_repr() {
-    //     assert_eq!(
-    //         parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000000")
-    //             .to_repr(),
-    //         [
-    //             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //             0, 0, 0, 0,
-    //         ]
-    //     );
-    //     assert_eq!(
-    //         parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000001")
-    //             .to_repr(),
-    //         [
-    //             1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    //             0, 0, 0, 0,
-    //         ]
-    //     );
-    //     assert_eq!(
-    //         parse_scalar("0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201")
-    //             .to_repr(),
-    //         [
-    //             1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
-    //             24, 25, 26, 27, 28, 29, 30, 31, 32
-    //         ]
-    //     );
-    //     assert_eq!(
-    //         parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
-    //             .to_repr(),
-    //         [
-    //             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-    //             72, 122, 216, 10, 219, 186, 255, 255, 127
-    //         ]
-    //     );
-    // }
+    #[test]
+    fn test_to_repr() {
+        assert_eq!(
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000000")
+                .to_repr(),
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000001")
+                .to_repr(),
+            [
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201")
+                .to_repr(),
+            [
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
+                .to_repr(),
+            [
+                0, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
+            ]
+        );
+    }
 
-    // #[test]
-    // fn test_cmp() {
-    //     let v0 = Scalar::from(0);
-    //     let v1 = Scalar::from(1);
-    //     let v2 = Scalar::from(42);
-    //     let v3 = parse_scalar("0x318c1df8459d125dc54e1fe487bf23e8430221b69660d8ca9427235713f24de1");
-    //     let v4 = Scalar::MAX_MINUS_ONE;
-    //     let v5 = Scalar::MAX;
+    #[test]
+    fn test_cmp() {
+        let v0 = Scalar::from(0);
+        let v1 = Scalar::from(1);
+        let v2 = Scalar::from(42);
+        let v3 = parse_scalar("0x318c1df8459d125dc54e1fe487bf23e8430221b69660d8ca9427235713f24de1");
+        let v4 = Scalar::MAX_MINUS_ONE;
+        let v5 = Scalar::MAX;
 
-    //     assert_eq!(v0.cmp(&v0), Ordering::Equal);
-    //     assert_eq!(v0.cmp(&v1), Ordering::Less);
-    //     assert_eq!(v0.cmp(&v2), Ordering::Less);
-    //     assert_eq!(v0.cmp(&v3), Ordering::Less);
-    //     assert_eq!(v0.cmp(&v4), Ordering::Less);
-    //     assert_eq!(v0.cmp(&v5), Ordering::Less);
+        assert_eq!(v0.cmp(&v0), Ordering::Equal);
+        assert_eq!(v0.cmp(&v1), Ordering::Less);
+        assert_eq!(v0.cmp(&v2), Ordering::Less);
+        assert_eq!(v0.cmp(&v3), Ordering::Less);
+        assert_eq!(v0.cmp(&v4), Ordering::Less);
+        assert_eq!(v0.cmp(&v5), Ordering::Less);
 
-    //     assert_eq!(v1.cmp(&v0), Ordering::Greater);
-    //     assert_eq!(v1.cmp(&v1), Ordering::Equal);
-    //     assert_eq!(v1.cmp(&v2), Ordering::Less);
-    //     assert_eq!(v1.cmp(&v3), Ordering::Less);
-    //     assert_eq!(v1.cmp(&v4), Ordering::Less);
-    //     assert_eq!(v1.cmp(&v5), Ordering::Less);
+        assert_eq!(v1.cmp(&v0), Ordering::Greater);
+        assert_eq!(v1.cmp(&v1), Ordering::Equal);
+        assert_eq!(v1.cmp(&v2), Ordering::Less);
+        assert_eq!(v1.cmp(&v3), Ordering::Less);
+        assert_eq!(v1.cmp(&v4), Ordering::Less);
+        assert_eq!(v1.cmp(&v5), Ordering::Less);
 
-    //     assert_eq!(v2.cmp(&v0), Ordering::Greater);
-    //     assert_eq!(v2.cmp(&v1), Ordering::Greater);
-    //     assert_eq!(v2.cmp(&v2), Ordering::Equal);
-    //     assert_eq!(v2.cmp(&v3), Ordering::Less);
-    //     assert_eq!(v2.cmp(&v4), Ordering::Less);
-    //     assert_eq!(v2.cmp(&v5), Ordering::Less);
+        assert_eq!(v2.cmp(&v0), Ordering::Greater);
+        assert_eq!(v2.cmp(&v1), Ordering::Greater);
+        assert_eq!(v2.cmp(&v2), Ordering::Equal);
+        assert_eq!(v2.cmp(&v3), Ordering::Less);
+        assert_eq!(v2.cmp(&v4), Ordering::Less);
+        assert_eq!(v2.cmp(&v5), Ordering::Less);
 
-    //     assert_eq!(v3.cmp(&v0), Ordering::Greater);
-    //     assert_eq!(v3.cmp(&v1), Ordering::Greater);
-    //     assert_eq!(v3.cmp(&v2), Ordering::Greater);
-    //     assert_eq!(v3.cmp(&v3), Ordering::Equal);
-    //     assert_eq!(v3.cmp(&v4), Ordering::Less);
-    //     assert_eq!(v3.cmp(&v5), Ordering::Less);
+        assert_eq!(v3.cmp(&v0), Ordering::Greater);
+        assert_eq!(v3.cmp(&v1), Ordering::Greater);
+        assert_eq!(v3.cmp(&v2), Ordering::Greater);
+        assert_eq!(v3.cmp(&v3), Ordering::Equal);
+        assert_eq!(v3.cmp(&v4), Ordering::Less);
+        assert_eq!(v3.cmp(&v5), Ordering::Less);
 
-    //     assert_eq!(v4.cmp(&v0), Ordering::Greater);
-    //     assert_eq!(v4.cmp(&v1), Ordering::Greater);
-    //     assert_eq!(v4.cmp(&v2), Ordering::Greater);
-    //     assert_eq!(v4.cmp(&v3), Ordering::Greater);
-    //     assert_eq!(v4.cmp(&v4), Ordering::Equal);
-    //     assert_eq!(v4.cmp(&v5), Ordering::Less);
+        assert_eq!(v4.cmp(&v0), Ordering::Greater);
+        assert_eq!(v4.cmp(&v1), Ordering::Greater);
+        assert_eq!(v4.cmp(&v2), Ordering::Greater);
+        assert_eq!(v4.cmp(&v3), Ordering::Greater);
+        assert_eq!(v4.cmp(&v4), Ordering::Equal);
+        assert_eq!(v4.cmp(&v5), Ordering::Less);
 
-    //     assert_eq!(v5.cmp(&v0), Ordering::Greater);
-    //     assert_eq!(v5.cmp(&v1), Ordering::Greater);
-    //     assert_eq!(v5.cmp(&v2), Ordering::Greater);
-    //     assert_eq!(v5.cmp(&v3), Ordering::Greater);
-    //     assert_eq!(v5.cmp(&v4), Ordering::Greater);
-    //     assert_eq!(v5.cmp(&v5), Ordering::Equal);
-    // }
+        assert_eq!(v5.cmp(&v0), Ordering::Greater);
+        assert_eq!(v5.cmp(&v1), Ordering::Greater);
+        assert_eq!(v5.cmp(&v2), Ordering::Greater);
+        assert_eq!(v5.cmp(&v3), Ordering::Greater);
+        assert_eq!(v5.cmp(&v4), Ordering::Greater);
+        assert_eq!(v5.cmp(&v5), Ordering::Equal);
+    }
 
-    // #[test]
-    // fn test_add() {
-    //     let lhs =
-    //         parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     assert_eq!(
-    //         lhs + rhs,
-    //         parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b")
-    //     );
-    //     assert_eq!(
-    //         lhs + &rhs,
-    //         parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b")
-    //     );
-    // }
+    #[test]
+    fn test_add() {
+        let lhs =
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        assert_eq!(
+            lhs + rhs,
+            parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b")
+        );
+        assert_eq!(
+            lhs + &rhs,
+            parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b")
+        );
+    }
 
-    // #[test]
-    // fn test_add_wraparound() {
-    //     let lhs =
-    //         parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     assert_eq!(
-    //         lhs + rhs,
-    //         parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b")
-    //     );
-    //     assert_eq!(
-    //         lhs + &rhs,
-    //         parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b")
-    //     );
-    // }
+    #[test]
+    fn test_add_wraparound() {
+        let lhs =
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        assert_eq!(
+            lhs + rhs,
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b")
+        );
+        assert_eq!(
+            lhs + &rhs,
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b")
+        );
+    }
 
-    // #[test]
-    // fn test_add_assign() {
-    //     let mut lhs =
-    //         parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     lhs += rhs;
-    //     assert_eq!(
-    //         lhs,
-    //         parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b")
-    //     );
-    // }
+    #[test]
+    fn test_add_assign() {
+        let mut lhs =
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs += rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b")
+        );
+    }
 
-    // #[test]
-    // fn test_add_assign_ref() {
-    //     let mut lhs =
-    //         parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     lhs += &rhs;
-    //     assert_eq!(
-    //         lhs,
-    //         parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b")
-    //     );
-    // }
+    #[test]
+    fn test_add_assign_ref() {
+        let mut lhs =
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs += &rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b")
+        );
+    }
 
-    // #[test]
-    // fn test_add_assign_wraparound() {
-    //     let mut lhs =
-    //         parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     lhs += rhs;
-    //     assert_eq!(
-    //         lhs,
-    //         parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b")
-    //     );
-    // }
+    #[test]
+    fn test_add_assign_wraparound() {
+        let mut lhs =
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs += rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b")
+        );
+    }
 
-    // #[test]
-    // fn test_add_assign_wraparound_ref() {
-    //     let mut lhs =
-    //         parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     lhs += &rhs;
-    //     assert_eq!(
-    //         lhs,
-    //         parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b")
-    //     );
-    // }
+    #[test]
+    fn test_add_assign_wraparound_ref() {
+        let mut lhs =
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs += &rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b")
+        );
+    }
 
-    // #[test]
-    // fn test_sub() {
-    //     let lhs =
-    //         parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     assert_eq!(
-    //         lhs - rhs,
-    //         parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
-    //     );
-    //     assert_eq!(
-    //         lhs - &rhs,
-    //         parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
-    //     );
-    // }
+    #[test]
+    fn test_sub() {
+        let lhs =
+            parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        assert_eq!(
+            lhs - rhs,
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
+        );
+        assert_eq!(
+            lhs - &rhs,
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
+        );
+    }
 
-    // #[test]
-    // fn test_sub_wraparound() {
-    //     let lhs =
-    //         parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     assert_eq!(
-    //         lhs - rhs,
-    //         parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
-    //     );
-    //     assert_eq!(
-    //         lhs - &rhs,
-    //         parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
-    //     );
-    // }
+    #[test]
+    fn test_sub_wraparound() {
+        let lhs =
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        assert_eq!(
+            lhs - rhs,
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
+        );
+        assert_eq!(
+            lhs - &rhs,
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
+        );
+    }
 
-    // #[test]
-    // fn test_sub_assign() {
-    //     let mut lhs =
-    //         parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     lhs -= rhs;
-    //     assert_eq!(
-    //         lhs,
-    //         parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
-    //     );
-    // }
+    #[test]
+    fn test_sub_assign() {
+        let mut lhs =
+            parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs -= rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
+        );
+    }
 
-    // #[test]
-    // fn test_sub_assign_ref() {
-    //     let mut lhs =
-    //         parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     lhs -= &rhs;
-    //     assert_eq!(
-    //         lhs,
-    //         parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
-    //     );
-    // }
+    #[test]
+    fn test_sub_assign_ref() {
+        let mut lhs =
+            parse_scalar("0x6447adc64b17816528ee763e0b64ce7ee546304e19dd71176e7b468d8c9a6e7b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs -= &rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5")
+        );
+    }
 
-    // #[test]
-    // fn test_sub_assign_wraparound() {
-    //     let mut lhs =
-    //         parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     lhs -= rhs;
-    //     assert_eq!(
-    //         lhs,
-    //         parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
-    //     );
-    // }
+    #[test]
+    fn test_sub_assign_wraparound() {
+        let mut lhs =
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs -= rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
+        );
+    }
 
-    // #[test]
-    // fn test_sub_assign_wraparound_ref() {
-    //     let mut lhs =
-    //         parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b");
-    //     let rhs =
-    //         parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
-    //     lhs -= &rhs;
-    //     assert_eq!(
-    //         lhs,
-    //         parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
-    //     );
-    // }
+    #[test]
+    fn test_sub_assign_wraparound_ref() {
+        let mut lhs =
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b");
+        let rhs =
+            parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
+        lhs -= &rhs;
+        assert_eq!(
+            lhs,
+            parse_scalar("0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236")
+        );
+    }
 
-    // fn test_neg_impl(value: Scalar) {
-    //     assert_eq!(-value, Scalar::MAX - value + Scalar::ONE);
-    // }
+    fn test_neg_impl(value: Scalar) {
+        assert_eq!(-value, Scalar::MAX - value + Scalar::ONE);
+    }
 
-    // #[test]
-    // fn test_neg() {
-    //     assert_eq!(-Scalar::ZERO, Scalar::ZERO);
-    //     assert_eq!(-Scalar::ONE, Scalar::MAX);
-    //     assert_eq!(-Scalar::from(2), Scalar::MAX_MINUS_ONE);
-    //     test_neg_impl(parse_scalar(
-    //         "0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b",
-    //     ));
-    //     test_neg_impl(parse_scalar(
-    //         "0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6",
-    //     ));
-    //     test_neg_impl(parse_scalar(
-    //         "0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236",
-    //     ));
-    // }
+    #[test]
+    fn test_neg() {
+        assert_eq!(-Scalar::ZERO, Scalar::ZERO);
+        assert_eq!(-Scalar::ONE, Scalar::MAX);
+        assert_eq!(-Scalar::from(2), Scalar::MAX_MINUS_ONE);
+        test_neg_impl(parse_scalar(
+            "0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b",
+        ));
+        test_neg_impl(parse_scalar(
+            "0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6",
+        ));
+        test_neg_impl(parse_scalar(
+            "0x5445e022a3c13a026ec2378170357420280e21d24f537bca42830d1bb5823236",
+        ));
+    }
 
-    // #[test]
-    // fn test_mul_by_zero() {
-    //     assert_eq!(Scalar::ZERO * Scalar::from(42), Scalar::ZERO);
-    //     assert_eq!(Scalar::ZERO * &Scalar::from(42), Scalar::ZERO);
-    //     assert_eq!(Scalar::ZERO * Scalar::from(43), Scalar::ZERO);
-    //     assert_eq!(Scalar::ZERO * &Scalar::from(43), Scalar::ZERO);
-    //     assert_eq!(Scalar::from(42) * Scalar::ZERO, Scalar::ZERO);
-    //     assert_eq!(Scalar::from(42) * &Scalar::ZERO, Scalar::ZERO);
-    //     assert_eq!(Scalar::from(43) * Scalar::ZERO, Scalar::ZERO);
-    //     assert_eq!(Scalar::from(43) * &Scalar::ZERO, Scalar::ZERO);
-    // }
+    #[test]
+    fn test_mul_by_zero() {
+        assert_eq!(Scalar::ZERO * Scalar::from(42), Scalar::ZERO);
+        assert_eq!(Scalar::ZERO * &Scalar::from(42), Scalar::ZERO);
+        assert_eq!(Scalar::ZERO * Scalar::from(43), Scalar::ZERO);
+        assert_eq!(Scalar::ZERO * &Scalar::from(43), Scalar::ZERO);
+        assert_eq!(Scalar::from(42) * Scalar::ZERO, Scalar::ZERO);
+        assert_eq!(Scalar::from(42) * &Scalar::ZERO, Scalar::ZERO);
+        assert_eq!(Scalar::from(43) * Scalar::ZERO, Scalar::ZERO);
+        assert_eq!(Scalar::from(43) * &Scalar::ZERO, Scalar::ZERO);
+    }
 
-    // #[test]
-    // fn test_mul_by_one() {
-    //     assert_eq!(Scalar::ONE * Scalar::from(42), Scalar::from(42));
-    //     assert_eq!(Scalar::ONE * &Scalar::from(42), Scalar::from(42));
-    //     assert_eq!(Scalar::ONE * Scalar::from(43), Scalar::from(43));
-    //     assert_eq!(Scalar::ONE * &Scalar::from(43), Scalar::from(43));
-    //     assert_eq!(Scalar::from(42) * Scalar::ONE, Scalar::from(42));
-    //     assert_eq!(Scalar::from(42) * &Scalar::ONE, Scalar::from(42));
-    //     assert_eq!(Scalar::from(43) * Scalar::ONE, Scalar::from(43));
-    //     assert_eq!(Scalar::from(43) * &Scalar::ONE, Scalar::from(43));
-    // }
+    #[test]
+    fn test_mul_by_one() {
+        assert_eq!(Scalar::ONE * Scalar::from(42), Scalar::from(42));
+        assert_eq!(Scalar::ONE * &Scalar::from(42), Scalar::from(42));
+        assert_eq!(Scalar::ONE * Scalar::from(43), Scalar::from(43));
+        assert_eq!(Scalar::ONE * &Scalar::from(43), Scalar::from(43));
+        assert_eq!(Scalar::from(42) * Scalar::ONE, Scalar::from(42));
+        assert_eq!(Scalar::from(42) * &Scalar::ONE, Scalar::from(42));
+        assert_eq!(Scalar::from(43) * Scalar::ONE, Scalar::from(43));
+        assert_eq!(Scalar::from(43) * &Scalar::ONE, Scalar::from(43));
+    }
 
-    // #[test]
-    // fn test_mul() {
-    //     assert_eq!(Scalar::from(12) * Scalar::from(34), Scalar::from(408));
-    //     assert_eq!(Scalar::from(12) * &Scalar::from(34), Scalar::from(408));
-    //     assert_eq!(Scalar::from(12) * Scalar::from(56), Scalar::from(672));
-    //     assert_eq!(Scalar::from(12) * &Scalar::from(56), Scalar::from(672));
-    //     assert_eq!(Scalar::from(34) * Scalar::from(12), Scalar::from(408));
-    //     assert_eq!(Scalar::from(34) * &Scalar::from(12), Scalar::from(408));
-    //     assert_eq!(Scalar::from(56) * Scalar::from(12), Scalar::from(672));
-    //     assert_eq!(Scalar::from(56) * &Scalar::from(12), Scalar::from(672));
-    // }
+    #[test]
+    fn test_mul() {
+        assert_eq!(Scalar::from(12) * Scalar::from(34), Scalar::from(408));
+        assert_eq!(Scalar::from(12) * &Scalar::from(34), Scalar::from(408));
+        assert_eq!(Scalar::from(12) * Scalar::from(56), Scalar::from(672));
+        assert_eq!(Scalar::from(12) * &Scalar::from(56), Scalar::from(672));
+        assert_eq!(Scalar::from(34) * Scalar::from(12), Scalar::from(408));
+        assert_eq!(Scalar::from(34) * &Scalar::from(12), Scalar::from(408));
+        assert_eq!(Scalar::from(56) * Scalar::from(12), Scalar::from(672));
+        assert_eq!(Scalar::from(56) * &Scalar::from(12), Scalar::from(672));
+    }
 
-    // fn test_mul_large_impl(v1: Scalar, v2: Scalar, v3: Scalar) {
-    //     assert_eq!(v1 * v2, v3);
-    //     assert_eq!(v1 * &v2, v3);
-    //     assert_eq!(v2 * v1, v3);
-    //     assert_eq!(v2 * &v1, v3);
-    // }
+    fn test_mul_large_impl(v1: Scalar, v2: Scalar, v3: Scalar) {
+        assert_eq!(v1 * v2, v3);
+        assert_eq!(v1 * &v2, v3);
+        assert_eq!(v2 * v1, v3);
+        assert_eq!(v2 * &v1, v3);
+    }
 
-    // #[test]
-    // fn test_mul_large() {
-    //     test_mul_large_impl(
-    //         parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f"),
-    //         parse_scalar("0x395ff9efcaa35d618872a95b7244c4b3b2a7e1d9276d4e88db27217993014628"),
-    //         parse_scalar("0x48bd4ecc2466c149025cda9043bdc246fd4bc2ddc8553ccbebf5f67ab8f5c94c"),
-    //     );
-    //     test_mul_large_impl(
-    //         parse_scalar("0x233f7c593e331b2e1285f17013cd4b692d7219c10bf06adca229780913851577"),
-    //         parse_scalar("0x74b95de3995095f242fa8dc762645eb31dffd6fcda71851456db33ef75365820"),
-    //         parse_scalar("0x7cb5f81d26335fb63d4964d1000668b43c1e16c5ecc404dd9429dfd2b4f38067"),
-    //     );
-    // }
+    #[test]
+    fn test_mul_large() {
+        test_mul_large_impl(
+            parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f"),
+            parse_scalar("0x395ff9efcaa35d618872a95b7244c4b3b2a7e1d9276d4e88db27217993014628"),
+            parse_scalar("0x0f21dcbfb54f62dd8ed757a0a2938c831c5bea612fffa42237f8a0e269b67e02"),
+        );
+        test_mul_large_impl(
+            parse_scalar("0x233f7c593e331b2e1285f17013cd4b692d7219c10bf06adca229780913851577"),
+            parse_scalar("0x74b95de3995095f242fa8dc762645eb31dffd6fcda71851456db33ef75365820"),
+            parse_scalar("0x53ca68eb0e0389d9950dc014a06f178af3f950222c731e4572d5a04e4708e931"),
+        );
+    }
 
-    // #[test]
-    // fn test_sum_owned() {
-    //     let values = vec![Scalar::ONE, Scalar::from(2), Scalar::from(3)];
-    //     assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::from(6));
-    // }
+    #[test]
+    fn test_sum_owned() {
+        let values = vec![Scalar::ONE, Scalar::from(2), Scalar::from(3)];
+        assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::from(6));
+    }
 
-    // #[test]
-    // fn test_sum_refs() {
-    //     let values = vec![Scalar::ONE, Scalar::from(2), Scalar::from(3)];
-    //     assert_eq!(values.iter().sum::<Scalar>(), Scalar::from(6));
-    // }
+    #[test]
+    fn test_sum_refs() {
+        let values = vec![Scalar::ONE, Scalar::from(2), Scalar::from(3)];
+        assert_eq!(values.iter().sum::<Scalar>(), Scalar::from(6));
+    }
 
-    // #[test]
-    // fn test_sum_empty() {
-    //     let values: Vec<Scalar> = vec![];
-    //     assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::ZERO);
-    // }
+    #[test]
+    fn test_sum_empty() {
+        let values: Vec<Scalar> = vec![];
+        assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::ZERO);
+    }
 
-    // #[test]
-    // fn test_sum_empty_refs() {
-    //     let values: Vec<Scalar> = vec![];
-    //     assert_eq!(values.iter().sum::<Scalar>(), Scalar::ZERO);
-    // }
+    #[test]
+    fn test_sum_empty_refs() {
+        let values: Vec<Scalar> = vec![];
+        assert_eq!(values.iter().sum::<Scalar>(), Scalar::ZERO);
+    }
 
-    // #[test]
-    // fn test_sum_single() {
-    //     let values = vec![Scalar::from(42)];
-    //     assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::from(42));
-    // }
+    #[test]
+    fn test_sum_single() {
+        let values = vec![Scalar::from(42)];
+        assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::from(42));
+    }
 
-    // #[test]
-    // fn test_sum_wraps_modulo_p() {
-    //     // MAX + ONE wraps around to ZERO
-    //     let values = vec![Scalar::MAX, Scalar::ONE];
-    //     assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::ZERO);
-    // }
+    #[test]
+    fn test_sum_wraps_modulo_p() {
+        let values = vec![Scalar::MAX, Scalar::ONE];
+        assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::ZERO);
+    }
 
-    // #[test]
-    // fn test_product_owned() {
-    //     let values = vec![Scalar::from(2), Scalar::from(3), Scalar::from(4)];
-    //     assert_eq!(values.into_iter().product::<Scalar>(), Scalar::from(24));
-    // }
+    #[test]
+    fn test_product_owned() {
+        let values = vec![Scalar::from(2), Scalar::from(3), Scalar::from(4)];
+        assert_eq!(values.into_iter().product::<Scalar>(), Scalar::from(24));
+    }
 
-    // #[test]
-    // fn test_product_refs() {
-    //     let values = vec![Scalar::from(2), Scalar::from(3), Scalar::from(4)];
-    //     assert_eq!(values.iter().product::<Scalar>(), Scalar::from(24));
-    // }
+    #[test]
+    fn test_product_refs() {
+        let values = vec![Scalar::from(2), Scalar::from(3), Scalar::from(4)];
+        assert_eq!(values.iter().product::<Scalar>(), Scalar::from(24));
+    }
 
-    // #[test]
-    // fn test_product_empty() {
-    //     let values: Vec<Scalar> = vec![];
-    //     assert_eq!(values.into_iter().product::<Scalar>(), Scalar::ONE);
-    // }
+    #[test]
+    fn test_product_empty() {
+        let values: Vec<Scalar> = vec![];
+        assert_eq!(values.into_iter().product::<Scalar>(), Scalar::ONE);
+    }
 
-    // #[test]
-    // fn test_product_empty_refs() {
-    //     let values: Vec<Scalar> = vec![];
-    //     assert_eq!(values.iter().product::<Scalar>(), Scalar::ONE);
-    // }
+    #[test]
+    fn test_product_empty_refs() {
+        let values: Vec<Scalar> = vec![];
+        assert_eq!(values.iter().product::<Scalar>(), Scalar::ONE);
+    }
 
-    // #[test]
-    // fn test_product_single() {
-    //     let values = vec![Scalar::from(42)];
-    //     assert_eq!(values.into_iter().product::<Scalar>(), Scalar::from(42));
-    // }
+    #[test]
+    fn test_product_single() {
+        let values = vec![Scalar::from(42)];
+        assert_eq!(values.into_iter().product::<Scalar>(), Scalar::from(42));
+    }
 
-    // #[test]
-    // fn test_product_with_zero() {
-    //     let values = vec![Scalar::from(5), Scalar::ZERO, Scalar::from(7)];
-    //     assert_eq!(values.into_iter().product::<Scalar>(), Scalar::ZERO);
-    // }
+    #[test]
+    fn test_product_with_zero() {
+        let values = vec![Scalar::from(5), Scalar::ZERO, Scalar::from(7)];
+        assert_eq!(values.into_iter().product::<Scalar>(), Scalar::ZERO);
+    }
 
-    // #[test]
-    // fn test_product_with_one() {
-    //     let values = vec![Scalar::ONE, Scalar::from(5), Scalar::ONE];
-    //     assert_eq!(values.into_iter().product::<Scalar>(), Scalar::from(5));
-    // }
+    #[test]
+    fn test_product_with_one() {
+        let values = vec![Scalar::ONE, Scalar::from(5), Scalar::ONE];
+        assert_eq!(values.into_iter().product::<Scalar>(), Scalar::from(5));
+    }
 
-    // #[test]
-    // fn test_ct_eq() {
-    //     let a = Scalar::from(42);
-    //     let b = Scalar::from(42);
-    //     let c = Scalar::from(43);
+    #[test]
+    fn test_ct_eq() {
+        let a = Scalar::from(42);
+        let b = Scalar::from(42);
+        let c = Scalar::from(43);
 
-    //     assert_eq!(bool::from(a.ct_eq(&b)), true);
-    //     assert_eq!(bool::from(a.ct_eq(&a)), true);
-    //     assert_eq!(bool::from(a.ct_eq(&c)), false);
-    //     assert_eq!(bool::from(c.ct_eq(&a)), false);
+        assert_eq!(bool::from(a.ct_eq(&b)), true);
+        assert_eq!(bool::from(a.ct_eq(&a)), true);
+        assert_eq!(bool::from(a.ct_eq(&c)), false);
+        assert_eq!(bool::from(c.ct_eq(&a)), false);
 
-    //     assert_eq!(bool::from(Scalar::ZERO.ct_eq(&Scalar::ZERO)), true);
-    //     assert_eq!(bool::from(Scalar::ONE.ct_eq(&Scalar::ONE)), true);
-    //     assert_eq!(bool::from(Scalar::MAX.ct_eq(&Scalar::MAX)), true);
-    //     assert_eq!(bool::from(Scalar::ZERO.ct_eq(&Scalar::ONE)), false);
-    //     assert_eq!(bool::from(Scalar::ONE.ct_eq(&Scalar::MAX)), false);
+        assert_eq!(bool::from(Scalar::ZERO.ct_eq(&Scalar::ZERO)), true);
+        assert_eq!(bool::from(Scalar::ONE.ct_eq(&Scalar::ONE)), true);
+        assert_eq!(bool::from(Scalar::MAX.ct_eq(&Scalar::MAX)), true);
+        assert_eq!(bool::from(Scalar::ZERO.ct_eq(&Scalar::ONE)), false);
+        assert_eq!(bool::from(Scalar::ONE.ct_eq(&Scalar::MAX)), false);
 
-    //     let v1 = parse_scalar("0x318c1df8459d125dc54e1fe487bf23e8430221b69660d8ca9427235713f24de1");
-    //     let v2 = parse_scalar("0x318c1df8459d125dc54e1fe487bf23e8430221b69660d8ca9427235713f24de2");
-    //     assert_eq!(bool::from(v1.ct_eq(&v2)), false);
-    //     assert_eq!(bool::from(v1.ct_eq(&v1)), true);
-    // }
+        let v1 = parse_scalar("0x318c1df8459d125dc54e1fe487bf23e8430221b69660d8ca9427235713f24de1");
+        let v2 = parse_scalar("0x318c1df8459d125dc54e1fe487bf23e8430221b69660d8ca9427235713f24de2");
+        assert_eq!(bool::from(v1.ct_eq(&v2)), false);
+        assert_eq!(bool::from(v1.ct_eq(&v1)), true);
+    }
 
-    // #[test]
-    // fn test_ct_gt() {
-    //     let v0 = Scalar::from(0);
-    //     let v1 = Scalar::from(1);
-    //     let v2 = Scalar::from(42);
-    //     let v3 = Scalar::MAX_MINUS_ONE;
-    //     let v4 = Scalar::MAX;
-    //     assert_eq!(bool::from(v0.ct_gt(&v0)), false);
-    //     assert_eq!(bool::from(v1.ct_gt(&v1)), false);
-    //     assert_eq!(bool::from(v4.ct_gt(&v4)), false);
-    //     assert_eq!(bool::from(v1.ct_gt(&v0)), true);
-    //     assert_eq!(bool::from(v2.ct_gt(&v0)), true);
-    //     assert_eq!(bool::from(v2.ct_gt(&v1)), true);
-    //     assert_eq!(bool::from(v4.ct_gt(&v3)), true);
-    //     assert_eq!(bool::from(v4.ct_gt(&v0)), true);
-    //     assert_eq!(bool::from(v0.ct_gt(&v1)), false);
-    //     assert_eq!(bool::from(v0.ct_gt(&v4)), false);
-    //     assert_eq!(bool::from(v1.ct_gt(&v2)), false);
-    //     assert_eq!(bool::from(v3.ct_gt(&v4)), false);
-    // }
+    #[test]
+    fn test_ct_gt() {
+        let v0 = Scalar::from(0);
+        let v1 = Scalar::from(1);
+        let v2 = Scalar::from(42);
+        let v3 = Scalar::MAX_MINUS_ONE;
+        let v4 = Scalar::MAX;
+        assert_eq!(bool::from(v0.ct_gt(&v0)), false);
+        assert_eq!(bool::from(v1.ct_gt(&v1)), false);
+        assert_eq!(bool::from(v4.ct_gt(&v4)), false);
+        assert_eq!(bool::from(v1.ct_gt(&v0)), true);
+        assert_eq!(bool::from(v2.ct_gt(&v0)), true);
+        assert_eq!(bool::from(v2.ct_gt(&v1)), true);
+        assert_eq!(bool::from(v4.ct_gt(&v3)), true);
+        assert_eq!(bool::from(v4.ct_gt(&v0)), true);
+        assert_eq!(bool::from(v0.ct_gt(&v1)), false);
+        assert_eq!(bool::from(v0.ct_gt(&v4)), false);
+        assert_eq!(bool::from(v1.ct_gt(&v2)), false);
+        assert_eq!(bool::from(v3.ct_gt(&v4)), false);
+    }
 
-    // #[test]
-    // fn test_ct_lt() {
-    //     let v0 = Scalar::from(0);
-    //     let v1 = Scalar::from(1);
-    //     let v2 = Scalar::from(42);
-    //     let v3 = Scalar::MAX_MINUS_ONE;
-    //     let v4 = Scalar::MAX;
-    //     assert_eq!(bool::from(v0.ct_lt(&v0)), false);
-    //     assert_eq!(bool::from(v1.ct_lt(&v1)), false);
-    //     assert_eq!(bool::from(v4.ct_lt(&v4)), false);
-    //     assert_eq!(bool::from(v0.ct_lt(&v1)), true);
-    //     assert_eq!(bool::from(v0.ct_lt(&v4)), true);
-    //     assert_eq!(bool::from(v1.ct_lt(&v2)), true);
-    //     assert_eq!(bool::from(v2.ct_lt(&v3)), true);
-    //     assert_eq!(bool::from(v3.ct_lt(&v4)), true);
-    //     assert_eq!(bool::from(v1.ct_lt(&v0)), false);
-    //     assert_eq!(bool::from(v4.ct_lt(&v3)), false);
-    //     assert_eq!(bool::from(v4.ct_lt(&v0)), false);
-    // }
+    #[test]
+    fn test_ct_lt() {
+        let v0 = Scalar::from(0);
+        let v1 = Scalar::from(1);
+        let v2 = Scalar::from(42);
+        let v3 = Scalar::MAX_MINUS_ONE;
+        let v4 = Scalar::MAX;
+        assert_eq!(bool::from(v0.ct_lt(&v0)), false);
+        assert_eq!(bool::from(v1.ct_lt(&v1)), false);
+        assert_eq!(bool::from(v4.ct_lt(&v4)), false);
+        assert_eq!(bool::from(v0.ct_lt(&v1)), true);
+        assert_eq!(bool::from(v0.ct_lt(&v4)), true);
+        assert_eq!(bool::from(v1.ct_lt(&v2)), true);
+        assert_eq!(bool::from(v2.ct_lt(&v3)), true);
+        assert_eq!(bool::from(v3.ct_lt(&v4)), true);
+        assert_eq!(bool::from(v1.ct_lt(&v0)), false);
+        assert_eq!(bool::from(v4.ct_lt(&v3)), false);
+        assert_eq!(bool::from(v4.ct_lt(&v0)), false);
+    }
 
-    // #[test]
-    // fn test_conditional_select() {
-    //     let a = Scalar::from(12);
-    //     let b = Scalar::from(34);
-    //     assert_eq!(Scalar::conditional_select(&a, &b, Choice::from(0)), a);
-    //     assert_eq!(Scalar::conditional_select(&a, &b, Choice::from(1)), b);
-    //     assert_eq!(
-    //         Scalar::conditional_select(&Scalar::ZERO, &Scalar::ONE, Choice::from(0)),
-    //         Scalar::ZERO
-    //     );
-    //     assert_eq!(
-    //         Scalar::conditional_select(&Scalar::ZERO, &Scalar::ONE, Choice::from(1)),
-    //         Scalar::ONE
-    //     );
-    //     assert_eq!(Scalar::conditional_select(&a, &a, Choice::from(0)), a);
-    //     assert_eq!(Scalar::conditional_select(&a, &a, Choice::from(1)), a);
-    // }
+    #[test]
+    fn test_conditional_select() {
+        let a = Scalar::from(12);
+        let b = Scalar::from(34);
+        assert_eq!(Scalar::conditional_select(&a, &b, Choice::from(0)), a);
+        assert_eq!(Scalar::conditional_select(&a, &b, Choice::from(1)), b);
+        assert_eq!(
+            Scalar::conditional_select(&Scalar::ZERO, &Scalar::ONE, Choice::from(0)),
+            Scalar::ZERO
+        );
+        assert_eq!(
+            Scalar::conditional_select(&Scalar::ZERO, &Scalar::ONE, Choice::from(1)),
+            Scalar::ONE
+        );
+        assert_eq!(Scalar::conditional_select(&a, &a, Choice::from(0)), a);
+        assert_eq!(Scalar::conditional_select(&a, &a, Choice::from(1)), a);
+    }
 
-    // #[test]
-    // fn test_is_odd() {
-    //     assert_eq!(bool::from(Scalar::ZERO.is_odd()), false);
-    //     assert_eq!(bool::from(Scalar::ONE.is_odd()), true);
-    //     assert_eq!(bool::from(Scalar::from(2).is_odd()), false);
-    //     assert_eq!(bool::from(Scalar::from(3).is_odd()), true);
-    //     assert_eq!(bool::from(Scalar::from(100).is_odd()), false);
-    //     assert_eq!(bool::from(Scalar::from(101).is_odd()), true);
-    //     assert_eq!(bool::from(Scalar::MAX_MINUS_ONE.is_odd()), true);
-    //     assert_eq!(bool::from(Scalar::MAX.is_odd()), false);
-    // }
+    #[test]
+    fn test_is_odd() {
+        assert_eq!(bool::from(Scalar::ZERO.is_odd()), false);
+        assert_eq!(bool::from(Scalar::ONE.is_odd()), true);
+        assert_eq!(bool::from(Scalar::from(2).is_odd()), false);
+        assert_eq!(bool::from(Scalar::from(3).is_odd()), true);
+        assert_eq!(bool::from(Scalar::from(100).is_odd()), false);
+        assert_eq!(bool::from(Scalar::from(101).is_odd()), true);
+        assert_eq!(bool::from(Scalar::MAX_MINUS_ONE.is_odd()), true);
+        assert_eq!(bool::from(Scalar::MAX.is_odd()), false);
+    }
 
-    // #[test]
-    // fn test_square() {
-    //     assert_eq!(Scalar::ZERO.square(), Scalar::ZERO);
-    //     assert_eq!(Scalar::ONE.square(), Scalar::ONE);
-    //     assert_eq!(Scalar::from(7).square(), Scalar::from(49));
-    //     assert_eq!(Scalar::from(12).square(), Scalar::from(144));
-    //     let v = parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
-    //     assert_eq!(v.square(), v * v);
-    //     let v = parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f");
-    //     assert_eq!(v.square(), v * v);
-    // }
+    #[test]
+    fn test_square() {
+        assert_eq!(Scalar::ZERO.square(), Scalar::ZERO);
+        assert_eq!(Scalar::ONE.square(), Scalar::ONE);
+        assert_eq!(Scalar::from(7).square(), Scalar::from(49));
+        assert_eq!(Scalar::from(12).square(), Scalar::from(144));
+        let v = parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
+        assert_eq!(v.square(), v * v);
+        let v = parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f");
+        assert_eq!(v.square(), v * v);
+    }
 
-    // #[test]
-    // fn test_double() {
-    //     assert_eq!(Scalar::ZERO.double(), Scalar::ZERO);
-    //     assert_eq!(Scalar::ONE.double(), Scalar::from(2));
-    //     assert_eq!(Scalar::from(21).double(), Scalar::from(42));
-    //     let v = parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
-    //     assert_eq!(v.double(), v + v);
-    //     assert_eq!(Scalar::MAX.double(), Scalar::MAX_MINUS_ONE);
-    //     assert_eq!(Scalar::MAX_MINUS_ONE.double(), -Scalar::from(4));
-    // }
+    #[test]
+    fn test_double() {
+        assert_eq!(Scalar::ZERO.double(), Scalar::ZERO);
+        assert_eq!(Scalar::ONE.double(), Scalar::from(2));
+        assert_eq!(Scalar::from(21).double(), Scalar::from(42));
+        let v = parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
+        assert_eq!(v.double(), v + v);
+        assert_eq!(Scalar::MAX.double(), Scalar::MAX_MINUS_ONE);
+        assert_eq!(Scalar::MAX_MINUS_ONE.double(), -Scalar::from(4));
+    }
 
-    // #[test]
-    // fn test_invert() {
-    //     assert!(bool::from(Scalar::ZERO.invert().is_none()));
-    //     assert_eq!(Scalar::ONE.invert().unwrap(), Scalar::ONE);
-    //     assert_eq!(Scalar::MAX.invert().unwrap(), Scalar::MAX);
-    //     assert_eq!(Scalar::from(2).invert().unwrap(), Scalar::TWO_INV);
-    //     let v = parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
-    //     assert_eq!(v * v.invert().unwrap(), Scalar::ONE);
-    //     let v = parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f");
-    //     assert_eq!(v * v.invert().unwrap(), Scalar::ONE);
-    // }
+    #[test]
+    fn test_invert() {
+        assert!(bool::from(Scalar::ZERO.invert().is_none()));
+        assert_eq!(Scalar::ONE.invert().unwrap(), Scalar::ONE);
+        assert_eq!(Scalar::MAX.invert().unwrap(), Scalar::MAX);
+        assert_eq!(Scalar::from(2).invert().unwrap(), Scalar::TWO_INV);
+        let v = parse_scalar("0x35264695f12d2c6cefa453ccda4c1bc5051c7b8b648915cc889b9c7d7c162aa5");
+        assert_eq!(v * v.invert().unwrap(), Scalar::ONE);
+        let v = parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f");
+        assert_eq!(v * v.invert().unwrap(), Scalar::ONE);
+    }
 
-    // #[test]
-    // fn test_sqrt() {
-    //     assert_eq!(Scalar::ZERO.sqrt().unwrap(), Scalar::ZERO);
-    //     assert_eq!(Scalar::ONE.sqrt().unwrap(), Scalar::ONE);
-    //     assert_eq!(Scalar::from(2).sqrt().unwrap().square(), 2.into());
-    //     assert_eq!(Scalar::from(3).sqrt().unwrap().square(), 3.into());
-    //     assert_eq!(Scalar::from(4).sqrt().unwrap().square(), 4.into());
-    //     assert!(Scalar::from(5).sqrt().into_option().is_none());
-    //     assert!(
-    //         parse_scalar("0x26f9845e46b8d4a46419673fcd8d6a22df74920c2f1149eb60839d7e3dfbe8ec")
-    //             .sqrt()
-    //             .into_option()
-    //             .is_none()
-    //     );
-    //     let v = parse_scalar("0x4dd28128e1cd4cedfb041d4e87476561b8c347877bd4a82687fac6e5d7264156");
-    //     assert_eq!(v.sqrt().unwrap().square(), v);
-    // }
+    #[test]
+    fn test_sqrt() {
+        assert_eq!(Scalar::ZERO.sqrt().unwrap(), Scalar::ZERO);
+        assert_eq!(Scalar::ONE.sqrt().unwrap(), Scalar::ONE);
+        assert_eq!(Scalar::from(2).sqrt().unwrap().square(), 2.into());
+        assert_eq!(Scalar::from(3).sqrt().unwrap().square(), 3.into());
+        assert_eq!(Scalar::from(4).sqrt().unwrap().square(), 4.into());
+        assert!(Scalar::from(5).sqrt().into_option().is_none());
+        assert!(
+            parse_scalar("0x26f9845e46b8d4a46419673fcd8d6a22df74920c2f1149eb60839d7e3dfbe8ec")
+                .sqrt()
+                .into_option()
+                .is_none()
+        );
+        let v = parse_scalar("0x4dd28128e1cd4cedfb041d4e87476561b8c347877bd4a82687fac6e5d7264156");
+        assert_eq!(v.sqrt().unwrap().square(), v);
+    }
 }
