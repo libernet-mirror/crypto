@@ -27,6 +27,12 @@ fn sub(a: u64, b: u64) -> (u64, u64) {
     (ret as u64, (ret >> 64) as u64)
 }
 
+#[inline(always)]
+fn mul(lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {
+    let product = (lhs as u128) * (rhs as u128) + carry as u128;
+    (product as u64, (product >> 64) as u64)
+}
+
 /// Describes a prime field with a (3^T)-th root of unity.
 pub trait ThreeAdicRootOfUnity: PrimeField {
     /// The 3-adicity of the field.
@@ -41,20 +47,20 @@ pub trait ThreeAdicRootOfUnity: PrimeField {
 
 /// The prime order of the BlueSky field stored as four 64-bit limbs in little endian order.
 pub const MODULUS: [u64; 4] = [
-    0x0000000000000001u64,
-    0x0a30000000000000u64,
-    0x482926fea7b9ba96u64,
-    0x7fffffbadb0ad87au64,
+    0xc000000000000001u64,
+    0x0673ddf29e9b5547u64,
+    0xfffffffffffffffeu64,
+    0x7fffffffffffffffu64,
 ];
 
 /// A scalar over the BlueSky prime field.
 ///
 /// The prime order of the field is:
 ///
-///   p = 0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000001
+///   p = 0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000001
 ///
 /// This field is well-suited for use in both binary and ternary FRI because it has a large 2- and
-/// 3-adicity: p-1 is divided by both 2^116 and 3^72, supporting polynomials of extremely high
+/// 3-adicity: p-1 is divided by both 2^62 and 3^39, supporting polynomials of extremely high
 /// degree.
 ///
 /// All our scalars are stored in Montgomery form with the four limbs stored in little-endian order.
@@ -64,18 +70,18 @@ pub struct Scalar(u64, u64, u64, u64);
 impl Scalar {
     /// The largest value representable in the field, ie. p-1.
     pub const MAX: Self = Self(
-        0x0000000000000003u64,
-        0x1e90000000000000u64,
-        0xd87b74fbf72d2fc2u64,
-        0x7fffff309120896eu64,
+        0x4000000000000003u64,
+        0x135b99d7dbd1ffd7u64,
+        0xfffffffffffffffau64,
+        0x7fffffffffffffffu64,
     );
 
     /// The raw (non-Montgomery) little-endian representation of `MAX`.
     const MAX_RAW: Self = Self(
-        0x0000000000000000u64,
-        0x0a30000000000000u64,
-        0x482926fea7b9ba96u64,
-        0x7fffffbadb0ad87au64,
+        0xc000000000000000u64,
+        0x0673ddf29e9b5547u64,
+        0xfffffffffffffffeu64,
+        0x7fffffffffffffffu64,
     );
 
     /// `MAX` minus one, ie. p-2.
@@ -83,34 +89,36 @@ impl Scalar {
     /// By Fermat's little theorem, exponentiating a non-null scalar by this number yields the
     /// modular inverse of that scalar.
     pub const MAX_MINUS_ONE: Self = Self(
-        0x0000000000000005u64,
-        0x32f0000000000000u64,
-        0x68cdc2f946a0a4eeu64,
-        0x7ffffea647363a63u64,
+        0xc000000000000005u64,
+        0x204355bd1908aa66u64,
+        0xfffffffffffffff6u64,
+        0x7fffffffffffffffu64,
     );
 
     /// The raw (non-Montgomery) little-endian representation of `MAX_MINUS_ONE`.
     const MAX_MINUS_ONE_RAW: [u64; 4] = [
-        0xffffffffffffffffu64,
-        0x0a2fffffffffffffu64,
-        0x482926fea7b9ba96u64,
-        0x7fffffbadb0ad87au64,
+        0xbfffffffffffffffu64,
+        0x0673ddf29e9b5547u64,
+        0xfffffffffffffffeu64,
+        0x7fffffffffffffffu64,
     ];
 
     /// R in Montgomery form, ie. R^2 mod p.
     pub const R: Self = Self(
-        0x51c757662a015c86u64,
-        0xef82894fbc71b353u64,
-        0x665005c1f6f07f38u64,
-        0x72d8588d20d577d6u64,
+        0xbfffffffffffffe5u64,
+        0xab970f33c00b568du64,
+        0xb296e2afc92ce69du64,
+        0x1968ac3835a4f8ddu64,
     );
 
     const P: [u64; 4] = MODULUS;
 
+    const P_INV: u64 = 0xbfffffffffffffffu64;
+
     const TM1D2: [u64; 4] = [
-        0x4937f53dcdd4b051u64,
-        0xfffdd6d856c3d241u64,
-        0x00000000000003ffu64,
+        0x0ce7bbe53d36aa8fu64,
+        0xfffffffffffffffcu64,
+        0xffffffffffffffffu64,
         0x0000000000000000u64,
     ];
 
@@ -130,12 +138,6 @@ impl Scalar {
         (self.3, self.2, self.1, self.0).cmp(&(other.3, other.2, other.1, other.0))
     }
 
-    #[inline(always)]
-    fn mul_u64(lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {
-        let product = (lhs as u128) * (rhs as u128) + carry as u128;
-        (product as u64, (product >> 64) as u64)
-    }
-
     /// Performs Montgomery multiplication using CIOS over 64-bit limbs.
     fn mont_mul(lhs: &Self, rhs: &Self) -> Self {
         let mut t0: u64;
@@ -147,14 +149,14 @@ impl Scalar {
         let mut m: u64;
 
         // row 0
-        (t0, carry) = Self::mul_u64(lhs.0, rhs.0, 0);
-        (t1, carry) = Self::mul_u64(lhs.1, rhs.0, carry);
-        (t2, carry) = Self::mul_u64(lhs.2, rhs.0, carry);
-        (t3, t4) = Self::mul_u64(lhs.3, rhs.0, carry);
+        (t0, carry) = mul(lhs.0, rhs.0, 0);
+        (t1, carry) = mul(lhs.1, rhs.0, carry);
+        (t2, carry) = mul(lhs.2, rhs.0, carry);
+        (t3, t4) = mul(lhs.3, rhs.0, carry);
 
         // redc 0
-        m = t0.wrapping_neg();
-        (_, carry) = add(t0, m);
+        m = t0.wrapping_mul(Self::P_INV);
+        (_, carry) = mac(t0, m, Self::P[0], 0);
         (t0, carry) = mac(t1, m, Self::P[1], carry);
         (t1, carry) = mac(t2, m, Self::P[2], carry);
         (t2, carry) = mac(t3, m, Self::P[3], carry);
@@ -167,8 +169,8 @@ impl Scalar {
         (t3, t4) = mac(t3, lhs.3, rhs.1, carry);
 
         // redc 1
-        m = t0.wrapping_neg();
-        (_, carry) = add(t0, m);
+        m = t0.wrapping_mul(Self::P_INV);
+        (_, carry) = mac(t0, m, Self::P[0], 0);
         (t0, carry) = mac(t1, m, Self::P[1], carry);
         (t1, carry) = mac(t2, m, Self::P[2], carry);
         (t2, carry) = mac(t3, m, Self::P[3], carry);
@@ -181,8 +183,8 @@ impl Scalar {
         (t3, t4) = mac(t3, lhs.3, rhs.2, carry);
 
         // redc 2
-        m = t0.wrapping_neg();
-        (_, carry) = add(t0, m);
+        m = t0.wrapping_mul(Self::P_INV);
+        (_, carry) = mac(t0, m, Self::P[0], 0);
         (t0, carry) = mac(t1, m, Self::P[1], carry);
         (t1, carry) = mac(t2, m, Self::P[2], carry);
         (t2, carry) = mac(t3, m, Self::P[3], carry);
@@ -195,8 +197,8 @@ impl Scalar {
         (t3, t4) = mac(t3, lhs.3, rhs.3, carry);
 
         // redc 3
-        m = t0.wrapping_neg();
-        (_, carry) = add(t0, m);
+        m = t0.wrapping_mul(Self::P_INV);
+        (_, carry) = mac(t0, m, Self::P[0], 0);
         (t0, carry) = mac(t1, m, Self::P[1], carry);
         (t1, carry) = mac(t2, m, Self::P[2], carry);
         (t2, carry) = mac(t3, m, Self::P[3], carry);
@@ -211,6 +213,10 @@ impl Scalar {
 
     /// Performs a Montgomery multiplication by 1, which results in converting from Montgomery form
     /// to raw form.
+    ///
+    /// This is exactly the same as `mont_mul(Scalar(1, 0, 0, 0))` but slightly faster because it
+    /// exploits the fact that we're multiplying by (1, 0, 0, 0), so it skips all "row" phases and
+    /// only performs the "redc" phases.
     fn to_raw(&self) -> Self {
         let mut t0 = self.0;
         let mut t1 = self.1;
@@ -220,32 +226,32 @@ impl Scalar {
         let mut m: u64;
 
         // redc 0
-        m = t0.wrapping_neg();
-        (_, carry) = add(t0, m);
+        m = t0.wrapping_mul(Self::P_INV);
+        (_, carry) = mac(t0, m, Self::P[0], 0);
         (t0, carry) = mac(t1, m, Self::P[1], carry);
         (t1, carry) = mac(t2, m, Self::P[2], carry);
         (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = carry;
 
         // redc 1
-        m = t0.wrapping_neg();
-        (_, carry) = add(t0, m);
+        m = t0.wrapping_mul(Self::P_INV);
+        (_, carry) = mac(t0, m, Self::P[0], 0);
         (t0, carry) = mac(t1, m, Self::P[1], carry);
         (t1, carry) = mac(t2, m, Self::P[2], carry);
         (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = carry;
 
         // redc 2
-        m = t0.wrapping_neg();
-        (_, carry) = add(t0, m);
+        m = t0.wrapping_mul(Self::P_INV);
+        (_, carry) = mac(t0, m, Self::P[0], 0);
         (t0, carry) = mac(t1, m, Self::P[1], carry);
         (t1, carry) = mac(t2, m, Self::P[2], carry);
         (t2, carry) = mac(t3, m, Self::P[3], carry);
         t3 = carry;
 
         // redc 3
-        m = t0.wrapping_neg();
-        (_, carry) = add(t0, m);
+        m = t0.wrapping_mul(Self::P_INV);
+        (_, carry) = mac(t0, m, Self::P[0], 0);
         (t0, carry) = mac(t1, m, Self::P[1], carry);
         (t1, carry) = mac(t2, m, Self::P[2], carry);
         (t2, carry) = mac(t3, m, Self::P[3], carry);
@@ -344,19 +350,19 @@ impl Debug for Scalar {
 
 impl std::fmt::Display for Scalar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.to_u256(), f)
+        write!(f, "{:#066x}", self.to_u256())
     }
 }
 
 impl std::fmt::LowerHex for Scalar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::LowerHex::fmt(&self.to_u256(), f)
+        write!(f, "{:#066x}", self.to_u256())
     }
 }
 
 impl std::fmt::UpperHex for Scalar {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::UpperHex::fmt(&self.to_u256(), f)
+        write!(f, "{:#066X}", self.to_u256())
     }
 }
 
@@ -584,10 +590,10 @@ impl Field for Scalar {
     const ZERO: Self = Self(0, 0, 0, 0);
 
     const ONE: Self = Self(
-        0xfffffffffffffffeu64,
-        0xeb9fffffffffffffu64,
-        0x6fadb202b08c8ad3u64,
-        0x0000008a49ea4f0bu64,
+        0x7ffffffffffffffeu64,
+        0xf318441ac2c95570u64,
+        0x0000000000000003u64,
+        0x0000000000000000u64,
     );
 
     fn random(mut rng: impl ecdsa::signature::rand_core::RngCore) -> Self {
@@ -655,65 +661,65 @@ impl PrimeField for Scalar {
     }
 
     const MODULUS: &'static str =
-        "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000001";
+        "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000001";
 
     const NUM_BITS: u32 = 255;
 
     const CAPACITY: u32 = 254;
 
     const TWO_INV: Self = Self(
-        0xffffffffffffffffu64,
-        0xf5cfffffffffffffu64,
-        0xb7d6d90158464569u64,
-        0x0000004524f52785u64,
+        0x3fffffffffffffffu64,
+        0xf98c220d6164aab8u64,
+        0x0000000000000001u64,
+        0x0000000000000000u64,
     );
 
     const MULTIPLICATIVE_GENERATOR: Self = Self(
-        0xffffffffffffffe2u64,
-        0xce5fffffffffffffu64,
-        0x8b2d6e28583c226au64,
-        0x0000081a54baa1abu64,
+        0x7ffffffffffffff6u64,
+        0xbf795485cdeeab32u64,
+        0x0000000000000013u64,
+        0x0000000000000000u64,
     );
 
-    const S: u32 = 116;
+    const S: u32 = 62;
 
     const ROOT_OF_UNITY: Self = Self(
-        0x414271b88836a3e9u64,
-        0x225dcb814a62145fu64,
-        0x883e0f615396824eu64,
-        0x1263fb05d26bdebau64,
+        0x1c21299e7a6bf02cu64,
+        0x9668eae30ea674fdu64,
+        0x539332d8030750aau64,
+        0x771ec3ece255e5ffu64,
     );
 
     const ROOT_OF_UNITY_INV: Self = Self(
-        0x23b3eea298ddc101u64,
-        0x0c586cb5e452e0acu64,
-        0xc9d460676a6db24du64,
-        0x66f63f753fb648cfu64,
+        0x9d664a1b2af8b848u64,
+        0x3eb41e848f20b29eu64,
+        0x9ed9b5f1d9a9a30fu64,
+        0x093d94fd0d3cc279u64,
     );
 
     const DELTA: Self = Self(
-        0x486b9fe587c79584u64,
-        0x63a20c20325a87a4u64,
-        0x8a8ee8f2b8693518u64,
-        0x00f62f997b528845u64,
+        0x0f81667ad386a65eu64,
+        0xdaab9f0d961bebc7u64,
+        0x1690cf9f051915cau64,
+        0x0e26e41e50befeedu64,
     );
 }
 
 impl ThreeAdicRootOfUnity for Scalar {
-    const T: u32 = 72;
+    const T: u32 = 39;
 
     const THREE_ADIC_ROOT_OF_UNITY: Self = Self(
-        0x9314c94de2611b54u64,
-        0x1ba21f3681b57370u64,
-        0xee95983972fb1d78u64,
-        0x171185928d540db8u64,
+        0x6bb97af29ca6dd9du64,
+        0xa4274c2efcc4eac5u64,
+        0x0e0ed5807a7ff8a3u64,
+        0x41d8fc132eaa2afdu64,
     );
 
     const THREE_ADIC_ROOT_OF_UNITY_INV: Self = Self(
-        0x0244d24cb2ebe053u64,
-        0x1b8f468f5de0b10fu64,
-        0xfeee78fca5107c01u64,
-        0x6a785a15461116afu64,
+        0x35aa2ff058bc4166u64,
+        0x359b814b693ec81eu64,
+        0x7201659d84adb9e2u64,
+        0x5587fd1dd27afee1u64,
     );
 }
 
@@ -741,49 +747,49 @@ mod tests {
         );
         assert_eq!(
             format_scalar(Scalar::MAX),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000",
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000",
         );
         assert_eq!(
             format_scalar(Scalar::MAX_RAW * Scalar::R),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000",
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000",
         );
         assert_eq!(
             format_scalar(Scalar::R),
-            "0x0000008a49ea4f0b6fadb202b08c8ad3eb9ffffffffffffffffffffffffffffe"
+            "0x00000000000000000000000000000003f318441ac2c955707ffffffffffffffe"
         );
         assert_eq!(
             format_scalar(Scalar::MAX_MINUS_ONE),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a2fffffffffffffffffffffffffffff"
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547bfffffffffffffff"
         );
         assert_eq!(
             format_scalar(Scalar::TWO_INV),
-            "0x3fffffdd6d856c3d2414937f53dcdd4b05180000000000000000000000000001"
+            "0x3fffffffffffffffffffffffffffffff0339eef94f4daaa3e000000000000001"
         );
         assert_eq!(
             format_scalar(Scalar::MULTIPLICATIVE_GENERATOR),
-            "0x000000000000000000000000000000000000000000000000000000000000000f"
+            "0x0000000000000000000000000000000000000000000000000000000000000005"
         );
-        assert_eq!(Scalar::S, 116);
+        assert_eq!(Scalar::S, 62);
         assert_eq!(
             format_scalar(Scalar::ROOT_OF_UNITY),
-            "0x1c855d595fa15936b0ac1d51b8e0a8f8878f9b5199ce56785060ee1e7ad85a7c"
+            "0x2772569d549e1249ca6891eceba43568f6e0a747a2afe898b3977ca1a5bbfc9c"
         );
         assert_eq!(
             format_scalar(Scalar::ROOT_OF_UNITY_INV),
-            "0x1c5ea19556788808dd94eebb6ba8ef1bf9382073b01276b94c7880e2f4e020d3"
+            "0x76def406f046ef5ee7eeecd2c4e6ecd7cdedc4e2bcf6b19f1420121cd00b4cdb"
         );
         assert_eq!(
             format_scalar(Scalar::DELTA),
-            "0x75a17e51260c15dcd45173f1bd2207d6e2fc8c8cd6b30bb399b783a772de079c"
+            "0x232680e97f4b6251c95edefd145053d6dea23905b503a1002987caddeb54cdce"
         );
-        assert_eq!(Scalar::T, 72);
+        assert_eq!(Scalar::T, 39);
         assert_eq!(
             format_scalar(Scalar::THREE_ADIC_ROOT_OF_UNITY),
-            "0x33b6631e951bde0a85158d1f24777f7df914b50c409fde500cd094b370b08730"
+            "0x1b6292b3a6f8a32da98705fee2d66e8fe35f48642a417a72f1a4ca414adfd9e6"
         );
         assert_eq!(
             format_scalar(Scalar::THREE_ADIC_ROOT_OF_UNITY_INV),
-            "0x55d494cccd313cb5c91a992a0cd716a45392da2c38e93c3426415c863938c5fe"
+            "0x4d369d8e1ff761fca979a0ffb5545471ceae8164a047dff8b5679e11c5dfdf72"
         );
     }
 
@@ -806,8 +812,15 @@ mod tests {
         assert_eq!(Scalar::NUM_BITS, 255);
         assert_eq!(Scalar::CAPACITY, 254);
         assert_eq!(Scalar::TWO_INV, Scalar::from(2).invert().unwrap());
-        assert_eq!(Scalar::MULTIPLICATIVE_GENERATOR, 15.into());
+        assert_eq!(Scalar::MULTIPLICATIVE_GENERATOR, 5.into());
         assert!(Scalar::ROOT_OF_UNITY > Scalar::ONE);
+        for i in 0..Scalar::S {
+            assert_ne!(
+                Scalar::ROOT_OF_UNITY
+                    .pow_vartime(Scalar::from(2).pow_vartime([i as u64, 0, 0, 0]).to_le_u64()),
+                Scalar::ONE
+            );
+        }
         assert_eq!(
             Scalar::ROOT_OF_UNITY.pow_vartime(
                 Scalar::from(2)
@@ -821,6 +834,13 @@ mod tests {
             Scalar::ONE
         );
         assert!(Scalar::THREE_ADIC_ROOT_OF_UNITY > Scalar::ONE);
+        for i in 0..Scalar::T {
+            assert_ne!(
+                Scalar::THREE_ADIC_ROOT_OF_UNITY
+                    .pow_vartime(Scalar::from(3).pow_vartime([i as u64, 0, 0, 0]).to_le_u64()),
+                Scalar::ONE
+            );
+        }
         assert_eq!(
             Scalar::THREE_ADIC_ROOT_OF_UNITY.pow_vartime(
                 Scalar::from(3)
@@ -879,8 +899,8 @@ mod tests {
         );
         assert!(
             Scalar::from_repr_vartime(&[
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-                72, 122, 216, 10, 219, 186, 255, 255, 127
+                1, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
             ])
             .is_none()
         );
@@ -911,50 +931,50 @@ mod tests {
         );
         assert_eq!(
             format_scalar(Scalar::from_repr_canonical(&[
-                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 47, 10, 150,
-                186, 185, 167, 254, 38, 41, 72, 122, 216, 10, 219, 186, 255, 255, 127
+                255, 255, 255, 255, 255, 255, 255, 191, 71, 85, 155, 158, 242, 221, 115, 6, 254,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
             ])),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a2fffffffffffffffffffffffffffff"
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547bfffffffffffffff"
         );
         assert_eq!(
             format_scalar(Scalar::from_repr_canonical(&[
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-                72, 122, 216, 10, 219, 186, 255, 255, 127
+                0, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
             ])),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
         );
         assert_eq!(
             format_scalar(Scalar::from_repr_canonical(&[
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-                72, 122, 216, 10, 219, 186, 255, 255, 127
+                1, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
             ])),
             "0x0000000000000000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
             format_scalar(Scalar::from_repr_canonical(&[
-                2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-                72, 122, 216, 10, 219, 186, 255, 255, 127
+                2, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
             ])),
             "0x0000000000000000000000000000000000000000000000000000000000000001"
         );
         assert_eq!(
             format_scalar(Scalar::from_repr_canonical(&[
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 20, 44, 117, 115, 79, 253, 77, 82,
-                144, 244, 176, 21, 182, 117, 255, 255, 255
+                1, 0, 0, 0, 0, 0, 0, 128, 143, 170, 54, 61, 229, 187, 231, 12, 252, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255
             ])),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
         );
         assert_eq!(
             format_scalar(Scalar::from_repr_canonical(&[
-                2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 20, 44, 117, 115, 79, 253, 77, 82,
-                144, 244, 176, 21, 182, 117, 255, 255, 255
+                2, 0, 0, 0, 0, 0, 0, 128, 143, 170, 54, 61, 229, 187, 231, 12, 252, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255
             ])),
             "0x0000000000000000000000000000000000000000000000000000000000000000"
         );
         assert_eq!(
             format_scalar(Scalar::from_repr_canonical(&[
-                3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 20, 44, 117, 115, 79, 253, 77, 82,
-                144, 244, 176, 21, 182, 117, 255, 255, 255
+                3, 0, 0, 0, 0, 0, 0, 128, 143, 170, 54, 61, 229, 187, 231, 12, 252, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255
             ])),
             "0x0000000000000000000000000000000000000000000000000000000000000001"
         );
@@ -963,14 +983,14 @@ mod tests {
                 254, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
                 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
             ])),
-            "0x0000008a49ea4f0b6fadb202b08c8ad3eb9ffffffffffffffffffffffffffffc"
+            "0x00000000000000000000000000000003f318441ac2c955707ffffffffffffffc"
         );
         assert_eq!(
             format_scalar(Scalar::from_repr_canonical(&[
                 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
                 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
             ])),
-            "0x0000008a49ea4f0b6fadb202b08c8ad3eb9ffffffffffffffffffffffffffffd"
+            "0x00000000000000000000000000000003f318441ac2c955707ffffffffffffffd"
         );
     }
 
@@ -982,11 +1002,11 @@ mod tests {
     fn test_from_repr_wide() {
         assert_eq!(
             from_repr_wide("0x53acd3dc79d20203e9e60026cdb75d037f9cbb33eded8b767a8dfbee9bff090ecf26226e4d9d26b20b854b21b423ea28becd7445365e1fd349ed4af9c16baf97".parse().unwrap()),
-            parse_scalar("0x5807d7340b99b478a10bcacd6fefef4c2df17bdee2f9c5353e307f113a60d6e5"),
+            parse_scalar("0x11ae20d001e52b42470886f49871dc9c79c9021fd09a19eb527c213ab2f3db10"),
         );
         assert_eq!(
             from_repr_wide("0x76f63d96682cea5050cd80435b9c53c6b9298bb03e2fc5d726094917e80782c0f9cd0bc49eb092a199116130b24377ed6a5fe01bc95ce0a8cca77dbb1d10922b".parse().unwrap()),
-            parse_scalar("0x49edffbd1c10c843ab8beda2fddf2b976758e6d3a9a5fc702ef433ab97eb570e"),
+            parse_scalar("0x45ce5572614df708a441e89f8982660fa7a904b470690ef76e4eb2a895402be7"),
         );
     }
 
@@ -1022,40 +1042,40 @@ mod tests {
         );
         assert_eq!(
             Scalar::from_le_u64([
-                0x0000000000000000u64,
-                0x0a30000000000000u64,
-                0x482926fea7b9ba96u64,
-                0x7fffffbadb0ad87au64,
+                0xc000000000000000u64,
+                0x0673ddf29e9b5547u64,
+                0xfffffffffffffffeu64,
+                0x7fffffffffffffffu64,
             ])
             .unwrap(),
-            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
         );
         assert_eq!(
             Scalar::from_le_u64_vartime([
-                0x0000000000000000u64,
-                0x0a30000000000000u64,
-                0x482926fea7b9ba96u64,
-                0x7fffffbadb0ad87au64,
+                0xc000000000000000u64,
+                0x0673ddf29e9b5547u64,
+                0xfffffffffffffffeu64,
+                0x7fffffffffffffffu64,
             ])
             .unwrap(),
-            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
         );
         assert!(
             Scalar::from_le_u64([
-                0x0000000000000001u64,
-                0x0a30000000000000u64,
-                0x482926fea7b9ba96u64,
-                0x7fffffbadb0ad87au64,
+                0xc000000000000001u64,
+                0x0673ddf29e9b5547u64,
+                0xfffffffffffffffeu64,
+                0x7fffffffffffffffu64,
             ])
             .into_option()
             .is_none()
         );
         assert!(
             Scalar::from_le_u64_vartime([
-                0x0000000000000001u64,
-                0x0a30000000000000u64,
-                0x482926fea7b9ba96u64,
-                0x7fffffbadb0ad87au64,
+                0xc000000000000001u64,
+                0x0673ddf29e9b5547u64,
+                0xfffffffffffffffeu64,
+                0x7fffffffffffffffu64,
             ])
             .is_none()
         );
@@ -1079,13 +1099,13 @@ mod tests {
             ]
         );
         assert_eq!(
-            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
                 .to_le_u64(),
             [
-                0x0000000000000000u64,
-                0x0a30000000000000u64,
-                0x482926fea7b9ba96u64,
-                0x7fffffbadb0ad87au64,
+                0xc000000000000000u64,
+                0x0673ddf29e9b5547u64,
+                0xfffffffffffffffeu64,
+                0x7fffffffffffffffu64,
             ]
         );
     }
@@ -1144,16 +1164,16 @@ mod tests {
         );
         assert_eq!(
             Scalar::try_from(
-                "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+                "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
                     .parse::<U256>()
                     .unwrap()
             )
             .unwrap(),
-            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
         );
         assert!(
             Scalar::try_from(
-                "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000001"
+                "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000001"
                     .parse::<U256>()
                     .unwrap()
             )
@@ -1178,9 +1198,9 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(
-            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
                 .to_u256(),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
                 .parse()
                 .unwrap()
         );
@@ -1221,17 +1241,17 @@ mod tests {
         assert_eq!(
             format_scalar(
                 Scalar::from_repr([
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38,
-                    41, 72, 122, 216, 10, 219, 186, 255, 255, 127
+                    0, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255,
+                    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
                 ])
                 .unwrap()
             ),
-            "0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000"
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
         );
         assert!(
             Scalar::from_repr([
-                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-                72, 122, 216, 10, 219, 186, 255, 255, 127
+                1, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
             ])
             .into_option()
             .is_none()
@@ -1265,11 +1285,11 @@ mod tests {
             ]
         );
         assert_eq!(
-            parse_scalar("0x7fffffbadb0ad87a482926fea7b9ba960a300000000000000000000000000000")
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
                 .to_repr(),
             [
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 10, 150, 186, 185, 167, 254, 38, 41,
-                72, 122, 216, 10, 219, 186, 255, 255, 127
+                0, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
             ]
         );
     }
@@ -1350,11 +1370,11 @@ mod tests {
             parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
         assert_eq!(
             lhs + rhs,
-            parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b")
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b")
         );
         assert_eq!(
             lhs + &rhs,
-            parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b")
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b")
         );
     }
 
@@ -1393,7 +1413,7 @@ mod tests {
         lhs += rhs;
         assert_eq!(
             lhs,
-            parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b")
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b")
         );
     }
 
@@ -1406,7 +1426,7 @@ mod tests {
         lhs += &rhs;
         assert_eq!(
             lhs,
-            parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b")
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b")
         );
     }
 
@@ -1429,7 +1449,7 @@ mod tests {
     #[test]
     fn test_sub_wraparound() {
         let lhs =
-            parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b");
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b");
         let rhs =
             parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
         assert_eq!(
@@ -1471,7 +1491,7 @@ mod tests {
     #[test]
     fn test_sub_assign_wraparound() {
         let mut lhs =
-            parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b");
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b");
         let rhs =
             parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
         lhs -= rhs;
@@ -1484,7 +1504,7 @@ mod tests {
     #[test]
     fn test_sub_assign_wraparound_ref() {
         let mut lhs =
-            parse_scalar("0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b");
+            parse_scalar("0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b");
         let rhs =
             parse_scalar("0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6");
         lhs -= &rhs;
@@ -1504,7 +1524,7 @@ mod tests {
         assert_eq!(-Scalar::ONE, Scalar::MAX);
         assert_eq!(-Scalar::from(2), Scalar::MAX_MINUS_ONE);
         test_neg_impl(parse_scalar(
-            "0x0367479822a0b6805fe332f3f9946c43fe07d69504a7d7152862b72bc606760b",
+            "0x03674752fdab8efaa80c59f2a14e26dc01c3f8a2660c81cd6862b72bc606760b",
         ));
         test_neg_impl(parse_scalar(
             "0x2f21673059ea54f8394a22713118b2b9e029b4c2b5545b4ae5dfaa10108443d6",
@@ -1562,12 +1582,12 @@ mod tests {
         test_mul_large_impl(
             parse_scalar("0x1be5c79927a7c7c2c1057e99b51e26efc2bac5029c6322e20405fc9334c50a9f"),
             parse_scalar("0x395ff9efcaa35d618872a95b7244c4b3b2a7e1d9276d4e88db27217993014628"),
-            parse_scalar("0x48bd4ecc2466c149025cda9043bdc246fd4bc2ddc8553ccbebf5f67ab8f5c94c"),
+            parse_scalar("0x0f21dcbfb54f62dd8ed757a0a2938c831c5bea612fffa42237f8a0e269b67e02"),
         );
         test_mul_large_impl(
             parse_scalar("0x233f7c593e331b2e1285f17013cd4b692d7219c10bf06adca229780913851577"),
             parse_scalar("0x74b95de3995095f242fa8dc762645eb31dffd6fcda71851456db33ef75365820"),
-            parse_scalar("0x7cb5f81d26335fb63d4964d1000668b43c1e16c5ecc404dd9429dfd2b4f38067"),
+            parse_scalar("0x53ca68eb0e0389d9950dc014a06f178af3f950222c731e4572d5a04e4708e931"),
         );
     }
 
@@ -1603,7 +1623,6 @@ mod tests {
 
     #[test]
     fn test_sum_wraps_modulo_p() {
-        // MAX + ONE wraps around to ZERO
         let values = vec![Scalar::MAX, Scalar::ONE];
         assert_eq!(values.into_iter().sum::<Scalar>(), Scalar::ZERO);
     }

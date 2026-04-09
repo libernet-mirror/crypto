@@ -1,9 +1,11 @@
 use crate::params;
-use crate::poly::Polynomial;
+use crate::poly;
 use anyhow::{Result, anyhow};
 use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar, pairing};
 use ff::Field;
 use group::{Group, prime::PrimeCurveAffine};
+
+type Polynomial = poly::Polynomial<Scalar>;
 
 /// A KZG evaluation proof.
 ///
