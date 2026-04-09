@@ -40,12 +40,6 @@ pub struct Wallet {
 }
 
 impl Wallet {
-    fn get_random_seed() -> H512 {
-        let mut bytes = [0u8; 64];
-        getrandom::getrandom(&mut bytes).unwrap();
-        H512::from_slice(&bytes)
-    }
-
     pub fn create(passwords: Vec<String>) -> Result<Self> {
         if passwords.is_empty() {
             return Err(anyhow!("no passwords specified"));
@@ -56,7 +50,7 @@ impl Wallet {
                 MAX_PASSWORDS
             ));
         }
-        let seed = Self::get_random_seed();
+        let seed = utils::get_random_bytes();
         let mut keys: Vec<Scalar> = passwords
             .iter()
             .map(|password| derive_key(password.as_str(), seed))
