@@ -37,7 +37,7 @@ impl Account {
 
         let ephemeral_seed = {
             let mut bytes = [0u8; 32];
-            getrandom::getrandom(&mut bytes)?;
+            getrandom::fill(&mut bytes)?;
             bytes
         };
 

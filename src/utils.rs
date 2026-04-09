@@ -14,7 +14,7 @@ use std::sync::LazyLock;
 
 pub fn get_random_bytes() -> H512 {
     let mut bytes = [0u8; 64];
-    getrandom::getrandom(&mut bytes).unwrap();
+    getrandom::fill(&mut bytes).unwrap();
     H512::from_slice(&bytes)
 }
 
@@ -167,9 +167,9 @@ pub fn parse_point_25519(s: &str) -> Result<Point25519> {
 
 pub fn shuffle<T>(elements: &mut [T]) {
     for i in 0..elements.len() {
-        let mut bytes = [0u8; 64];
-        getrandom::getrandom(&mut bytes).unwrap();
-        let r = U512::from_little_endian(&bytes);
+        let mut bytes = [0u8; 32];
+        getrandom::fill(&mut bytes).unwrap();
+        let r = U256::from_little_endian(&bytes);
         let j = r % (elements.len() - i);
         let j = i + j.as_u64() as usize;
         elements.swap(i, j);
@@ -216,14 +216,14 @@ mod tests {
 
     pub fn get_random_scalar_p256() -> ScalarP256 {
         let mut bytes = [0u8; 32];
-        getrandom::getrandom(&mut bytes).unwrap();
+        getrandom::fill(&mut bytes).unwrap();
         bytes[0] &= 0x0F;
         ScalarP256::from_repr_vartime(bytes.into()).unwrap()
     }
 
     pub fn get_random_scalar_25519() -> Scalar25519 {
         let mut bytes = [0u8; 64];
-        getrandom::getrandom(&mut bytes).unwrap();
+        getrandom::fill(&mut bytes).unwrap();
         Scalar25519::from_bytes_mod_order_wide(&bytes)
     }
 

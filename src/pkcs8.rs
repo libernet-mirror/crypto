@@ -173,7 +173,7 @@ mod tests {
     fn test_ecdsa() {
         let seed = {
             let mut bytes = [0u8; 32];
-            getrandom::getrandom(&mut bytes).unwrap();
+            getrandom::fill(&mut bytes).unwrap();
             bytes
         };
         let signing_key = p256::ecdsa::SigningKey::from_slice(&seed).unwrap();
@@ -190,7 +190,7 @@ mod tests {
     fn test_ed25519() {
         let secret_key = {
             let mut bytes = [0u8; 32];
-            getrandom::getrandom(&mut bytes).unwrap();
+            getrandom::fill(&mut bytes).unwrap();
             H256::from_slice(&bytes)
         };
         let der = encode_ed25519_private_key(secret_key).unwrap();

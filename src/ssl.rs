@@ -268,7 +268,7 @@ struct Certificate {
 /// The generated number is always positive and suitable for use in X.509.
 fn generate_serial_number() -> i128 {
     let mut bytes = [0u8; 16];
-    getrandom::getrandom(&mut bytes).unwrap();
+    getrandom::fill(&mut bytes).unwrap();
     bytes[0] &= 0x7F;
     i128::from_be_bytes(bytes)
 }
@@ -664,17 +664,9 @@ mod tests {
         public_key_c25519: Point25519,
     }
 
-    impl TestSigner {
-        fn generate_secret_key() -> H512 {
-            let mut bytes = [0u8; 64];
-            getrandom::getrandom(&mut bytes).unwrap();
-            H512::from_slice(&bytes)
-        }
-    }
-
     impl Default for TestSigner {
         fn default() -> Self {
-            let secret_key = Self::generate_secret_key();
+            let secret_key = utils::get_random_bytes();
             let secret_key_prefix = {
                 let mut prefix = [0u8; 32];
                 prefix.copy_from_slice(&secret_key.to_fixed_bytes()[0..32]);
