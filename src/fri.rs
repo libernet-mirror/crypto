@@ -68,6 +68,33 @@ struct LeafProof {
 }
 
 impl LeafProof {
+    /// Builds a Merkle proof for the leaf at `index` in a tree with `n` leaves.
+    ///
+    /// The tree is stored in `values` using the layout described in `merklify`.
+    ///
+    /// REQUIRES: `n` must be a power of 2.
+    /// REQUIRES: values.len() >= n * 2 - 1
+    /// REQUIRES: index < n
+    fn new(values: &[Scalar], mut n: usize, mut index: usize) -> Self {
+        debug_assert!(n.is_power_of_two());
+        let value = values[index];
+        let mut path = Vec::with_capacity(n.trailing_zeros() as usize);
+        let mut i = 0usize;
+        while n > 1 {
+            path.push(values[i + (index ^ 1)]);
+            i += n;
+            n /= 2;
+            index >>= 1;
+        }
+        Self { value, path }
+    }
+
+    /// Returns the proven value.
+    fn value(&self) -> &Scalar {
+        &self.value
+    }
+
+    /// Verifies this Merkle proof against the given `root_hash` using the given `index`.
     fn verify(&self, mut index: usize, root_hash: Scalar) -> Result<()> {
         let mut hash = self.value;
         for sibling in &self.path {
@@ -229,8 +256,34 @@ impl Prover {
 
     /// Builds a FRI opening proof for the value at the specified index of the evaluation domain.
     pub fn open_at(&self, index: usize) -> Proof {
-        // TODO
-        todo!()
+        let mut n = self.length();
+        assert!(index < n);
+
+        let value = self.values[index];
+        let mut folds = Vec::with_capacity(n.trailing_zeros() as usize);
+
+        let mut offset = 0usize;
+        let mut q = index;
+
+        while n > 1 {
+            let next_offset = offset + n * 2;
+            let m = n / 2;
+            let pos = q % m;
+            let neg = pos + m;
+            folds.push((
+                LeafProof::new(&self.values[offset..next_offset], n, pos),
+                LeafProof::new(&self.values[offset..next_offset], n, neg),
+            ));
+            offset = next_offset;
+            n = m;
+            q = pos;
+        }
+
+        Proof {
+            index,
+            value,
+            folds,
+        }
     }
 }
 
@@ -336,6 +389,62 @@ mod tests {
             vec![
                 parse_scalar("0x64276ccf57e84d0b2cbf42907160074c5d3db75ff85bd92d78580624c8cd8260"),
                 parse_scalar("0x29f412f3ebb68bd1a08894ef0012f570e68012e3b9c99abc5fb465603996219d"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_commit_three_elements_1() {
+        let prover = Prover::new(vec![12.into(), 34.into(), 56.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x128d169b8d3b12c340f50556ab8b4363434da8fd2eb1fc10031b1bc4ae4547ef"),
+                parse_scalar("0x553f8ee71cb542c0907824df502548adbc6e2aa1480306ef25425e30483f798b"),
+                parse_scalar("0x1db640d0d059f9f4abc1a87afdeb95f0d650ece4992da9a57849c21be79c4eb3"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_commit_three_elements_2() {
+        let prover = Prover::new(vec![78.into(), 90.into(), 12.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x0cbbc7748a2f74433a266e8610d2cf53a5c56fdc029bd61e843f4afc4aa4df8d"),
+                parse_scalar("0x1668d9873f5011a10e8742bd738124974202cbf760c9f24912dd386d2b234312"),
+                parse_scalar("0x27d7a92dd73748e2b69c63b0efabcc6b8021904a4fde9ca7dd66f90ab0e3155b"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_commit_four_elements_1() {
+        let prover = Prover::new(vec![12.into(), 34.into(), 56.into(), 0.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x128d169b8d3b12c340f50556ab8b4363434da8fd2eb1fc10031b1bc4ae4547ef"),
+                parse_scalar("0x553f8ee71cb542c0907824df502548adbc6e2aa1480306ef25425e30483f798b"),
+                parse_scalar("0x1db640d0d059f9f4abc1a87afdeb95f0d650ece4992da9a57849c21be79c4eb3"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_commit_four_elements_2() {
+        let prover = Prover::new(vec![34.into(), 56.into(), 78.into(), 90.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x752cc74f03f5419d2d899ae717ea7d843f5fa3f2db53b87cb24afecf56050db4"),
+                parse_scalar("0x2e6db60e1ec63487e65e09212472aa094f00f270927f00d17d7c1c3937f61a2f"),
+                parse_scalar("0x1138aea576f58a7c574a79187cde3ec230a00c9b4cc84eada73f16010dc85ecf"),
             ]
         );
     }
