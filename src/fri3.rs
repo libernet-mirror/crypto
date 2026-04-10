@@ -20,6 +20,15 @@ fn is_power_of_three(mut value: usize) -> bool {
     true
 }
 
+fn ilog3(mut n: usize) -> usize {
+    let mut c = 0;
+    while n > 1 {
+        c += 1;
+        n /= 3;
+    }
+    c
+}
+
 /// Computes all Merkle hashes of a vector of values up to the root.
 ///
 /// `n` is the number of values and must be a power of three.
@@ -50,6 +59,70 @@ fn merklify(values: &mut [Scalar], mut n: usize) {
         }
         i += n;
         n = m;
+    }
+}
+
+/// Stores the Merkle root hashes of a FRI commitment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Commitment {
+    /// The first element in the array is the root of the main Merkle tree, the second one is the
+    /// root of the Merkle tree from the first folding round, and so on until the last element which
+    /// is the value of the last folding round.
+    roots: Vec<Scalar>,
+}
+
+impl Commitment {
+    pub fn roots(&self) -> &[Scalar] {
+        self.roots.as_slice()
+    }
+}
+
+/// A Merkle proof for a single value in a ternary Merkle tree.
+///
+/// A FRI opening `Proof` uses several of these: one from the main Merkle tree and one for each
+/// folding round.
+///
+/// NOTE: this object only stores the proven scalar and the sister hashes of the proven path, but it
+/// doesn't store the lookup key or the root hash anywhere because those pieces of information are
+/// reconstructed separately during the verification of a whole `Proof`. In particular, all root
+/// hashes are stored in the `Commitment`.
+#[derive(Debug, Clone)]
+struct LeafProof {
+    value: Scalar,
+    path: Vec<(Scalar, Scalar)>,
+}
+
+impl LeafProof {
+    /// Builds a ternary Merkle proof for the leaf at `index` in a tree with `n` leaves.
+    ///
+    /// The tree is stored in `values` using the layout described in `merklify`.
+    ///
+    /// REQUIRES: `n` must be a power of 3.
+    /// REQUIRES: values.len() >= (3 * n - 1) / 2
+    /// REQUIRES: index < n
+    fn new(values: &[Scalar], mut n: usize, mut index: usize) -> Self {
+        debug_assert!(is_power_of_three(n));
+        assert!(index < n);
+        let value = values[index];
+        let mut path = Vec::with_capacity(ilog3(n));
+        let mut i = 0usize;
+        while n > 1 {
+            let j = i + index - index % 3;
+            match index % 3 {
+                0 => path.push((values[j + 1], values[j + 2])),
+                1 => path.push((values[j + 0], values[j + 2])),
+                _ => path.push((values[j + 0], values[j + 1])),
+            };
+            i += n;
+            n /= 3;
+            index /= 3;
+        }
+        Self { value, path }
+    }
+
+    /// Returns the proven value.
+    fn value(&self) -> &Scalar {
+        &self.value
     }
 }
 

@@ -88,6 +88,7 @@ impl LeafProof {
     /// REQUIRES: index < n
     fn new(values: &[Scalar], mut n: usize, mut index: usize) -> Self {
         debug_assert!(n.is_power_of_two());
+        assert!(index < n);
         let value = values[index];
         let mut path = Vec::with_capacity(n.trailing_zeros() as usize);
         let mut i = 0usize;
