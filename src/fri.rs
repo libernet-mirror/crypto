@@ -144,21 +144,21 @@ impl Proof {
 
     /// Verifies this proof against the given commitment.
     pub fn verify(&self, commitment: &Commitment) -> Result<()> {
-        let num_folds = self.folds.len();
-        let n = 1usize << num_folds;
+        let k = self.folds.len();
+        let n = 1usize << k;
 
-        if commitment.roots.len() != num_folds + 1 {
+        if commitment.roots.len() != k + 1 {
             return Err(anyhow!(
                 "commitment has {} roots but proof expects {}",
                 commitment.roots.len(),
-                num_folds + 1
+                k + 1
             ));
         }
         if self.index >= n {
             return Err(anyhow!("index {} out of bounds (n={})", self.index, n));
         }
 
-        if num_folds == 0 {
+        if k == 0 {
             if self.value != commitment.roots[0] {
                 return Err(anyhow!(
                     "value mismatch: got {}, want {}",
@@ -169,7 +169,6 @@ impl Proof {
             return Ok(());
         }
 
-        // self.value must match whichever leg of folds[0] covers self.index.
         let value_in_folds = if self.index < n / 2 {
             *self.folds[0].0.value()
         } else {
@@ -182,16 +181,14 @@ impl Proof {
         let mut q = self.index;
         let mut n_r = n;
 
-        for r in 0..num_folds {
+        for r in 0..k {
             let m = n_r / 2;
             let pos = q % m;
             let neg = pos + m;
 
-            // Verify both Merkle proofs against this round's root.
             self.folds[r].0.verify(pos, commitment.roots[r])?;
             self.folds[r].1.verify(neg, commitment.roots[r])?;
 
-            // Recompute the Fiat-Shamir challenge and fold the pair.
             let alpha = poseidon::hash_t3(&[*DST, commitment.roots[r]]);
             let k_r = n_r.trailing_zeros();
             let omega_inv =
@@ -202,9 +199,7 @@ impl Proof {
             let folded =
                 (f_pos + f_neg + alpha * omega_inv_pos * (f_pos - f_neg)) * Scalar::TWO_INV;
 
-            // The folded value lives at index `pos` in tree r+1. Check it against the
-            // next round's data: either a leg of folds[r+1] or the final root.
-            let expected = if r + 1 == num_folds {
+            let expected = if r + 1 == k {
                 commitment.roots[r + 1]
             } else if pos < m / 2 {
                 *self.folds[r + 1].0.value()
