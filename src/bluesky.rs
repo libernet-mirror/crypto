@@ -18,7 +18,7 @@ use subtle::{
 #[inline(always)]
 fn add(a: u64, b: u64) -> (u64, u64) {
     let sum = (a as u128) + (b as u128);
-    return (sum as u64, (sum >> 64) as u64);
+    (sum as u64, (sum >> 64) as u64)
 }
 
 #[inline(always)]

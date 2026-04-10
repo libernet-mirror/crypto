@@ -5,6 +5,7 @@ use crate::bluesky::Scalar;
 use wasm_bindgen::prelude::*;
 
 pub mod bluesky;
+pub mod fri;
 pub mod merkle;
 pub mod poseidon;
 pub mod utils;
