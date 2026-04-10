@@ -1,5 +1,8 @@
-use crate::{bluesky::Scalar, poseidon};
+use crate::bluesky::Scalar;
+use crate::poseidon;
+use crate::utils;
 use ff::{Field, PrimeField};
+use std::sync::LazyLock;
 
 /// Computes all Merkle hashes of a vector of values up to the root.
 ///
@@ -80,13 +83,62 @@ pub struct Prover {
 }
 
 impl Prover {
+    /// Runs a folding round over a Merkle tree with `n` leaves, resulting in a new Merkle tree with
+    /// `n/2` leaves.
+    ///
+    /// The input Merkle tree must be stored at the beginning of the provided slice, so that the
+    /// first `n` elements of the slice are the evaluations of the polynomial to fold.
+    ///
+    /// The root of the input Merkle tree is therefore located at index `(n - 1) * 2` and is used to
+    /// generate the Fiat-Shamir challenge for the round.
+    ///
+    /// The output Merkle tree will be stored at offset `2n` and will take exactly `n` slots
+    /// (including the final padding element). It's the caller's responsibility to ensure that
+    /// `values` has enough space.
+    fn fold(values: &mut [Scalar], n: usize) {
+        assert!(n.is_power_of_two());
+
+        static DST: LazyLock<Scalar> =
+            LazyLock::new(|| utils::hash_to_scalar(b"libernet/fri2/challenge"));
+        let alpha = poseidon::hash_t3(&[*DST, values[(n - 1) * 2]]);
+
+        let k = n.trailing_zeros();
+        let omega_inv = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
+
+        let m = n / 2;
+        let mut omega_inv_i = Scalar::ONE;
+        for i in 0..m {
+            let f_pos = values[i];
+            let f_neg = values[i + m];
+            values[2 * n + i] =
+                (f_pos + f_neg + alpha * omega_inv_i * (f_pos - f_neg)) * Scalar::TWO_INV;
+            omega_inv_i *= omega_inv;
+        }
+
+        merklify(&mut values[(2 * n)..(3 * n)], m);
+    }
+
+    /// Runs all folding passes by calling `fold` iteratively until the polynomial is folded into a
+    /// single scalar.
+    ///
+    /// All generated Merkle trees are laid out across `values` as described above.
+    fn fold_all(values: &mut [Scalar], n: usize) {
+        let mut offset = 0usize;
+        let mut m = n;
+        while m > 1 {
+            Self::fold(&mut values[offset..], m);
+            offset += 2 * m;
+            m /= 2;
+        }
+    }
+
     pub fn new(mut values: Vec<Scalar>) -> Self {
         let n = values.len().next_power_of_two();
         assert!(n <= 1usize << Scalar::S);
         values.resize(n * 4 - 2, Scalar::ZERO);
-        merklify(&mut values[0..(n * 2 - 1)], n);
-        // TODO
-        todo!()
+        merklify(&mut values[0..(2 * n)], n);
+        Self::fold_all(&mut values, n);
+        Self { values }
     }
 
     /// Returns the length of the original committed vector.
