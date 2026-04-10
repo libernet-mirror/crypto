@@ -1,8 +1,12 @@
 use crate::bluesky::Scalar;
 use crate::poseidon;
 use crate::utils;
+use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
 use std::sync::LazyLock;
+
+/// Domain separator tag for Fiat-Shamir challenges.
+static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/fri2/challenge"));
 
 /// Computes all Merkle hashes of a vector of values up to the root.
 ///
@@ -33,22 +37,83 @@ fn merklify(values: &mut [Scalar], mut n: usize) {
     }
 }
 
+/// Stores the Merkle root hashes of a FRI commitment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
+    /// The first element in the array is the root of the main Merkle tree, the second one is the
+    /// root of the Merkle tree from the first folding round, and so on until the last element which
+    /// is the value of the last folding round.
     roots: Vec<Scalar>,
+}
+
+impl Commitment {
+    pub fn roots(&self) -> &[Scalar] {
+        self.roots.as_slice()
+    }
+}
+
+/// A Merkle proof for a single value in a Merkle tree.
+///
+/// A FRI opening `Proof` uses several of these: one from the main Merkle tree and one for each
+/// folding round.
+///
+/// NOTE: this object only stores the proven scalar and the sister hashes of the proven path, but it
+/// doesn't store the lookup key or the root hash anywhere because those pieces of information are
+/// reconstructed separately during the verification of a whole `Proof`. In particular, all root
+/// hashes are stored in the `Commitment`.
+#[derive(Debug, Clone)]
+struct LeafProof {
+    value: Scalar,
+    path: Vec<Scalar>,
+}
+
+impl LeafProof {
+    fn verify(&self, mut index: usize, root_hash: Scalar) -> Result<()> {
+        let mut hash = self.value;
+        for sibling in &self.path {
+            hash = if index & 1 != 0 {
+                poseidon::hash_t3(&[*sibling, hash])
+            } else {
+                poseidon::hash_t3(&[hash, *sibling])
+            };
+            index >>= 1;
+        }
+        if index != 0 {
+            return Err(anyhow!("index out of bounds"));
+        }
+        if hash != root_hash {
+            return Err(anyhow!(
+                "root hash mismatch (got {}, want {})",
+                utils::format_scalar(hash),
+                utils::format_scalar(root_hash)
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// A complete FRI opening proof.
 #[derive(Debug, Clone)]
 pub struct Proof {
+    /// The index of the element we're opening.
     index: usize,
-    // TODO
+    /// The opened value.
+    value: Scalar,
+    /// Proves a pair of "partner" values at each folding round with one `LeafProof` pair for every
+    /// round. Note that either `folds[0].0` or `folds[0].1` proves `value`.
+    folds: Vec<(LeafProof, LeafProof)>,
 }
 
 impl Proof {
     /// Returns the index of the opened value.
     pub fn index(&self) -> usize {
         self.index
+    }
+
+    /// Verifies this proof against the given commitment.
+    pub fn verify(&self, commitment: &Commitment) -> Result<()> {
+        // TODO
+        todo!()
     }
 }
 
@@ -98,8 +163,6 @@ impl Prover {
     fn fold(values: &mut [Scalar], n: usize) {
         assert!(n.is_power_of_two());
 
-        static DST: LazyLock<Scalar> =
-            LazyLock::new(|| utils::hash_to_scalar(b"libernet/fri2/challenge"));
         let alpha = poseidon::hash_t3(&[*DST, values[(n - 1) * 2]]);
 
         let k = n.trailing_zeros();
@@ -132,6 +195,10 @@ impl Prover {
         }
     }
 
+    /// Constructs a new FRI prover that commits to the provided list of `values`.
+    ///
+    /// The underlying algorithms require that the number of committed values is a power of two, so
+    /// if that's not the case this function will automatically pad them with zeros.
     pub fn new(mut values: Vec<Scalar>) -> Self {
         let n = values.len().next_power_of_two();
         assert!(n <= 1usize << Scalar::S);
@@ -144,6 +211,26 @@ impl Prover {
     /// Returns the length of the original committed vector.
     pub fn length(&self) -> usize {
         (self.values.len() + 2) / 4
+    }
+
+    /// Creates the FRI commitment for the committed vector.
+    pub fn commit(&self) -> Commitment {
+        let mut n = self.length();
+        let k = (n.trailing_zeros() + 1) as usize;
+        let mut roots = vec![Scalar::ZERO; k];
+        let mut offset = 0usize;
+        for i in 0..k {
+            roots[i] = self.values[offset + (n - 1) * 2];
+            offset += n * 2;
+            n /= 2;
+        }
+        Commitment { roots }
+    }
+
+    /// Builds a FRI opening proof for the value at the specified index of the evaluation domain.
+    pub fn open_at(&self, index: usize) -> Proof {
+        // TODO
+        todo!()
     }
 }
 
@@ -189,6 +276,66 @@ mod tests {
                 parse_scalar("0x64276ccf57e84d0b2cbf42907160074c5d3db75ff85bd92d78580624c8cd8260"),
                 parse_scalar("0x165e74be18ef4be6de5e232cd3480dcc38176807ac918b904576964612c5b6de"),
                 parse_scalar("0x1b207cff4c6c97c46c0b950b7524dae299cf3b48d766f0e5990a63fc378cba29"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_empty_vector_commitment() {
+        let prover = Prover::new(vec![]);
+        let commitment = prover.commit();
+        assert_eq!(commitment.roots(), vec![Scalar::ZERO]);
+    }
+
+    #[test]
+    fn test_commit_one_element_1() {
+        let prover = Prover::new(vec![12.into()]);
+        let commitment = prover.commit();
+        assert_eq!(commitment.roots(), vec![12.into()]);
+    }
+
+    #[test]
+    fn test_commit_one_element_2() {
+        let prover = Prover::new(vec![34.into()]);
+        let commitment = prover.commit();
+        assert_eq!(commitment.roots(), vec![34.into()]);
+    }
+
+    #[test]
+    fn test_commit_two_elements_1() {
+        let prover = Prover::new(vec![56.into(), 78.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x38e7bb7b6ccae0c74031423877db058f4ab3a284964e2d91bf97497851eca5db"),
+                parse_scalar("0x2235bc231a4a1a51bd36cf648a8f29d0446045ab530ce75dafd68413de05dcc1"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_commit_two_elements_2() {
+        let prover = Prover::new(vec![78.into(), 56.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x1befadaea6bd1cf2b575269ecd25b536e965ca76b0a605acdc907b132caa2407"),
+                parse_scalar("0x30c06125c2f978f9cc91b0cb5094312a7741074dba9bc26af219fc4309b2acb1"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_commit_two_elements_3() {
+        let prover = Prover::new(vec![78.into(), 90.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x64276ccf57e84d0b2cbf42907160074c5d3db75ff85bd92d78580624c8cd8260"),
+                parse_scalar("0x29f412f3ebb68bd1a08894ef0012f570e68012e3b9c99abc5fb465603996219d"),
             ]
         );
     }
