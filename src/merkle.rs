@@ -1,0 +1,868 @@
+use crate::bluesky::Scalar;
+use crate::poseidon;
+use crate::utils;
+use crate::xits;
+use anyhow::{Result, anyhow};
+use ff::Field;
+use ff::PrimeField;
+use std::fmt::Debug;
+
+/// Makes a type representable as a BLS12-381 scalar. Must be implemened by all Merkle tree values.
+///
+/// Typical implementations use the value itself when it fits in a single scalar (e.g. u64 or
+/// BlueSky scalars themselves), and use a Poseidon hash when it doesn't.
+///
+/// NOTE: the returned scalar must never change while the value is stored in the Merkle tree.
+/// Typical implementations are simply immutable so that the returned representation never changes.
+pub trait AsScalar {
+    fn as_scalar(&self) -> Scalar;
+}
+
+impl AsScalar for Scalar {
+    fn as_scalar(&self) -> Scalar {
+        *self
+    }
+}
+
+impl AsScalar for u32 {
+    fn as_scalar(&self) -> Scalar {
+        Scalar::from(*self as u64)
+    }
+}
+
+impl AsScalar for u64 {
+    fn as_scalar(&self) -> Scalar {
+        Scalar::from(*self)
+    }
+}
+
+impl AsScalar for u128 {
+    fn as_scalar(&self) -> Scalar {
+        let mut bytes = [0u8; 32];
+        bytes[0..16].copy_from_slice(&self.to_le_bytes());
+        Scalar::from_repr_vartime(&bytes).unwrap()
+    }
+}
+
+/// Makes a type parseable from a BlueSky scalar. Must be implemented by all types used as keys in
+/// Merkle trees.
+///
+/// BlueSky scalars are encoded in 32 bytes (they are ~255 bits wide) but if the key type requires
+/// less than that then the least significant bytes must be used, not the most significant ones.
+/// That is because the least significant bits are the ones closer to the leaves, as opposed to the
+/// most significant ones which are closest to the root, and using the former allows for trees of
+/// lower height.
+pub trait FromScalar: Sized {
+    fn from_scalar(scalar: Scalar) -> Result<Self>;
+}
+
+impl FromScalar for Scalar {
+    fn from_scalar(scalar: Scalar) -> Result<Self> {
+        Ok(scalar)
+    }
+}
+
+impl FromScalar for u32 {
+    fn from_scalar(scalar: Scalar) -> Result<Self> {
+        let bytes32 = scalar.to_repr();
+        for i in 4..32 {
+            if bytes32[i] != 0 {
+                return Err(anyhow!("invalid 32-bit scalar"));
+            }
+        }
+        let mut bytes4 = [0u8; 4];
+        bytes4.copy_from_slice(&bytes32[0..4]);
+        Ok(u32::from_le_bytes(bytes4))
+    }
+}
+
+impl FromScalar for u64 {
+    fn from_scalar(scalar: Scalar) -> Result<Self> {
+        let bytes32 = scalar.to_repr();
+        for i in 8..32 {
+            if bytes32[i] != 0 {
+                return Err(anyhow!("invalid 64-bit scalar"));
+            }
+        }
+        let mut bytes8 = [0u8; 8];
+        bytes8.copy_from_slice(&bytes32[0..8]);
+        Ok(u64::from_le_bytes(bytes8))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Proof<
+    K: Debug + Copy + Send + Sync + FromScalar + AsScalar + 'static,
+    V: Debug + Clone + Send + Sync + AsScalar + 'static,
+    const W: usize,
+    const H: usize,
+> {
+    key: K,
+    value: V,
+    path: [[Scalar; W]; H],
+    root_hash: Scalar,
+}
+
+impl<
+    K: Debug + Copy + Send + Sync + FromScalar + AsScalar + 'static,
+    V: Debug + Clone + Send + Sync + AsScalar + 'static,
+    const W: usize,
+    const H: usize,
+> Proof<K, V, W, H>
+{
+    pub fn new(key: K, value: V, path: [[Scalar; W]; H], root_hash: Scalar) -> Self {
+        Self {
+            key,
+            value,
+            path,
+            root_hash,
+        }
+    }
+
+    pub fn key(&self) -> K {
+        self.key
+    }
+
+    pub fn value(&self) -> &V {
+        &self.value
+    }
+
+    pub fn take_value(self) -> V {
+        self.value
+    }
+
+    /// Returns a new proof with the value replaced by the provided one, failing if the scalar
+    /// representation of the two values doesn't match.
+    pub fn map<U: Debug + Clone + Send + Sync + AsScalar + 'static>(
+        self,
+        new_value: U,
+    ) -> Result<Proof<K, U, W, H>> {
+        let current_hash = self.value.as_scalar();
+        let new_hash = new_value.as_scalar();
+        if new_hash != current_hash {
+            return Err(anyhow!(
+                "cannot map Merkle proof from value hash {} to value hash {}",
+                utils::format_scalar(current_hash),
+                utils::format_scalar(new_hash)
+            ));
+        }
+        Ok(Proof {
+            key: self.key,
+            value: new_value,
+            path: self.path,
+            root_hash: self.root_hash,
+        })
+    }
+
+    pub fn path(&self) -> &[[Scalar; W]; H] {
+        &self.path
+    }
+
+    pub fn root_hash(&self) -> Scalar {
+        self.root_hash
+    }
+}
+
+impl<
+    K: Debug + Copy + Send + Sync + FromScalar + AsScalar + 'static,
+    V: Debug + Clone + Send + Sync + AsScalar + 'static,
+    const H: usize,
+> Proof<K, V, 2, H>
+{
+    fn reconstruct_path(
+        mut key: Scalar,
+        mut value: Scalar,
+        hashes: &[Scalar],
+    ) -> Result<[[Scalar; 2]; H]> {
+        if hashes.len() != H {
+            return Err(anyhow!(
+                "wrong number of hashes in Merkle proof: got {}, want {}",
+                hashes.len(),
+                H
+            ));
+        }
+        let mut path = [[Scalar::ZERO; 2]; H];
+        for i in 0..H {
+            let bit = xits::and1(key);
+            key = xits::shr1(key);
+            if bit != 0.into() {
+                path[i] = [hashes[i], value];
+            } else {
+                path[i] = [value, hashes[i]];
+            }
+            value = poseidon::hash_t3(&path[i]);
+        }
+        Ok(path)
+    }
+
+    pub fn from_compressed(key: K, value: V, root_hash: Scalar, hashes: &[Scalar]) -> Result<Self> {
+        let path = Self::reconstruct_path(key.as_scalar(), value.as_scalar(), hashes)?;
+        Ok(Self {
+            key,
+            value,
+            path,
+            root_hash,
+        })
+    }
+
+    pub fn compressed_path(&self) -> [Scalar; H] {
+        let mut key = self.key.as_scalar();
+        let mut path = [Scalar::ZERO; H];
+        for i in 0..H {
+            let bit = xits::and1(key);
+            key = xits::shr1(key);
+            if bit != 0.into() {
+                path[i] = self.path[i][0];
+            } else {
+                path[i] = self.path[i][1];
+            }
+        }
+        path
+    }
+
+    pub fn verify(&self) -> Result<()> {
+        let mut key = self.key.as_scalar();
+        let mut hash = self.value.as_scalar();
+        for children in self.path {
+            let bit = xits::and1(key).to_repr()[0] as usize;
+            if hash != children[bit] {
+                return Err(anyhow!(
+                    "hash mismatch: got {}, want {}",
+                    utils::format_scalar(children[bit]),
+                    utils::format_scalar(hash),
+                ));
+            }
+            key = xits::shr1(key);
+            hash = poseidon::hash_t3(&children);
+        }
+        if hash != self.root_hash {
+            return Err(anyhow!(
+                "final hash mismatch: got {}, want {}",
+                utils::format_scalar(self.root_hash),
+                utils::format_scalar(hash),
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl<
+    K: Debug + Copy + Send + Sync + FromScalar + AsScalar + 'static,
+    V: Debug + Clone + Send + Sync + AsScalar + 'static,
+    const H: usize,
+> Proof<K, V, 3, H>
+{
+    fn reconstruct_path(
+        mut key: Scalar,
+        mut value: Scalar,
+        hashes: &[[Scalar; 2]],
+    ) -> Result<[[Scalar; 3]; H]> {
+        if hashes.len() != H {
+            return Err(anyhow!(
+                "wrong number of hashes in Merkle proof: got {}, want {}",
+                hashes.len(),
+                H
+            ));
+        }
+        let mut path = [[Scalar::ZERO; 3]; H];
+        for i in 0..H {
+            let trit = xits::mod3(key);
+            key = xits::div3(key);
+            if trit == 0.into() {
+                path[i] = [value, hashes[i][0], hashes[i][1]];
+            } else if trit == 1.into() {
+                path[i] = [hashes[i][0], value, hashes[i][1]];
+            } else if trit == 2.into() {
+                path[i] = [hashes[i][0], hashes[i][1], value];
+            } else {
+                unreachable!();
+            }
+            value = poseidon::hash_t4(&path[i]);
+        }
+        Ok(path)
+    }
+
+    pub fn from_compressed(
+        key: K,
+        value: V,
+        root_hash: Scalar,
+        hashes: &[[Scalar; 2]],
+    ) -> Result<Self> {
+        let path = Self::reconstruct_path(key.as_scalar(), value.as_scalar(), hashes)?;
+        Ok(Self {
+            key,
+            value,
+            path,
+            root_hash,
+        })
+    }
+
+    pub fn compressed_path(&self) -> [[Scalar; 2]; H] {
+        let mut key = self.key.as_scalar();
+        let mut path = [[Scalar::ZERO; 2]; H];
+        for i in 0..H {
+            let trit = xits::mod3(key);
+            key = xits::div3(key);
+            if trit == 0.into() {
+                path[i] = [self.path[i][1], self.path[i][2]];
+            } else if trit == 1.into() {
+                path[i] = [self.path[i][0], self.path[i][2]];
+            } else if trit == 2.into() {
+                path[i] = [self.path[i][0], self.path[i][1]];
+            } else {
+                unreachable!();
+            }
+        }
+        path
+    }
+
+    pub fn verify(&self) -> Result<()> {
+        let mut key = self.key.as_scalar();
+        let mut hash = self.value.as_scalar();
+        for children in self.path {
+            let trit = xits::mod3(key).to_repr()[0] as usize;
+            if hash != children[trit] {
+                return Err(anyhow!(
+                    "hash mismatch: got {}, want {}",
+                    utils::format_scalar(children[trit]),
+                    utils::format_scalar(hash),
+                ));
+            }
+            key = xits::div3(key);
+            hash = poseidon::hash_t4(&children);
+        }
+        if hash != self.root_hash {
+            return Err(anyhow!(
+                "final hash mismatch: got {}, want {}",
+                utils::format_scalar(self.root_hash),
+                utils::format_scalar(hash),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use utils::parse_scalar;
+
+    #[test]
+    fn test_scalar_as_scalar() {
+        let value =
+            parse_scalar("0x4bbbaa6849aeede337bab1b0271b2fc649170a6333866d8106bb65fba05109a7");
+        assert_eq!(value.as_scalar(), value);
+    }
+
+    #[test]
+    fn test_u32_as_scalar() {
+        assert_eq!(0xa05109a7u32.as_scalar(), parse_scalar("0xa05109a7"));
+    }
+
+    #[test]
+    fn test_u64_as_scalar() {
+        assert_eq!(
+            0x06bb65fba05109a7u64.as_scalar(),
+            parse_scalar("0x06bb65fba05109a7")
+        );
+    }
+
+    #[test]
+    fn test_u128_as_scalar() {
+        assert_eq!(
+            0x49170a6333866d8106bb65fba05109a7u128.as_scalar(),
+            parse_scalar("0x49170a6333866d8106bb65fba05109a7")
+        );
+    }
+
+    #[test]
+    fn test_scalar_from_scalar() {
+        let scalar =
+            parse_scalar("0x4bbbaa6849aeede337bab1b0271b2fc649170a6333866d8106bb65fba05109a7");
+        assert_eq!(scalar, Scalar::from_scalar(scalar).unwrap());
+    }
+
+    #[test]
+    fn test_u32_from_scalar() {
+        assert_eq!(
+            0xa05109a7u32,
+            u32::from_scalar(parse_scalar("0xa05109a7")).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_u64_from_scalar() {
+        assert_eq!(
+            0x06bb65fba05109a7u64,
+            u64::from_scalar(parse_scalar("0x06bb65fba05109a7")).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_proof_2_0() {
+        let root_hash =
+            parse_scalar("0x2f1e5f91aa954def1ed17cb40d9fd24da546f68da56f314ca3f7e4dc1d0a2400");
+        let value =
+            parse_scalar("0x2f1e5f91aa954def1ed17cb40d9fd24da546f68da56f314ca3f7e4dc1d0a2400");
+        let proof = Proof::<Scalar, Scalar, 2, 0>::from_compressed(0.into(), value, root_hash, &[])
+            .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_2_1_left() {
+        let root_hash =
+            parse_scalar("0x3b882e97f1bc7ab2611c042e0e2735158a5f0898a33cb58783edf31b8891ce55");
+        let left =
+            parse_scalar("0x649911b84fd6fceb1314d8eda893ee60abb4f55d52ef2a7a88491587dd432c24");
+        let right =
+            parse_scalar("0x11be4b396567dc3aef3f8e3e9a621aaedb507d5aa7f8bcc1da64d28b8e22e811");
+        let proof =
+            Proof::<Scalar, Scalar, 2, 1>::from_compressed(0.into(), left, root_hash, &[right])
+                .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_2_1_right() {
+        let root_hash =
+            parse_scalar("0x3b882e97f1bc7ab2611c042e0e2735158a5f0898a33cb58783edf31b8891ce55");
+        let left =
+            parse_scalar("0x649911b84fd6fceb1314d8eda893ee60abb4f55d52ef2a7a88491587dd432c24");
+        let right =
+            parse_scalar("0x11be4b396567dc3aef3f8e3e9a621aaedb507d5aa7f8bcc1da64d28b8e22e811");
+        let proof =
+            Proof::<Scalar, Scalar, 2, 1>::from_compressed(1.into(), right, root_hash, &[left])
+                .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_2_2_00() {
+        let root_hash =
+            parse_scalar("0x36052a244d7f61fd1059c2a608d6ee2a62613509fd3bb7fb9ba05c396f31b997");
+        let value =
+            parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
+        let sister1 =
+            parse_scalar("0x539b16757d586f847a0821b28d3177a484457451b4f90fe9b51c96348de51d53");
+        let sister2 =
+            parse_scalar("0x6ab45fd4070883dc5ea816a1b4919223f4e7e23a321f58ae9f4adc4ba92f56c1");
+        let proof = Proof::<Scalar, Scalar, 2, 2>::from_compressed(
+            0.into(),
+            value,
+            root_hash,
+            &[sister1, sister2],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_2_2_01() {
+        let root_hash =
+            parse_scalar("0x0ddf9711c63741d1a9946c8b2b75a6a1cf2ddcf7adf6b3a5ad7f86f9a1de060c");
+        let value =
+            parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
+        let sister1 =
+            parse_scalar("0x539b16757d586f847a0821b28d3177a484457451b4f90fe9b51c96348de51d53");
+        let sister2 =
+            parse_scalar("0x6ab45fd4070883dc5ea816a1b4919223f4e7e23a321f58ae9f4adc4ba92f56c1");
+        let proof = Proof::<Scalar, Scalar, 2, 2>::from_compressed(
+            1.into(),
+            value,
+            root_hash,
+            &[sister1, sister2],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_2_2_10() {
+        let root_hash =
+            parse_scalar("0x24fe2992cf9a37aac4e0ac4be60d4d57bf48b89257aeac50f74cf5dc086ce082");
+        let value =
+            parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
+        let sister1 =
+            parse_scalar("0x539b16757d586f847a0821b28d3177a484457451b4f90fe9b51c96348de51d53");
+        let sister2 =
+            parse_scalar("0x6ab45fd4070883dc5ea816a1b4919223f4e7e23a321f58ae9f4adc4ba92f56c1");
+        let proof = Proof::<Scalar, Scalar, 2, 2>::from_compressed(
+            2.into(),
+            value,
+            root_hash,
+            &[sister1, sister2],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_2_2_11() {
+        let root_hash =
+            parse_scalar("0x4162e0dcaaea48fdf317b9a8c503459c99f7faa69c2ceba79f341e1d0faf778b");
+        let value =
+            parse_scalar("0xc777df35747c268a08f5ca158972a8fc04f5cdb460c47ae63c4fc758c72844b");
+        let sister1 =
+            parse_scalar("0x539b16757d586f847a0821b28d3177a484457451b4f90fe9b51c96348de51d53");
+        let sister2 =
+            parse_scalar("0x6ab45fd4070883dc5ea816a1b4919223f4e7e23a321f58ae9f4adc4ba92f56c1");
+        let proof = Proof::<Scalar, Scalar, 2, 2>::from_compressed(
+            3.into(),
+            value,
+            root_hash,
+            &[sister1, sister2],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_0() {
+        let root_hash =
+            parse_scalar("0x22853de9cbf26d30c244a89351a5429784c0dda73d36762a5c0be74bbc72e5b0");
+        let value =
+            parse_scalar("0x22853de9cbf26d30c244a89351a5429784c0dda73d36762a5c0be74bbc72e5b0");
+        let proof = Proof::<Scalar, Scalar, 3, 0>::from_compressed(0.into(), value, root_hash, &[])
+            .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_1_0() {
+        let root_hash =
+            parse_scalar("0x3d0f08f65f3ee52ad959d8c62634e1d2399109dba419067a30c64376d4dd1b77");
+        let value =
+            parse_scalar("0x71f09f7f8c126f0fad998f73ef79a489f91b09ed820681a5dc8a88882d912d6b");
+        let sister1 =
+            parse_scalar("0x684d795929e259d083c80e20f7da73c18d237c3e948143bdf3321e0a0186fdfd");
+        let sister2 =
+            parse_scalar("0x2a63c64dec4a49d17d37f8d44d4d1bc2086668eb4fe6baa8550bd60cdfc18d54");
+        let proof = Proof::<Scalar, Scalar, 3, 1>::from_compressed(
+            0.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_1_1() {
+        let root_hash =
+            parse_scalar("0x050fc3d455460f95c2455d3243ab62241b7fa1f4cab398da3888b5405027e1d1");
+        let value =
+            parse_scalar("0x71f09f7f8c126f0fad998f73ef79a489f91b09ed820681a5dc8a88882d912d6b");
+        let sister1 =
+            parse_scalar("0x684d795929e259d083c80e20f7da73c18d237c3e948143bdf3321e0a0186fdfd");
+        let sister2 =
+            parse_scalar("0x2a63c64dec4a49d17d37f8d44d4d1bc2086668eb4fe6baa8550bd60cdfc18d54");
+        let proof = Proof::<Scalar, Scalar, 3, 1>::from_compressed(
+            1.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_1_2() {
+        let root_hash =
+            parse_scalar("0x5ed7790ebaa6411b967dfdf84fb32be81f2b1c98e3a55db3a62e29ce9ec7e6a3");
+        let value =
+            parse_scalar("0x71f09f7f8c126f0fad998f73ef79a489f91b09ed820681a5dc8a88882d912d6b");
+        let sister1 =
+            parse_scalar("0x684d795929e259d083c80e20f7da73c18d237c3e948143bdf3321e0a0186fdfd");
+        let sister2 =
+            parse_scalar("0x2a63c64dec4a49d17d37f8d44d4d1bc2086668eb4fe6baa8550bd60cdfc18d54");
+        let proof = Proof::<Scalar, Scalar, 3, 1>::from_compressed(
+            2.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_2_00() {
+        let root_hash =
+            parse_scalar("0x7da79dc41778d3b34d73d33ebd6df9e5587d064e0a88e1992a09d2963b5e4315");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            0.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_2_01() {
+        let root_hash =
+            parse_scalar("0x373bb6602dcb22dbbd8ec3f0bb09a9aaee3c26f8b89fefa819eb97bd94670734");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            1.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_2_02() {
+        let root_hash =
+            parse_scalar("0x4fcd2729e4c9d021fd71c3b183fe65042f54d647662211a094faa56393ac9367");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            2.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_2_10() {
+        let root_hash =
+            parse_scalar("0x7de7bfc30a7b106e31c8de24e6190949b70ae600259e9c3b652166df7ce33db9");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            3.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_2_11() {
+        let root_hash =
+            parse_scalar("0x330970dcc42ab5187248400102d88411eef76320120c40a093c69a3af6de7869");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            4.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_2_12() {
+        let root_hash =
+            parse_scalar("0x44b89da8691efb95085b386e8678a6acb5fd6efd43aec2c8241677bd18a4d19c");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            5.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_2_20() {
+        let root_hash =
+            parse_scalar("0x7536f1493dbcfee61ce46c52c456766d3e95caf1854dcfe9c0b280f98be07b62");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            6.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_2_21() {
+        let root_hash =
+            parse_scalar("0x393c98a0a7171263e4bddcfd896bd2dd661dc994b449497a668c2a572c561e58");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            7.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[test]
+    fn test_proof_3_2_22() {
+        let root_hash =
+            parse_scalar("0x35a0408c9db7dd043333d028b1912028a437f6bfd2fd0fb375bccbafe1003fec");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            8.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.verify().is_ok());
+    }
+
+    #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+    struct TestValue {
+        scalar: Scalar,
+    }
+
+    impl AsScalar for TestValue {
+        fn as_scalar(&self) -> Scalar {
+            self.scalar
+        }
+    }
+
+    #[test]
+    fn test_map_value() {
+        let root_hash =
+            parse_scalar("0x35a0408c9db7dd043333d028b1912028a437f6bfd2fd0fb375bccbafe1003fec");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            8.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        let new_value = TestValue { scalar: value };
+        let mapped = proof.map(new_value).unwrap();
+        assert_eq!(*mapped.value(), new_value);
+        assert!(mapped.verify().is_ok());
+    }
+
+    #[test]
+    fn test_wrong_map_value() {
+        let root_hash =
+            parse_scalar("0x1816238696218e1fd51ec1377520694e1105c7af2bfe5d5a544f1a8fe0dfcd43");
+        let value =
+            parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
+        let sister1 =
+            parse_scalar("0x50189e263ddcf54e4065c3178f46a4f9192b84822d769bf2da521fe3b091c29a");
+        let sister2 =
+            parse_scalar("0x3a1a2de3e638f28725fa2f81a526dd89d5cc143fa0be536cb4582289628942d1");
+        let sister3 =
+            parse_scalar("0x4d200e35fa5e95500d9b2355b78f8d44d0a910457d7e77d1a7194cc5e31b1b4d");
+        let sister4 =
+            parse_scalar("0x20f32112966a677427e5568ed79b599b0377c2e2ea89c6871b5bd6e4442a98dd");
+        let proof = Proof::<Scalar, Scalar, 3, 2>::from_compressed(
+            8.into(),
+            value,
+            root_hash,
+            &[[sister1, sister2], [sister3, sister4]],
+        )
+        .unwrap();
+        assert!(proof.map(TestValue { scalar: root_hash }).is_err());
+    }
+}

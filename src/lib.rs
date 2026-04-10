@@ -5,8 +5,10 @@ use crate::bluesky::Scalar;
 use wasm_bindgen::prelude::*;
 
 pub mod bluesky;
+pub mod merkle;
 pub mod poseidon;
 pub mod utils;
+pub mod xits;
 
 fn map_err<E: Into<anyhow::Error>>(error: E) -> JsValue {
     JsValue::from_str(error.into().to_string().as_str())
@@ -14,12 +16,12 @@ fn map_err<E: Into<anyhow::Error>>(error: E) -> JsValue {
 
 #[wasm_bindgen]
 pub fn hash_to_scalar(message: &str) -> String {
-    utils::format_scalar(&utils::hash_to_scalar(message.as_bytes()))
+    utils::format_scalar(utils::hash_to_scalar(message.as_bytes()))
 }
 
 #[wasm_bindgen]
 pub fn poseidon_hash_t3(inputs: Vec<String>) -> Result<String, JsValue> {
-    Ok(utils::format_scalar(&poseidon::hash_t3(
+    Ok(utils::format_scalar(poseidon::hash_t3(
         inputs
             .iter()
             .map(|input| input.parse())
@@ -31,7 +33,7 @@ pub fn poseidon_hash_t3(inputs: Vec<String>) -> Result<String, JsValue> {
 
 #[wasm_bindgen]
 pub fn poseidon_hash_t4(inputs: Vec<String>) -> Result<String, JsValue> {
-    Ok(utils::format_scalar(&poseidon::hash_t4(
+    Ok(utils::format_scalar(poseidon::hash_t4(
         inputs
             .iter()
             .map(|input| input.parse())
