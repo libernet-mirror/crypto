@@ -1,6 +1,7 @@
 use crate::bluesky::Scalar;
 use crate::poseidon;
 use crate::utils;
+use anyhow::{Result, anyhow};
 use std::sync::LazyLock;
 
 /// Domain separator tag for Fiat-Shamir challenges.
@@ -123,6 +124,30 @@ impl LeafProof {
     /// Returns the proven value.
     fn value(&self) -> &Scalar {
         &self.value
+    }
+
+    /// Verifies this Merkle proof against the given `root_hash` using the given `index`.
+    fn verify(&self, mut index: usize, root_hash: Scalar) -> Result<()> {
+        let mut hash = self.value;
+        for (sibling1, sibling2) in &self.path {
+            hash = match index % 3 {
+                0 => poseidon::hash_t4(&[hash, *sibling1, *sibling2]),
+                1 => poseidon::hash_t4(&[*sibling1, hash, *sibling2]),
+                _ => poseidon::hash_t4(&[*sibling1, *sibling2, hash]),
+            };
+            index /= 3;
+        }
+        if index != 0 {
+            return Err(anyhow!("index out of bounds"));
+        }
+        if hash != root_hash {
+            return Err(anyhow!(
+                "root hash mismatch (got {}, want {})",
+                utils::format_scalar(hash),
+                utils::format_scalar(root_hash)
+            ));
+        }
+        Ok(())
     }
 }
 
