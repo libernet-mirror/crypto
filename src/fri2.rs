@@ -1,12 +1,23 @@
 use crate::bluesky::Scalar;
-use crate::poseidon;
 use crate::utils;
 use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
+use primitive_types::H512;
+use sha3::Digest;
 use std::sync::LazyLock;
 
 /// Domain separator tag for Fiat-Shamir challenges.
 static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/fri2/challenge"));
+
+/// The hashing algorithm used throughout this binary FRI scheme: hash two scalars using SHA3-512
+/// and perform modular reduction to convert the result back to a BlueSky scalar.
+fn hash2(input1: Scalar, input2: Scalar) -> Scalar {
+    let mut hasher = sha3::Sha3_512::new();
+    hasher.update(&input1.to_repr());
+    hasher.update(&input2.to_repr());
+    let hash = H512::from_slice(hasher.finalize().as_slice());
+    utils::h512_to_scalar(hash)
+}
 
 /// Computes all Merkle hashes of a vector of values up to the root.
 ///
@@ -30,7 +41,7 @@ fn merklify(values: &mut [Scalar], mut n: usize) {
     while n > 1 {
         let m = n / 2;
         for j in 0..m {
-            values[i + n + j] = poseidon::hash_t3(&[values[i + j * 2], values[i + j * 2 + 1]]);
+            values[i + n + j] = hash2(values[i + j * 2], values[i + j * 2 + 1]);
         }
         i += n;
         n = m;
@@ -99,9 +110,9 @@ impl LeafProof {
         let mut hash = self.value;
         for sibling in &self.path {
             hash = if index & 1 != 0 {
-                poseidon::hash_t3(&[*sibling, hash])
+                hash2(*sibling, hash)
             } else {
-                poseidon::hash_t3(&[hash, *sibling])
+                hash2(hash, *sibling)
             };
             index >>= 1;
         }
@@ -189,7 +200,7 @@ impl Proof {
             self.folds[r].0.verify(pos, commitment.roots[r])?;
             self.folds[r].1.verify(neg, commitment.roots[r])?;
 
-            let alpha = poseidon::hash_t3(&[*DST, commitment.roots[r]]);
+            let alpha = hash2(*DST, commitment.roots[r]);
             let k_r = n_r.trailing_zeros();
             let omega_inv =
                 Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k_r), 0, 0, 0]);
@@ -265,7 +276,7 @@ impl Prover {
     fn fold(values: &mut [Scalar], n: usize) {
         assert!(n.is_power_of_two());
 
-        let alpha = poseidon::hash_t3(&[*DST, values[(n - 1) * 2]]);
+        let alpha = hash2(*DST, values[(n - 1) * 2]);
 
         let k = n.trailing_zeros();
         let omega_inv = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
@@ -384,7 +395,7 @@ mod tests {
             vec![
                 34.into(),
                 56.into(),
-                parse_scalar("0x5ec03322128c00fc47cb817c548a0dd60d1f10817b4cefe8ad1de3ea4504a552")
+                parse_scalar("0x135f326e8836f9108bb8c29d9eaec2f0f40bdf2b70a09b04aa071a6e6c8f841c")
             ]
         );
     }
@@ -401,9 +412,9 @@ mod tests {
                 90.into(),
                 12.into(),
                 34.into(),
-                parse_scalar("0x64276ccf57e84d0b2cbf42907160074c5d3db75ff85bd92d78580624c8cd8260"),
-                parse_scalar("0x165e74be18ef4be6de5e232cd3480dcc38176807ac918b904576964612c5b6de"),
-                parse_scalar("0x1b207cff4c6c97c46c0b950b7524dae299cf3b48d766f0e5990a63fc378cba29"),
+                parse_scalar("0x23daf534aff110aedf3e7500b564f318491df3690f8fc2ed4920fe337a434e96"),
+                parse_scalar("0x61ae5fbf2693e6631f22bf12012c605edee6fd0a0329995118a8e271e1093507"),
+                parse_scalar("0x06bac262b252ce31a07e771e46f50e0bb8b08b7b2323b1667bfa44eb8389eedc"),
             ]
         );
     }
@@ -436,8 +447,8 @@ mod tests {
         assert_eq!(
             commitment.roots(),
             vec![
-                parse_scalar("0x38e7bb7b6ccae0c74031423877db058f4ab3a284964e2d91bf97497851eca5db"),
-                parse_scalar("0x2235bc231a4a1a51bd36cf648a8f29d0446045ab530ce75dafd68413de05dcc1"),
+                parse_scalar("0x5a07d3608338f8ec974aa45246e37f6c0981d04c6331240d301d1f1798ea48ed"),
+                parse_scalar("0x1820d8f9d4ab768b2d9a1ec93b09796ead9034d513651f5fdd4d7abc502dd4b0"),
             ]
         );
     }
@@ -449,8 +460,8 @@ mod tests {
         assert_eq!(
             commitment.roots(),
             vec![
-                parse_scalar("0x1befadaea6bd1cf2b575269ecd25b536e965ca76b0a605acdc907b132caa2407"),
-                parse_scalar("0x30c06125c2f978f9cc91b0cb5094312a7741074dba9bc26af219fc4309b2acb1"),
+                parse_scalar("0x5ca537c50a8b1fa1e7db67caa80b196ae8097ab2c257bef561dd8622953ec586"),
+                parse_scalar("0x6a8fee521d907ab6bb58585877614d49d3f40edfb6b632e6e9c5ba73415658f5"),
             ]
         );
     }
@@ -462,8 +473,8 @@ mod tests {
         assert_eq!(
             commitment.roots(),
             vec![
-                parse_scalar("0x64276ccf57e84d0b2cbf42907160074c5d3db75ff85bd92d78580624c8cd8260"),
-                parse_scalar("0x29f412f3ebb68bd1a08894ef0012f570e68012e3b9c99abc5fb465603996219d"),
+                parse_scalar("0x23daf534aff110aedf3e7500b564f318491df3690f8fc2ed4920fe337a434e96"),
+                parse_scalar("0x6e34ac221ff47e4904446a3f72b4f3547aedc078cbaf2a0275f5b806e1683874"),
             ]
         );
     }
@@ -475,9 +486,9 @@ mod tests {
         assert_eq!(
             commitment.roots(),
             vec![
-                parse_scalar("0x128d169b8d3b12c340f50556ab8b4363434da8fd2eb1fc10031b1bc4ae4547ef"),
-                parse_scalar("0x553f8ee71cb542c0907824df502548adbc6e2aa1480306ef25425e30483f798b"),
-                parse_scalar("0x1db640d0d059f9f4abc1a87afdeb95f0d650ece4992da9a57849c21be79c4eb3"),
+                parse_scalar("0x5d58f3878897eb637cbf8388c10f137c8e928eddec7299707020bcc039f32d3b"),
+                parse_scalar("0x01f76c591edf36bd62b445aad6646f633ddf64494a05d9b100507125c1015ff9"),
+                parse_scalar("0x04eae368f226982fce0916fa8b692320eaa33f3550034eb4f304c196829f1947"),
             ]
         );
     }
@@ -489,9 +500,9 @@ mod tests {
         assert_eq!(
             commitment.roots(),
             vec![
-                parse_scalar("0x0cbbc7748a2f74433a266e8610d2cf53a5c56fdc029bd61e843f4afc4aa4df8d"),
-                parse_scalar("0x1668d9873f5011a10e8742bd738124974202cbf760c9f24912dd386d2b234312"),
-                parse_scalar("0x27d7a92dd73748e2b69c63b0efabcc6b8021904a4fde9ca7dd66f90ab0e3155b"),
+                parse_scalar("0x2012df21bcdbe239bf4821e80c3e0d19585818ec67431dce9a848395417df750"),
+                parse_scalar("0x4b96d008ef7c62786b6df6a4e6238c35a6363af695856915f5b3f8111094426f"),
+                parse_scalar("0x7b630f805c1f1cb8af6d69cb2a48a480de716ce8932b7875ba1fb7941ad4ca0d"),
             ]
         );
     }
@@ -503,9 +514,9 @@ mod tests {
         assert_eq!(
             commitment.roots(),
             vec![
-                parse_scalar("0x128d169b8d3b12c340f50556ab8b4363434da8fd2eb1fc10031b1bc4ae4547ef"),
-                parse_scalar("0x553f8ee71cb542c0907824df502548adbc6e2aa1480306ef25425e30483f798b"),
-                parse_scalar("0x1db640d0d059f9f4abc1a87afdeb95f0d650ece4992da9a57849c21be79c4eb3"),
+                parse_scalar("0x5d58f3878897eb637cbf8388c10f137c8e928eddec7299707020bcc039f32d3b"),
+                parse_scalar("0x01f76c591edf36bd62b445aad6646f633ddf64494a05d9b100507125c1015ff9"),
+                parse_scalar("0x04eae368f226982fce0916fa8b692320eaa33f3550034eb4f304c196829f1947"),
             ]
         );
     }
@@ -517,9 +528,9 @@ mod tests {
         assert_eq!(
             commitment.roots(),
             vec![
-                parse_scalar("0x752cc74f03f5419d2d899ae717ea7d843f5fa3f2db53b87cb24afecf56050db4"),
-                parse_scalar("0x2e6db60e1ec63487e65e09212472aa094f00f270927f00d17d7c1c3937f61a2f"),
-                parse_scalar("0x1138aea576f58a7c574a79187cde3ec230a00c9b4cc84eada73f16010dc85ecf"),
+                parse_scalar("0x49d76b15ba637efab14d7824294b085192f24efba245c7af10303cfc50fed319"),
+                parse_scalar("0x3cc68bc318965eb2bef59e6b35883d3a0740c4f109d067fff5cac1249ab2d297"),
+                parse_scalar("0x748190c1fb99b5ac96dbacbcd790a6a4a46a8a726e7758c3cfb0a913d11d145c"),
             ]
         );
     }
