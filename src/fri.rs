@@ -137,10 +137,90 @@ impl Proof {
         self.index
     }
 
+    /// Returns the opened value.
+    pub fn value(&self) -> &Scalar {
+        &self.value
+    }
+
     /// Verifies this proof against the given commitment.
     pub fn verify(&self, commitment: &Commitment) -> Result<()> {
-        // TODO
-        todo!()
+        let num_folds = self.folds.len();
+        let n = 1usize << num_folds;
+
+        if commitment.roots.len() != num_folds + 1 {
+            return Err(anyhow!(
+                "commitment has {} roots but proof expects {}",
+                commitment.roots.len(),
+                num_folds + 1
+            ));
+        }
+        if self.index >= n {
+            return Err(anyhow!("index {} out of bounds (n={})", self.index, n));
+        }
+
+        if num_folds == 0 {
+            if self.value != commitment.roots[0] {
+                return Err(anyhow!(
+                    "value mismatch: got {}, want {}",
+                    utils::format_scalar(self.value),
+                    utils::format_scalar(commitment.roots[0])
+                ));
+            }
+            return Ok(());
+        }
+
+        // self.value must match whichever leg of folds[0] covers self.index.
+        let value_in_folds = if self.index < n / 2 {
+            *self.folds[0].0.value()
+        } else {
+            *self.folds[0].1.value()
+        };
+        if self.value != value_in_folds {
+            return Err(anyhow!("value does not match folds[0]"));
+        }
+
+        let mut q = self.index;
+        let mut n_r = n;
+
+        for r in 0..num_folds {
+            let m = n_r / 2;
+            let pos = q % m;
+            let neg = pos + m;
+
+            // Verify both Merkle proofs against this round's root.
+            self.folds[r].0.verify(pos, commitment.roots[r])?;
+            self.folds[r].1.verify(neg, commitment.roots[r])?;
+
+            // Recompute the Fiat-Shamir challenge and fold the pair.
+            let alpha = poseidon::hash_t3(&[*DST, commitment.roots[r]]);
+            let k_r = n_r.trailing_zeros();
+            let omega_inv =
+                Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k_r), 0, 0, 0]);
+            let omega_inv_pos = omega_inv.pow_vartime([pos as u64, 0, 0, 0]);
+            let f_pos = *self.folds[r].0.value();
+            let f_neg = *self.folds[r].1.value();
+            let folded =
+                (f_pos + f_neg + alpha * omega_inv_pos * (f_pos - f_neg)) * Scalar::TWO_INV;
+
+            // The folded value lives at index `pos` in tree r+1. Check it against the
+            // next round's data: either a leg of folds[r+1] or the final root.
+            let expected = if r + 1 == num_folds {
+                commitment.roots[r + 1]
+            } else if pos < m / 2 {
+                *self.folds[r + 1].0.value()
+            } else {
+                *self.folds[r + 1].1.value()
+            };
+
+            if folded != expected {
+                return Err(anyhow!("fold consistency check failed at round {}", r));
+            }
+
+            q = pos;
+            n_r = m;
+        }
+
+        Ok(())
     }
 }
 
@@ -449,5 +529,69 @@ mod tests {
         );
     }
 
-    // TODO
+    fn open_and_verify_all(values: Vec<Scalar>) {
+        let prover = Prover::new(values.clone());
+        let commitment = prover.commit();
+        for (index, value) in values.iter().enumerate() {
+            let proof = prover.open_at(index);
+            assert_eq!(proof.index(), index);
+            assert_eq!(*proof.value(), *value);
+            assert!(proof.verify(&commitment).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_open_verify_one() {
+        open_and_verify_all(vec![42.into()]);
+    }
+
+    #[test]
+    fn test_open_verify_two() {
+        open_and_verify_all(vec![56.into(), 78.into()]);
+    }
+
+    #[test]
+    fn test_open_verify_four() {
+        open_and_verify_all(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+    }
+
+    #[test]
+    fn test_open_verify_non_power_of_two() {
+        open_and_verify_all(vec![10.into(), 20.into(), 30.into()]);
+    }
+
+    #[test]
+    fn test_verify_rejects_wrong_value() {
+        let prover = Prover::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let commitment = prover.commit();
+        let mut proof = prover.open_at(1);
+        proof.value = 99.into();
+        assert!(proof.verify(&commitment).is_err());
+    }
+
+    #[test]
+    fn test_verify_rejects_wrong_commitment() {
+        let prover = Prover::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let other = Prover::new(vec![99.into(), 88.into(), 77.into(), 66.into()]);
+        let proof = prover.open_at(0);
+        assert!(proof.verify(&other.commit()).is_err());
+    }
+
+    #[test]
+    fn test_verify_rejects_tampered_fold_value() {
+        let prover = Prover::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let commitment = prover.commit();
+        let mut proof = prover.open_at(0);
+        proof.folds[0].1.value = 99.into();
+        assert!(proof.verify(&commitment).is_err());
+    }
+
+    #[test]
+    fn test_verify_rejects_tampered_fold_path() {
+        let prover = Prover::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let commitment = prover.commit();
+        let mut proof = prover.open_at(2);
+        proof.folds[0].0.path[0] = 99.into();
+        assert!(proof.verify(&commitment).is_err());
+    }
 }
