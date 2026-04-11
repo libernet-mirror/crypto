@@ -322,7 +322,7 @@ impl Prover {
         Self { values }
     }
 
-    /// Returns the length of the original committed vector.
+    /// Returns the length of the original committed vector (always a power of 2).
     pub fn length(&self) -> usize {
         (self.values.len() + 2) / 4
     }

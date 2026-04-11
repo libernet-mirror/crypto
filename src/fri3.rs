@@ -8,6 +8,15 @@ use std::sync::LazyLock;
 /// Domain separator tag for Fiat-Shamir challenges.
 static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/fri3/challenge"));
 
+/// Returns the smallest power of three that is >= n (returns 1 for n=0).
+fn next_power_of_three(n: usize) -> usize {
+    let mut pow = 1usize;
+    while pow < n {
+        pow *= 3;
+    }
+    pow
+}
+
 /// Checks if a number is a power of 3.
 fn is_power_of_three(mut value: usize) -> bool {
     if value == 0 {
@@ -177,8 +186,94 @@ impl Proof {
 
     /// Verifies this proof against the given commitment.
     pub fn verify(&self, commitment: &Commitment) -> Result<()> {
-        // TODO
-        todo!()
+        let k = self.folds.len();
+        let n = 3usize.pow(k as u32);
+
+        if commitment.roots.len() != k + 1 {
+            return Err(anyhow!(
+                "commitment has {} roots but proof expects {}",
+                commitment.roots.len(),
+                k + 1
+            ));
+        }
+        if self.index >= n {
+            return Err(anyhow!("index {} out of bounds (n={})", self.index, n));
+        }
+
+        if k == 0 {
+            if self.value != commitment.roots[0] {
+                return Err(anyhow!(
+                    "value mismatch: got {}, want {}",
+                    utils::format_scalar(self.value),
+                    utils::format_scalar(commitment.roots[0])
+                ));
+            }
+            return Ok(());
+        }
+
+        let value_in_folds = match self.index * 3 / n {
+            0 => *self.folds[0].0.value(),
+            1 => *self.folds[0].1.value(),
+            _ => *self.folds[0].2.value(),
+        };
+        if self.value != value_in_folds {
+            return Err(anyhow!("value does not match folds[0]"));
+        }
+
+        let mut q = self.index;
+        let mut n_r = n;
+
+        for r in 0..k {
+            let m = n_r / 3;
+            let pos = q % m;
+
+            self.folds[r].0.verify(pos, commitment.roots[r])?;
+            self.folds[r].1.verify(pos + m, commitment.roots[r])?;
+            self.folds[r].2.verify(pos + 2 * m, commitment.roots[r])?;
+
+            let alpha = poseidon::hash_t3(&[*DST, commitment.roots[r]]);
+            let k_r = ilog3(n_r) as u32;
+            let omega_inv = Scalar::THREE_ADIC_ROOT_OF_UNITY_INV.pow_vartime([
+                3u64.pow(Scalar::T - k_r),
+                0,
+                0,
+                0,
+            ]);
+            let omega_m = omega_inv.pow_vartime([2 * m as u64, 0, 0, 0]);
+            let omega_m_sq = omega_m * omega_m;
+            let omega_inv_pos = omega_inv.pow_vartime([pos as u64, 0, 0, 0]);
+
+            let v0 = *self.folds[r].0.value();
+            let v1 = *self.folds[r].1.value();
+            let v2 = *self.folds[r].2.value();
+
+            let g0 = (v0 + v1 + v2) * Scalar::THREE_INV;
+            let g1 = (v0 + v1 * omega_m_sq + v2 * omega_m) * Scalar::THREE_INV * omega_inv_pos;
+            let g2 = (v0 + v1 * omega_m + v2 * omega_m_sq)
+                * Scalar::THREE_INV
+                * omega_inv_pos
+                * omega_inv_pos;
+            let folded = g0 + alpha * g1 + alpha * alpha * g2;
+
+            let expected = if r + 1 == k {
+                commitment.roots[r + 1]
+            } else {
+                match pos * 3 / m {
+                    0 => *self.folds[r + 1].0.value(),
+                    1 => *self.folds[r + 1].1.value(),
+                    _ => *self.folds[r + 1].2.value(),
+                }
+            };
+
+            if folded != expected {
+                return Err(anyhow!("fold consistency check failed at round {}", r));
+            }
+
+            q = pos;
+            n_r = m;
+        }
+
+        Ok(())
     }
 }
 
@@ -207,6 +302,9 @@ impl Proof {
 /// slots are unused.
 #[derive(Debug, Clone)]
 pub struct Prover {
+    /// The number of elements in the committed vector rounded up to the next power of 3.
+    count: usize,
+    /// A flat array containing all scalars using the layout described above.
     values: Vec<Scalar>,
 }
 
@@ -228,12 +326,28 @@ impl Prover {
 
         let k = ilog3(n) as u32;
         let omega_inv =
-            Scalar::THREE_ADIC_ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::T - k), 0, 0, 0]);
+            Scalar::THREE_ADIC_ROOT_OF_UNITY_INV.pow_vartime([3u64.pow(Scalar::T - k), 0, 0, 0]);
 
         let m = n / 3;
+        let omega_m = omega_inv.pow_vartime([2 * m as u64, 0, 0, 0]);
+        let omega_m_sq = omega_m * omega_m;
+        let alpha_sq = alpha * alpha;
+
         let mut omega_inv_i = Scalar::ONE;
         for i in 0..m {
-            // TODO
+            let v0 = values[i];
+            let v1 = values[i + m];
+            let v2 = values[i + 2 * m];
+
+            let g0 = (v0 + v1 + v2) * Scalar::THREE_INV;
+            let g1 = (v0 + v1 * omega_m_sq + v2 * omega_m) * Scalar::THREE_INV * omega_inv_i;
+            let g2 = (v0 + v1 * omega_m + v2 * omega_m_sq)
+                * Scalar::THREE_INV
+                * omega_inv_i
+                * omega_inv_i;
+
+            values[(3 * n - 1) / 2 + i] = g0 + alpha * g1 + alpha_sq * g2;
+            omega_inv_i *= omega_inv;
         }
 
         merklify(&mut values[((3 * n - 1) / 2)..], m);
@@ -255,34 +369,65 @@ impl Prover {
 
     /// Constructs a new FRI prover that commits to the provided list of `values`.
     ///
-    /// The underlying algorithms require that the number of committed values is a power of two, so
-    /// if that's not the case this function will automatically pad them with zeros.
+    /// The underlying algorithms require that the number of committed values is a power of three,
+    /// so if that's not the case this function will automatically pad them with zeros.
     pub fn new(mut values: Vec<Scalar>) -> Self {
-        let n = values.len().next_power_of_two();
-        assert!(n <= 1usize << Scalar::T);
+        let n = next_power_of_three(values.len());
+        assert!(ilog3(n) <= Scalar::T as usize);
         values.resize((9 * n - 1) / 4, Scalar::ZERO);
         merklify(&mut values[0..((3 * n - 1) / 2)], n);
         Self::fold_all(&mut values, n);
-        Self { values }
+        Self { count: n, values }
     }
 
-    /// Returns the length of the original committed vector.
+    /// Returns the length of the original committed vector (always a power of 3).
     pub fn length(&self) -> usize {
-        (self.values.len() * 4 + 1) / 9
+        self.count
     }
 
     /// Creates the FRI commitment for the committed vector.
     pub fn commit(&self) -> Commitment {
         let mut n = self.length();
-        let k = ilog3(n) as usize + 1;
+        let k = ilog3(n) + 1;
         let mut roots = vec![Scalar::ZERO; k];
         let mut offset = 0usize;
         for i in 0..k {
             roots[i] = self.values[offset + 3 * (n - 1) / 2];
-            offset += n * 3;
+            offset += (3 * n - 1) / 2;
             n /= 3;
         }
         Commitment { roots }
+    }
+
+    /// Builds a FRI opening proof for the value at the specified index of the evaluation domain.
+    pub fn open_at(&self, index: usize) -> Proof {
+        let mut n = self.length();
+        assert!(index < n);
+
+        let value = self.values[index];
+        let mut folds = Vec::with_capacity(ilog3(n));
+        let mut offset = 0usize;
+        let mut q = index;
+
+        while n > 1 {
+            let tree_size = (3 * n - 1) / 2;
+            let m = n / 3;
+            let pos = q % m;
+            folds.push((
+                LeafProof::new(&self.values[offset..offset + tree_size], n, pos),
+                LeafProof::new(&self.values[offset..offset + tree_size], n, pos + m),
+                LeafProof::new(&self.values[offset..offset + tree_size], n, pos + 2 * m),
+            ));
+            offset += tree_size;
+            n = m;
+            q = pos;
+        }
+
+        Proof {
+            index,
+            value,
+            folds,
+        }
     }
 }
 
@@ -349,5 +494,101 @@ mod tests {
         );
     }
 
-    // TODO
+    #[test]
+    fn test_empty_vector_commitment() {
+        let prover = Prover::new(vec![]);
+        let commitment = prover.commit();
+        assert_eq!(commitment.roots(), vec![Scalar::ZERO]);
+    }
+
+    #[test]
+    fn test_commit_one_element_1() {
+        let prover = Prover::new(vec![12.into()]);
+        let commitment = prover.commit();
+        assert_eq!(commitment.roots(), vec![12.into()]);
+    }
+
+    #[test]
+    fn test_commit_one_element_2() {
+        let prover = Prover::new(vec![34.into()]);
+        let commitment = prover.commit();
+        assert_eq!(commitment.roots(), vec![34.into()]);
+    }
+
+    fn open_and_verify_all(values: Vec<Scalar>) {
+        let prover = Prover::new(values.clone());
+        let commitment = prover.commit();
+        for (index, value) in values.iter().enumerate() {
+            let proof = prover.open_at(index);
+            assert_eq!(proof.index(), index);
+            assert_eq!(*proof.value(), *value);
+            assert!(proof.verify(&commitment).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_open_verify_one() {
+        open_and_verify_all(vec![42.into()]);
+    }
+
+    #[test]
+    fn test_open_verify_three() {
+        open_and_verify_all(vec![10.into(), 20.into(), 30.into()]);
+    }
+
+    #[test]
+    fn test_open_verify_nine() {
+        open_and_verify_all(vec![
+            1.into(),
+            2.into(),
+            3.into(),
+            4.into(),
+            5.into(),
+            6.into(),
+            7.into(),
+            8.into(),
+            9.into(),
+        ]);
+    }
+
+    #[test]
+    fn test_open_verify_non_power_of_three() {
+        open_and_verify_all(vec![11.into(), 22.into(), 33.into(), 44.into(), 55.into()]);
+    }
+
+    #[test]
+    fn test_verify_rejects_wrong_value() {
+        let prover = Prover::new(vec![1.into(), 2.into(), 3.into()]);
+        let commitment = prover.commit();
+        let mut proof = prover.open_at(1);
+        proof.value = 99.into();
+        assert!(proof.verify(&commitment).is_err());
+    }
+
+    #[test]
+    fn test_verify_rejects_wrong_commitment() {
+        let prover = Prover::new(vec![1.into(), 2.into(), 3.into()]);
+        let other = Prover::new(vec![9.into(), 8.into(), 7.into()]);
+        let proof = prover.open_at(0);
+        assert!(proof.verify(&other.commit()).is_err());
+    }
+
+    #[test]
+    fn test_verify_rejects_tampered_fold_value() {
+        let prover = Prover::new(vec![
+            1.into(),
+            2.into(),
+            3.into(),
+            4.into(),
+            5.into(),
+            6.into(),
+            7.into(),
+            8.into(),
+            9.into(),
+        ]);
+        let commitment = prover.commit();
+        let mut proof = prover.open_at(0);
+        proof.folds[0].1.value = 99.into();
+        assert!(proof.verify(&commitment).is_err());
+    }
 }
