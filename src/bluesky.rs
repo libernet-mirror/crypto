@@ -34,7 +34,7 @@ fn mul(lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {
 }
 
 /// Describes a prime field with a (3^T)-th root of unity.
-pub trait ThreeAdicRootOfUnity: PrimeField {
+pub trait ThreeAdicField: PrimeField {
     /// The 3-adicity of the field.
     const T: u32;
 
@@ -708,7 +708,7 @@ impl PrimeField for Scalar {
     );
 }
 
-impl ThreeAdicRootOfUnity for Scalar {
+impl ThreeAdicField for Scalar {
     const T: u32 = 39;
 
     const THREE_INV: Self = Self(
