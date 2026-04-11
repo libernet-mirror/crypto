@@ -371,6 +371,31 @@ impl<F: PrimeField + Ord> Polynomial<F> {
 }
 
 impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
+    /// 3-adic Fast Fourier Transform.
+    ///
+    /// REQUIRES: the length of `data` must be a power of three less than or equal to N and `omega`
+    /// must be an N-th root of unity, where N = 3^(F::T).
+    ///
+    /// Running time: O(N*logN).
+    fn fft3(data: &mut [F], omega: F) {
+        // TODO
+        todo!()
+    }
+
+    /// Inverse 3-adic Fast Fourier Transform.
+    ///
+    /// REQUIRES: the length of `data` must be a power of three less than or equal to 3^(F::T), with
+    /// `T` being the 3-adicity of the field `F` (supplied as `F::T`).
+    ///
+    /// Running time: O(N*logN).
+    fn ifft3(data: &mut [F], omega: F) {
+        Self::fft3(data, omega.invert().into_option().unwrap());
+        let n_inv = F::from(data.len() as u64).invert().unwrap();
+        for v in data.iter_mut() {
+            *v *= n_inv;
+        }
+    }
+
     /// Computes an N-th root of unity where N is a power of 3 less than or equal to 3^(F::T).
     fn three_adic_root_of_unity(n: usize) -> F {
         assert!(xits::is_power_of_three(n));
@@ -378,6 +403,39 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
         assert!(k <= F::S);
         let exponent = 3u64.pow(F::S - k);
         F::THREE_ADIC_ROOT_OF_UNITY.pow_vartime([exponent, 0, 0, 0])
+    }
+
+    /// Interpolates a polynomial that encodes an ordered list of values.
+    ///
+    /// The returned polynomial evaluates to the provided values at certain powers of the
+    /// `F::THREE_ADIC_ROOT_OF_UNITY`. The exact coordinates can be retrieved by calling
+    /// `domain_element3` with the index of the value to query and the size of the domain (i.e.
+    /// `values.len()`).
+    ///
+    /// NOTE: this function is called `encode3` because it uses the three-adic evaluation domain.
+    /// For the two-adic version see `encode2` above.
+    ///
+    /// Under the hood we use the two-adic Inverse Fourier Transform algorithm (`ifft3`), which
+    /// requires the size of the list to be a power of three. If that's not the case, this function
+    /// will automatically pad the provided list with zeros.
+    ///
+    /// Additionally, the provided list must not exceed the FFT capacity so it's required to have no
+    /// more than 2^(F::T) elements.
+    ///
+    /// Running time: O(N*logN).
+    pub fn encode3(mut values: Vec<F>) -> Self {
+        assert!(!values.is_empty());
+        let n = xits::next_power_of_three(values.len());
+        assert!(xits::ilog3(n) <= F::T as usize);
+        values.resize(n, F::ZERO);
+        let omega = Self::three_adic_root_of_unity(values.len());
+        Self::ifft3(values.as_mut_slice(), omega);
+        if let Some(i) = values.iter().rposition(|value| *value != F::ZERO) {
+            values.truncate(i + 1);
+        }
+        Polynomial {
+            coefficients: values,
+        }
     }
 }
 
