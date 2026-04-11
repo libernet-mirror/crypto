@@ -38,7 +38,10 @@ pub trait ThreeAdicRootOfUnity: PrimeField {
     /// The 3-adicity of the field.
     const T: u32;
 
-    /// The root of unity, a number w such that w^(3^T) = 1.
+    /// Inverse of 3 in the field.
+    const THREE_INV: Self;
+
+    /// The primitive 3-adic root of unity, a number w such that w^(3^T) = 1.
     const THREE_ADIC_ROOT_OF_UNITY: Self;
 
     /// The inverse of the root of unity.
@@ -707,6 +710,13 @@ impl PrimeField for Scalar {
 
 impl ThreeAdicRootOfUnity for Scalar {
     const T: u32 = 39;
+
+    const THREE_INV: Self = Self(
+        0x3fffffffffffffffu64,
+        0xf98c220d6164aab8u64,
+        0x0000000000000001u64,
+        0x0000000000000000u64,
+    );
 
     const THREE_ADIC_ROOT_OF_UNITY: Self = Self(
         0x6bb97af29ca6dd9du64,
