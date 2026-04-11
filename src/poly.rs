@@ -1,4 +1,4 @@
-use crate::bluesky::ThreeAdicRootOfUnity;
+use crate::bluesky::ThreeAdicField;
 use crate::xits;
 use anyhow::{Context, Result, anyhow};
 use ff::PrimeField;
@@ -352,7 +352,7 @@ impl<F: PrimeField + Ord> Polynomial<F> {
     }
 }
 
-impl<F: PrimeField + Ord + ThreeAdicRootOfUnity> Polynomial<F> {
+impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
     /// Computes an N-th root of unity where N is a power of 3 less than or equal to 3^(F::T).
     fn three_adic_root_of_unity(n: usize) -> F {
         assert!(xits::is_power_of_three(n));

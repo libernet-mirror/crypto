@@ -1,4 +1,4 @@
-use crate::bluesky::{Scalar, ThreeAdicRootOfUnity};
+use crate::bluesky::{Scalar, ThreeAdicField};
 use crate::poseidon;
 use crate::utils;
 use crate::xits;
