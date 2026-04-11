@@ -33,8 +33,8 @@ pub fn hash_to_scalar(message: &[u8]) -> Scalar {
 }
 
 /// Generates a new, uniformly distributed, random scalar using a CSPRNG.
-pub fn get_random_scalar() -> Scalar {
-    Scalar::random(rand_core::OsRng)
+pub fn get_random_scalar<F: Field>() -> F {
+    F::random(rand_core::OsRng)
 }
 
 /// Converts a BlueSky scalar to U256.
@@ -85,9 +85,9 @@ mod tests {
 
     #[test]
     fn test_random_scalar() {
-        assert_ne!(get_random_scalar(), get_random_scalar());
-        assert_ne!(get_random_scalar(), get_random_scalar());
-        assert_ne!(get_random_scalar(), get_random_scalar());
+        assert_ne!(get_random_scalar::<Scalar>(), get_random_scalar());
+        assert_ne!(get_random_scalar::<Scalar>(), get_random_scalar());
+        assert_ne!(get_random_scalar::<Scalar>(), get_random_scalar());
     }
 
     #[test]
