@@ -265,15 +265,15 @@ impl Prover {
     /// Runs a folding round over a Merkle tree with `n` leaves, resulting in a new Merkle tree with
     /// `n/2` leaves.
     ///
-    /// The input Merkle tree must be stored at the beginning of the provided slice, so that the
-    /// first `n` elements of the slice are the evaluations of the polynomial to fold.
+    /// The input tree must be stored at the beginning of the provided slice, so that the first `n`
+    /// elements of the slice are the evaluations of the polynomial to fold.
     ///
-    /// The root of the input Merkle tree is therefore located at index `(n - 1) * 2` and is used to
+    /// The root of the input tree is therefore located at index `(n - 1) * 2` and is used to
     /// generate the Fiat-Shamir challenge for the round.
     ///
-    /// The output Merkle tree will be stored at offset `2n` and will take exactly `n` slots
-    /// (including the final padding element). It's the caller's responsibility to ensure that
-    /// `values` has enough space.
+    /// The output tree will be stored at offset `2n` and will take exactly `n` slots (including the
+    /// final padding element). It's the caller's responsibility to ensure that `values` has enough
+    /// space.
     fn fold(values: &mut [Scalar], n: usize) {
         assert!(n.is_power_of_two());
 
