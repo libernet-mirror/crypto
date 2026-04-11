@@ -378,8 +378,46 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
     ///
     /// Running time: O(N*logN).
     fn fft3(data: &mut [F], omega: F) {
-        // TODO
-        todo!()
+        let n = data.len();
+        assert!(xits::is_power_of_three(n));
+
+        let log_n = xits::ilog3(n);
+
+        for i in 0..n {
+            let mut j = 0;
+            let mut tmp = i;
+            for _ in 0..log_n {
+                j = j * 3 + tmp % 3;
+                tmp /= 3;
+            }
+            if i < j {
+                data.swap(i, j);
+            }
+        }
+
+        let omega3 = omega.pow_vartime([(n / 3) as u64, 0, 0, 0]);
+        let omega3_sq = omega3 * omega3;
+
+        let mut m = 1;
+        for _ in 0..log_n {
+            let step = m * 3;
+            let wm = omega.pow_vartime([(n / step) as u64, 0, 0, 0]);
+            let mut w = F::ONE;
+            let mut w2 = F::ONE;
+            for k in 0..m {
+                for j in (k..n).step_by(step) {
+                    let t0 = data[j];
+                    let t1 = w * data[j + m];
+                    let t2 = w2 * data[j + 2 * m];
+                    data[j] = t0 + t1 + t2;
+                    data[j + m] = t0 + omega3 * t1 + omega3_sq * t2;
+                    data[j + 2 * m] = t0 + omega3_sq * t1 + omega3 * t2;
+                }
+                w *= wm;
+                w2 = w * w;
+            }
+            m = step;
+        }
     }
 
     /// Inverse 3-adic Fast Fourier Transform.
@@ -400,8 +438,8 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
     fn three_adic_root_of_unity(n: usize) -> F {
         assert!(xits::is_power_of_three(n));
         let k = xits::ilog3(n) as u32;
-        assert!(k <= F::S);
-        let exponent = 3u64.pow(F::S - k);
+        assert!(k <= F::T);
+        let exponent = 3u64.pow(F::T - k);
         F::THREE_ADIC_ROOT_OF_UNITY.pow_vartime([exponent, 0, 0, 0])
     }
 
@@ -436,6 +474,27 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
         Polynomial {
             coefficients: values,
         }
+    }
+
+    /// Returns the X coordinate of the i-th element of a list encoded with `encode3`.
+    ///
+    /// The returned value is suitable for use with `evaluate` to query the original value from the
+    /// encoded list.
+    ///
+    /// `domain_size` is the length of the original list. It will be rounded up to the next power of
+    /// three automatically.
+    ///
+    /// Running time: O(1).
+    pub fn domain_element3(index: usize, domain_size: usize) -> F {
+        let omega = Self::three_adic_root_of_unity(xits::next_power_of_three(domain_size));
+        omega.pow_vartime([index as u64, 0, 0, 0])
+    }
+
+    /// Same as `evaluate(domain_element3(index, domain_size))`.
+    ///
+    /// Running time: O(N).
+    pub fn evaluate_on_three_adic_domain(&self, index: usize, domain_size: usize) -> F {
+        self.evaluate(Self::domain_element3(index, domain_size))
     }
 }
 
@@ -854,7 +913,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_one_value1() {
+    fn test_encode2_one_value_1() {
         let p1 = Polynomial::<Scalar>::encode2(vec![42.into()]);
         let p2 = Polynomial::<Scalar>::encode2(vec![42.into()]);
         assert_eq!(p1, p2);
@@ -867,7 +926,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_one_value2() {
+    fn test_encode2_one_value_2() {
         let p1 = Polynomial::<Scalar>::encode2(vec![42.into()]);
         let p2 = Polynomial::<Scalar>::encode2(vec![123.into()]);
         assert_eq!(p2.len(), 1);
@@ -877,7 +936,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_two_values1() {
+    fn test_encode2_two_values_1() {
         let p1 = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into()]);
         let p2 = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into()]);
         assert_eq!(p1, p2);
@@ -894,7 +953,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_two_values2() {
+    fn test_encode2_two_values_2() {
         let p1 = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into()]);
         let p2 = Polynomial::<Scalar>::encode2(vec![78.into(), 56.into()]);
         assert_eq!(p1.len(), 2);
@@ -907,7 +966,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_three_values1() {
+    fn test_encode2_three_values_1() {
         let p1 = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into(), 56.into()]);
         let p2 = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into(), 56.into()]);
         assert_eq!(p1, p2);
@@ -944,7 +1003,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_three_values2() {
+    fn test_encode2_three_values_2() {
         let p1 = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into(), 56.into()]);
         let p2 = Polynomial::<Scalar>::encode2(vec![90.into(), 78.into(), 34.into()]);
         assert_eq!(p1.len(), 4);
@@ -967,7 +1026,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_four_values() {
+    fn test_encode2_four_values() {
         let p = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into(), 56.into(), 78.into()]);
         assert_eq!(p.len(), 4);
         assert_eq!(p.evaluate(Polynomial::domain_element2(0, 4)), 12.into());
@@ -978,6 +1037,143 @@ mod tests {
         assert_eq!(p.evaluate_on_two_adic_domain(2, 4), 56.into());
         assert_eq!(p.evaluate(Polynomial::domain_element2(3, 4)), 78.into());
         assert_eq!(p.evaluate_on_two_adic_domain(3, 4), 78.into());
+    }
+
+    #[test]
+    fn test_encode3_one_value_1() {
+        let p1 = Polynomial::<Scalar>::encode3(vec![42.into()]);
+        let p2 = Polynomial::<Scalar>::encode3(vec![42.into()]);
+        assert_eq!(p1, p2);
+        assert_eq!(p1.len(), 1);
+        assert_eq!(p2.len(), 1);
+        assert_eq!(p1.evaluate(Polynomial::domain_element3(0, 1)), 42.into());
+        assert_eq!(p1.evaluate_on_three_adic_domain(0, 1), 42.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 1)), 42.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(0, 1), 42.into());
+    }
+
+    #[test]
+    fn test_encode3_one_value_2() {
+        let p1 = Polynomial::<Scalar>::encode3(vec![42.into()]);
+        let p2 = Polynomial::<Scalar>::encode3(vec![123.into()]);
+        assert_eq!(p2.len(), 1);
+        assert_ne!(p1, p2);
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 1)), 123.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(0, 1), 123.into());
+    }
+
+    #[test]
+    fn test_encode3_two_values_1() {
+        let p1 = Polynomial::<Scalar>::encode3(vec![12.into(), 34.into()]);
+        let p2 = Polynomial::<Scalar>::encode3(vec![12.into(), 34.into()]);
+        assert_eq!(p1, p2);
+        assert_eq!(p1.len(), 3);
+        assert_eq!(p2.len(), 3);
+        assert_eq!(p1.evaluate(Polynomial::domain_element3(0, 2)), 12.into());
+        assert_eq!(p1.evaluate_on_three_adic_domain(0, 2), 12.into());
+        assert_eq!(p1.evaluate(Polynomial::domain_element3(0, 3)), 12.into());
+        assert_eq!(p1.evaluate_on_three_adic_domain(0, 3), 12.into());
+        assert_eq!(p1.evaluate(Polynomial::domain_element3(1, 2)), 34.into());
+        assert_eq!(p1.evaluate_on_three_adic_domain(1, 2), 34.into());
+        assert_eq!(p1.evaluate(Polynomial::domain_element3(1, 3)), 34.into());
+        assert_eq!(p1.evaluate_on_three_adic_domain(1, 3), 34.into());
+        assert_eq!(p1.evaluate(Polynomial::domain_element3(2, 3)), 0.into());
+        assert_eq!(p1.evaluate_on_three_adic_domain(2, 3), 0.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 2)), 12.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(0, 2), 12.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 3)), 12.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(0, 3), 12.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(1, 2)), 34.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(1, 2), 34.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(1, 3)), 34.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(1, 3), 34.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(2, 3)), 0.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(2, 3), 0.into());
+    }
+
+    #[test]
+    fn test_encode3_two_values_2() {
+        let p1 = Polynomial::<Scalar>::encode3(vec![12.into(), 34.into()]);
+        let p2 = Polynomial::<Scalar>::encode3(vec![78.into(), 56.into()]);
+        assert_eq!(p1.len(), 3);
+        assert_eq!(p2.len(), 3);
+        assert_ne!(p1, p2);
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 2)), 78.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(0, 2), 78.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(1, 2)), 56.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(1, 2), 56.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(2, 3)), 0.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(2, 3), 0.into());
+    }
+
+    #[test]
+    fn test_encode3_three_values_1() {
+        let p1 = Polynomial::<Scalar>::encode3(vec![12.into(), 34.into(), 56.into()]);
+        let p2 = Polynomial::<Scalar>::encode3(vec![12.into(), 34.into(), 56.into()]);
+        assert_eq!(p1, p2);
+        assert_eq!(p1.len(), 3);
+        assert_eq!(p2.len(), 3);
+        assert_eq!(p1.evaluate(Polynomial::domain_element3(0, 3)), 12.into());
+        assert_eq!(p1.evaluate_on_three_adic_domain(0, 3), 12.into());
+        assert_eq!(p1.evaluate(Polynomial::domain_element3(1, 3)), 34.into());
+        assert_eq!(p1.evaluate_on_three_adic_domain(1, 3), 34.into());
+        assert_eq!(p1.evaluate(Polynomial::domain_element3(2, 3)), 56.into());
+        assert_eq!(p1.evaluate_on_three_adic_domain(2, 3), 56.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 3)), 12.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(0, 3), 12.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(1, 3)), 34.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(1, 3), 34.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(2, 3)), 56.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(2, 3), 56.into());
+    }
+
+    #[test]
+    fn test_encode3_three_values_2() {
+        let p1 = Polynomial::<Scalar>::encode3(vec![12.into(), 34.into(), 56.into()]);
+        let p2 = Polynomial::<Scalar>::encode3(vec![90.into(), 78.into(), 34.into()]);
+        assert_eq!(p1.len(), 3);
+        assert_eq!(p2.len(), 3);
+        assert_ne!(p1, p2);
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 3)), 90.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(0, 3), 90.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(1, 3)), 78.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(1, 3), 78.into());
+        assert_eq!(p2.evaluate(Polynomial::domain_element3(2, 3)), 34.into());
+        assert_eq!(p2.evaluate_on_three_adic_domain(2, 3), 34.into());
+    }
+
+    #[test]
+    fn test_encode3_nine_values3() {
+        let p = Polynomial::<Scalar>::encode3(vec![
+            12.into(),
+            34.into(),
+            56.into(),
+            78.into(),
+            90.into(),
+            11.into(),
+            22.into(),
+            33.into(),
+            44.into(),
+        ]);
+        assert_eq!(p.len(), 9);
+        assert_eq!(p.evaluate(Polynomial::domain_element3(0, 9)), 12.into());
+        assert_eq!(p.evaluate_on_three_adic_domain(0, 9), 12.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element3(1, 9)), 34.into());
+        assert_eq!(p.evaluate_on_three_adic_domain(1, 9), 34.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element3(2, 9)), 56.into());
+        assert_eq!(p.evaluate_on_three_adic_domain(2, 9), 56.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element3(3, 9)), 78.into());
+        assert_eq!(p.evaluate_on_three_adic_domain(3, 9), 78.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element3(4, 9)), 90.into());
+        assert_eq!(p.evaluate_on_three_adic_domain(4, 9), 90.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element3(5, 9)), 11.into());
+        assert_eq!(p.evaluate_on_three_adic_domain(5, 9), 11.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element3(6, 9)), 22.into());
+        assert_eq!(p.evaluate_on_three_adic_domain(6, 9), 22.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element3(7, 9)), 33.into());
+        assert_eq!(p.evaluate_on_three_adic_domain(7, 9), 33.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element3(8, 9)), 44.into());
+        assert_eq!(p.evaluate_on_three_adic_domain(8, 9), 44.into());
     }
 
     #[test]
