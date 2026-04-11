@@ -315,7 +315,7 @@ impl Prover {
     /// if that's not the case this function will automatically pad them with zeros.
     pub fn new(mut values: Vec<Scalar>) -> Self {
         let n = values.len().next_power_of_two();
-        assert!(n <= 1usize << Scalar::S);
+        assert!(n.trailing_zeros() <= Scalar::S);
         values.resize(n * 4 - 2, Scalar::ZERO);
         merklify(&mut values[0..(2 * n)], n);
         Self::fold_all(&mut values, n);
