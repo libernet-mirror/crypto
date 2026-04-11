@@ -4,20 +4,6 @@ use anyhow::{Context, Result, anyhow};
 use ff::PrimeField;
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
-/// Computes the dot product of two vectors. The vectors must have the same length.
-fn dot<L, R, O>(u: &[L], v: &[R]) -> O
-where
-    L: Copy,
-    R: Copy + Mul<L, Output = O>,
-    O: Copy + Add<O, Output = O>,
-{
-    u.iter()
-        .zip(v)
-        .map(|(u, v)| *v * *u)
-        .reduce(|a, b| a + b)
-        .unwrap()
-}
-
 /// A polynomial expressed as an array of scalar coefficients in ascending degree order (i.e. the
 /// first coefficient is the constant term).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -922,5 +908,283 @@ mod tests {
         assert_eq!(p2.evaluate_on_two_adic_domain(3, 4), 0.into());
     }
 
-    // TODO
+    #[test]
+    fn test_encode_four_values() {
+        let p = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        assert_eq!(p.len(), 4);
+        assert_eq!(p.evaluate(Polynomial::domain_element2(0, 4)), 12.into());
+        assert_eq!(p.evaluate_on_two_adic_domain(0, 4), 12.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element2(1, 4)), 34.into());
+        assert_eq!(p.evaluate_on_two_adic_domain(1, 4), 34.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element2(2, 4)), 56.into());
+        assert_eq!(p.evaluate_on_two_adic_domain(2, 4), 56.into());
+        assert_eq!(p.evaluate(Polynomial::domain_element2(3, 4)), 78.into());
+        assert_eq!(p.evaluate_on_two_adic_domain(3, 4), 78.into());
+    }
+
+    #[test]
+    fn test_multiply_empty() {
+        let p1 = Polynomial::<Scalar>::default();
+        let p2 = Polynomial::<Scalar>::default();
+        assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
+    }
+
+    #[test]
+    fn test_multiply_empty_by_non_empty() {
+        let p1 = Polynomial::<Scalar>::default();
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![12.into(), 34.into()],
+        };
+        assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
+    }
+
+    #[test]
+    fn test_multiply_non_empty_by_empty() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![56.into(), 78.into()],
+        };
+        let p2 = Polynomial::<Scalar>::default();
+        assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
+    }
+
+    #[test]
+    fn test_multiply_constant() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![3.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![12.into(), 34.into(), 56.into()],
+        };
+        assert_eq!(
+            p1.multiply(p2).unwrap(),
+            Polynomial {
+                coefficients: vec![36.into(), 102.into(), 168.into()]
+            }
+        );
+    }
+
+    #[test]
+    fn test_multiply_by_constant() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![12.into(), 34.into(), 56.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into()],
+        };
+        assert_eq!(
+            p1.multiply(p2).unwrap(),
+            Polynomial {
+                coefficients: vec![36.into(), 102.into(), 168.into()]
+            }
+        );
+    }
+
+    #[test]
+    fn test_multiply_constant_by_constant() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![12.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![34.into()],
+        };
+        assert_eq!(
+            p1.multiply(p2).unwrap(),
+            Polynomial {
+                coefficients: vec![408.into()]
+            }
+        );
+    }
+
+    #[test]
+    fn test_multiply_polynomials1() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 10.into(), 8.into()],
+        };
+        assert_eq!(p1.clone().multiply(p2.clone()).unwrap(), result);
+        assert_eq!(p2.multiply(p1).unwrap(), result);
+    }
+
+    #[test]
+    fn test_multiply_polynomials2() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into(), 5.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 10.into(), 13.into(), 10.into()],
+        };
+        assert_eq!(p1.clone().multiply(p2.clone()).unwrap(), result);
+        assert_eq!(p2.multiply(p1).unwrap(), result);
+    }
+
+    #[test]
+    fn test_multiply_one_polynomial() {
+        let p = Polynomial::<Scalar> {
+            coefficients: vec![12.into(), 34.into()],
+        };
+        assert_eq!(Polynomial::multiply_many([p.clone()]).unwrap(), p);
+    }
+
+    #[test]
+    fn test_multiply_two_polynomials() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into(), 5.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 10.into(), 13.into(), 10.into()],
+        };
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p2.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(Polynomial::multiply_many([p2, p1]).unwrap(), result);
+    }
+
+    #[test]
+    fn test_multiply_three_polynomials() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into(), 5.into()],
+        };
+        let p3 = Polynomial::<Scalar> {
+            coefficients: vec![6.into(), 7.into(), 8.into(), 9.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![
+                18.into(),
+                81.into(),
+                172.into(),
+                258.into(),
+                264.into(),
+                197.into(),
+                90.into(),
+            ],
+        };
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p2.clone(), p3.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p3.clone(), p2.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p2.clone(), p1.clone(), p3.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p2.clone(), p3.clone(), p1.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p3.clone(), p1.clone(), p2.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p3.clone(), p2.clone(), p1.clone()]).unwrap(),
+            result
+        );
+    }
+
+    #[test]
+    fn test_multiply_four_polynomials() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into()],
+        };
+        let p3 = Polynomial::<Scalar> {
+            coefficients: vec![5.into(), 6.into()],
+        };
+        let p4 = Polynomial::<Scalar> {
+            coefficients: vec![7.into(), 8.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![105.into(), 596.into(), 1244.into(), 1136.into(), 384.into()],
+        };
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p2.clone(), p3.clone(), p4.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p2.clone(), p4.clone(), p3.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p3.clone(), p2.clone(), p4.clone()]).unwrap(),
+            result
+        );
+        assert_eq!(
+            Polynomial::multiply_many([p1.clone(), p3.clone(), p4.clone(), p2.clone()]).unwrap(),
+            result
+        );
+        // okay, not gonna try all permutations -- too much typing for too little gain.
+    }
+
+    #[test]
+    fn test_divide_zero_by_zero() {
+        let z = Polynomial::<Scalar> {
+            coefficients: vec![-Scalar::from(1), 0.into(), 0.into(), 0.into(), 1.into()],
+        };
+        assert_eq!(
+            z.divide_by_zero(4).unwrap(),
+            Polynomial {
+                coefficients: vec![1.into()]
+            }
+        );
+    }
+
+    #[test]
+    fn test_non_trivial_quotient1() {
+        let ql = Polynomial::<Scalar>::encode2(vec![0.into(), 0.into(), 1.into(), 1.into()]);
+        let qr = Polynomial::<Scalar>::encode2(vec![0.into(), 0.into(), 1.into(), 1.into()]);
+        let qo = Polynomial::<Scalar>::encode2(vec![-Scalar::from(1); 4]);
+        let qm = Polynomial::<Scalar>::encode2(vec![1.into(), 1.into(), 0.into(), 0.into()]);
+        let qc = Polynomial::<Scalar>::encode2(vec![0.into(); 4]);
+        let l = Polynomial::<Scalar>::encode2(vec![3.into(), 9.into(), 3.into(), 30.into()]);
+        let r = Polynomial::<Scalar>::encode2(vec![3.into(), 3.into(), 27.into(), 5.into()]);
+        let o = Polynomial::<Scalar>::encode2(vec![9.into(), 27.into(), 30.into(), 35.into()]);
+        let lr = l.clone().multiply(r.clone()).unwrap();
+        let p = ql.multiply(l).unwrap()
+            + qr.multiply(r).unwrap()
+            + qo.multiply(o).unwrap()
+            + qm.multiply(lr).unwrap()
+            + qc;
+        let q = p.divide_by_zero(4).unwrap();
+        assert_eq!(q.len(), 6);
+    }
+
+    #[test]
+    fn test_non_trivial_quotient2() {
+        let ql = Polynomial::<Scalar>::encode2(vec![0.into(), 0.into(), 1.into(), 1.into()]);
+        let qr = Polynomial::<Scalar>::encode2(vec![0.into(), 0.into(), 1.into(), 5.into()]);
+        let qo = Polynomial::<Scalar>::encode2(vec![-Scalar::from(1); 4]);
+        let qm = Polynomial::<Scalar>::encode2(vec![1.into(), 1.into(), 0.into(), 0.into()]);
+        let qc = Polynomial::<Scalar>::encode2(vec![0.into(); 4]);
+        let l = Polynomial::<Scalar>::encode2(vec![3.into(), 9.into(), 3.into(), 30.into()]);
+        let r = Polynomial::<Scalar>::encode2(vec![3.into(), 3.into(), 27.into(), 1.into()]);
+        let o = Polynomial::<Scalar>::encode2(vec![9.into(), 27.into(), 30.into(), 35.into()]);
+        let lr = l.clone().multiply(r.clone()).unwrap();
+        let p = ql.multiply(l).unwrap()
+            + qr.multiply(r).unwrap()
+            + qo.multiply(o).unwrap()
+            + qm.multiply(lr).unwrap()
+            + qc;
+        let q = p.divide_by_zero(4).unwrap();
+        assert_eq!(q.len(), 6);
+    }
 }
