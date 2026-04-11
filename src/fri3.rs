@@ -1,44 +1,13 @@
 use crate::bluesky::{Scalar, ThreeAdicRootOfUnity};
 use crate::poseidon;
 use crate::utils;
+use crate::xits;
 use anyhow::{Result, anyhow};
 use ff::Field;
 use std::sync::LazyLock;
 
 /// Domain separator tag for Fiat-Shamir challenges.
 static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/fri3/challenge"));
-
-/// Returns the smallest power of three that is >= n (returns 1 for n=0).
-fn next_power_of_three(n: usize) -> usize {
-    let mut pow = 1usize;
-    while pow < n {
-        pow *= 3;
-    }
-    pow
-}
-
-/// Checks if a number is a power of 3.
-fn is_power_of_three(mut value: usize) -> bool {
-    if value == 0 {
-        return false;
-    }
-    while value > 1 {
-        if value % 3 != 0 {
-            return false;
-        }
-        value /= 3;
-    }
-    true
-}
-
-fn ilog3(mut n: usize) -> usize {
-    let mut c = 0;
-    while n > 1 {
-        c += 1;
-        n /= 3;
-    }
-    c
-}
 
 /// Computes all Merkle hashes of a vector of values up to the root.
 ///
@@ -57,7 +26,7 @@ fn ilog3(mut n: usize) -> usize {
 ///
 /// Note that the Merkle root will be at index `3 * (n - 1) / 2`.
 fn merklify(values: &mut [Scalar], mut n: usize) {
-    assert!(is_power_of_three(n));
+    assert!(xits::is_power_of_three(n));
     let mut i = 0;
     while n > 1 {
         let m = n / 3;
@@ -112,10 +81,10 @@ impl LeafProof {
     /// REQUIRES: values.len() >= (3 * n - 1) / 2
     /// REQUIRES: index < n
     fn new(values: &[Scalar], mut n: usize, mut index: usize) -> Self {
-        debug_assert!(is_power_of_three(n));
+        debug_assert!(xits::is_power_of_three(n));
         assert!(index < n);
         let value = values[index];
-        let mut path = Vec::with_capacity(ilog3(n));
+        let mut path = Vec::with_capacity(xits::ilog3(n));
         let mut i = 0usize;
         while n > 1 {
             let j = i + index - index % 3;
@@ -232,7 +201,7 @@ impl Proof {
             self.folds[r].2.verify(pos + 2 * m, commitment.roots[r])?;
 
             let alpha = poseidon::hash_t3(&[*DST, commitment.roots[r]]);
-            let k_r = ilog3(n_r) as u32;
+            let k_r = xits::ilog3(n_r) as u32;
             let omega_inv = Scalar::THREE_ADIC_ROOT_OF_UNITY_INV.pow_vartime([
                 3u64.pow(Scalar::T - k_r),
                 0,
@@ -321,10 +290,10 @@ impl Prover {
     /// The output tree will be stored immediatelt after the input one and will take exactly
     /// `(n-1)/2` slots. It's the caller's responsibility to ensure that `values` has enough space.
     fn fold(values: &mut [Scalar], n: usize) {
-        assert!(is_power_of_three(n));
+        assert!(xits::is_power_of_three(n));
         let alpha = poseidon::hash_t3(&[*DST, values[3 * (n - 1) / 2]]);
 
-        let k = ilog3(n) as u32;
+        let k = xits::ilog3(n) as u32;
         let omega_inv =
             Scalar::THREE_ADIC_ROOT_OF_UNITY_INV.pow_vartime([3u64.pow(Scalar::T - k), 0, 0, 0]);
 
@@ -372,8 +341,8 @@ impl Prover {
     /// The underlying algorithms require that the number of committed values is a power of three,
     /// so if that's not the case this function will automatically pad them with zeros.
     pub fn new(mut values: Vec<Scalar>) -> Self {
-        let n = next_power_of_three(values.len());
-        assert!(ilog3(n) <= Scalar::T as usize);
+        let n = xits::next_power_of_three(values.len());
+        assert!(xits::ilog3(n) <= Scalar::T as usize);
         values.resize((9 * n - 1) / 4, Scalar::ZERO);
         merklify(&mut values[0..((3 * n - 1) / 2)], n);
         Self::fold_all(&mut values, n);
@@ -388,7 +357,7 @@ impl Prover {
     /// Creates the FRI commitment for the committed vector.
     pub fn commit(&self) -> Commitment {
         let mut n = self.length();
-        let k = ilog3(n) + 1;
+        let k = xits::ilog3(n) + 1;
         let mut roots = vec![Scalar::ZERO; k];
         let mut offset = 0usize;
         for i in 0..k {
@@ -405,7 +374,7 @@ impl Prover {
         assert!(index < n);
 
         let value = self.values[index];
-        let mut folds = Vec::with_capacity(ilog3(n));
+        let mut folds = Vec::with_capacity(xits::ilog3(n));
         let mut offset = 0usize;
         let mut q = index;
 
