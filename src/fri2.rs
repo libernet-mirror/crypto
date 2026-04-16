@@ -712,9 +712,8 @@ mod tests {
         open_and_verify_all::<Poseidon2Hash>(values);
     }
 
-    #[test]
-    fn test_verify_rejects_wrong_value() {
-        let prover = Prover::<Sha3Hash>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+    fn test_verify_rejects_wrong_value_impl<H: Hash>() {
+        let prover = Prover::<H>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
         let commitment = prover.commit();
         let mut proof = prover.open_at(1);
         proof.value = 99.into();
@@ -722,16 +721,26 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_rejects_wrong_commitment() {
-        let prover = Prover::<Sha3Hash>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
-        let other = Prover::<Sha3Hash>::new(vec![99.into(), 88.into(), 77.into(), 66.into()]);
+    fn test_verify_rejects_wrong_value() {
+        test_verify_rejects_wrong_value_impl::<Sha3Hash>();
+        test_verify_rejects_wrong_value_impl::<Poseidon2Hash>();
+    }
+
+    fn test_verify_rejects_wrong_commitment_impl<H: Hash>() {
+        let prover = Prover::<H>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let other = Prover::<H>::new(vec![99.into(), 88.into(), 77.into(), 66.into()]);
         let proof = prover.open_at(0);
         assert!(proof.verify(&other.commit()).is_err());
     }
 
     #[test]
-    fn test_verify_rejects_tampered_fold_value() {
-        let prover = Prover::<Sha3Hash>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+    fn test_verify_rejects_wrong_commitment() {
+        test_verify_rejects_wrong_commitment_impl::<Sha3Hash>();
+        test_verify_rejects_wrong_commitment_impl::<Poseidon2Hash>();
+    }
+
+    fn test_verify_rejects_tampered_fold_value_impl<H: Hash>() {
+        let prover = Prover::<H>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
         let commitment = prover.commit();
         let mut proof = prover.open_at(0);
         proof.folds[0].1.value = 99.into();
@@ -739,11 +748,22 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_rejects_tampered_fold_path() {
-        let prover = Prover::<Sha3Hash>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+    fn test_verify_rejects_tampered_fold_value() {
+        test_verify_rejects_tampered_fold_value_impl::<Sha3Hash>();
+        test_verify_rejects_tampered_fold_value_impl::<Poseidon2Hash>();
+    }
+
+    fn test_verify_rejects_tampered_fold_path_impl<H: Hash>() {
+        let prover = Prover::<H>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
         let commitment = prover.commit();
         let mut proof = prover.open_at(2);
         proof.folds[0].0.path[0] = 99.into();
         assert!(proof.verify(&commitment).is_err());
+    }
+
+    #[test]
+    fn test_verify_rejects_tampered_fold_path() {
+        test_verify_rejects_tampered_fold_path_impl::<Sha3Hash>();
+        test_verify_rejects_tampered_fold_path_impl::<Poseidon2Hash>();
     }
 }
