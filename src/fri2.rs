@@ -1,22 +1,52 @@
 use crate::bluesky::Scalar;
+use crate::poseidon;
 use crate::utils;
 use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
 use primitive_types::H512;
 use sha3::Digest;
+use std::marker::PhantomData;
 use std::sync::LazyLock;
 
 /// Domain separator tag for Fiat-Shamir challenges.
 static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/fri2/challenge"));
 
-/// The hashing algorithm used throughout this binary FRI scheme: hash two scalars using SHA3-512
-/// and perform modular reduction to convert the result back to a BlueSky scalar.
-fn hash2(input1: Scalar, input2: Scalar) -> Scalar {
-    let mut hasher = sha3::Sha3_512::new();
-    hasher.update(&input1.to_repr());
-    hasher.update(&input2.to_repr());
-    let hash = H512::from_slice(hasher.finalize().as_slice());
-    utils::h512_to_scalar(hash)
+/// A generic hash for use with binary FRI.
+///
+/// The implemented algorithm must hash exactly two input scalars and return a single (uniformly
+/// distributed) output scalar.
+///
+/// This trait is used for both binary Merkle trees and Fiat-Shamir challenges (for the latter we
+/// hash a Merkle root along with a domain separator tag).
+pub trait Hash {
+    fn hash(input1: Scalar, input2: Scalar) -> Scalar;
+}
+
+/// Hashes two scalars by feeding them to SHA3-512 and performing modular reduction to convert the
+/// result to a scalar.
+///
+/// This is secure because the 512-bit range is astronomically larger than the ~256-bit range of
+/// BlueSky scalars, so the distribution skew is virtually non-existent.
+pub struct Sha3Hash {}
+
+impl Hash for Sha3Hash {
+    fn hash(input1: Scalar, input2: Scalar) -> Scalar {
+        let mut hasher = sha3::Sha3_512::new();
+        hasher.update(&input1.to_repr());
+        hasher.update(&input2.to_repr());
+        let hash = H512::from_slice(hasher.finalize().as_slice());
+        utils::h512_to_scalar(hash)
+    }
+}
+
+/// Hashes two scalars using the T=3 instance of Poseidon2, which is optimal for hashing scalars in
+/// batches of two.
+pub struct Poseidon2Hash {}
+
+impl Hash for Poseidon2Hash {
+    fn hash(input1: Scalar, input2: Scalar) -> Scalar {
+        poseidon::hash_t3(&[input1, input2])
+    }
 }
 
 /// Computes all Merkle hashes of a vector of values up to the root.
@@ -35,13 +65,13 @@ fn hash2(input1: Scalar, input2: Scalar) -> Scalar {
 /// that the full tree can be stored.
 ///
 /// Note that the Merkle root will be at index `(n - 1) * 2`.
-fn merklify(values: &mut [Scalar], mut n: usize) {
+fn merklify<H: Hash>(values: &mut [Scalar], mut n: usize) {
     assert!(n.is_power_of_two());
     let mut i = 0;
     while n > 1 {
         let m = n / 2;
         for j in 0..m {
-            values[i + n + j] = hash2(values[i + j * 2], values[i + j * 2 + 1]);
+            values[i + n + j] = H::hash(values[i + j * 2], values[i + j * 2 + 1]);
         }
         i += n;
         n = m;
@@ -73,12 +103,13 @@ impl Commitment {
 /// reconstructed separately during the verification of a whole `Proof`. In particular, all root
 /// hashes are stored in the `Commitment`.
 #[derive(Debug, Clone)]
-struct LeafProof {
+struct LeafProof<H: Hash> {
     value: Scalar,
     path: Vec<Scalar>,
+    _data: PhantomData<H>,
 }
 
-impl LeafProof {
+impl<H: Hash> LeafProof<H> {
     /// Builds a Merkle proof for the leaf at `index` in a tree with `n` leaves.
     ///
     /// The tree is stored in `values` using the layout described in `merklify`.
@@ -98,7 +129,11 @@ impl LeafProof {
             n /= 2;
             index >>= 1;
         }
-        Self { value, path }
+        Self {
+            value,
+            path,
+            _data: Default::default(),
+        }
     }
 
     /// Returns the proven value.
@@ -111,9 +146,9 @@ impl LeafProof {
         let mut hash = self.value;
         for sibling in &self.path {
             hash = if index & 1 != 0 {
-                hash2(*sibling, hash)
+                H::hash(*sibling, hash)
             } else {
-                hash2(hash, *sibling)
+                H::hash(hash, *sibling)
             };
             index >>= 1;
         }
@@ -133,17 +168,18 @@ impl LeafProof {
 
 /// A complete FRI opening proof.
 #[derive(Debug, Clone)]
-pub struct Proof {
+pub struct Proof<H: Hash> {
     /// The index of the element we're opening.
     index: usize,
     /// The opened value.
     value: Scalar,
     /// Proves a pair of "partner" values at each folding round with one `LeafProof` pair for every
     /// round. Note that either `folds[0].0` or `folds[0].1` proves `value`.
-    folds: Vec<(LeafProof, LeafProof)>,
+    folds: Vec<(LeafProof<H>, LeafProof<H>)>,
+    _data: PhantomData<H>,
 }
 
-impl Proof {
+impl<H: Hash> Proof<H> {
     /// Returns the index of the opened value.
     pub fn index(&self) -> usize {
         self.index
@@ -201,7 +237,7 @@ impl Proof {
             self.folds[r].0.verify(pos, commitment.roots[r])?;
             self.folds[r].1.verify(neg, commitment.roots[r])?;
 
-            let alpha = hash2(*DST, commitment.roots[r]);
+            let alpha = H::hash(*DST, commitment.roots[r]);
             let k_r = n_r.trailing_zeros();
             let omega_inv =
                 Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k_r), 0, 0, 0]);
@@ -257,11 +293,12 @@ impl Proof {
 ///
 /// The total size of the `values` array is `4n-2`.
 #[derive(Debug, Clone)]
-pub struct Prover {
+pub struct Prover<H: Hash> {
     values: Vec<Scalar>,
+    _data: PhantomData<H>,
 }
 
-impl Prover {
+impl<H: Hash> Prover<H> {
     /// Runs a folding round over a Merkle tree with `n` leaves, resulting in a new Merkle tree with
     /// `n/2` leaves.
     ///
@@ -277,7 +314,7 @@ impl Prover {
     fn fold(values: &mut [Scalar], n: usize) {
         assert!(n.is_power_of_two());
 
-        let alpha = hash2(*DST, values[(n - 1) * 2]);
+        let alpha = H::hash(*DST, values[(n - 1) * 2]);
 
         let k = n.trailing_zeros();
         let omega_inv = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
@@ -292,7 +329,7 @@ impl Prover {
             omega_inv_i *= omega_inv;
         }
 
-        merklify(&mut values[(2 * n)..(3 * n)], m);
+        merklify::<H>(&mut values[(2 * n)..(3 * n)], m);
     }
 
     /// Runs all folding passes by calling `fold` iteratively until the polynomial is folded into a
@@ -317,9 +354,12 @@ impl Prover {
         let n = values.len().next_power_of_two();
         assert!(n.trailing_zeros() <= Scalar::S);
         values.resize(n * 4 - 2, Scalar::ZERO);
-        merklify(&mut values[0..(2 * n)], n);
+        merklify::<H>(&mut values[0..(2 * n)], n);
         Self::fold_all(&mut values, n);
-        Self { values }
+        Self {
+            values,
+            _data: Default::default(),
+        }
     }
 
     /// Returns the length of the original committed vector (always a power of 2).
@@ -342,7 +382,7 @@ impl Prover {
     }
 
     /// Builds a FRI opening proof for the value at the specified index of the evaluation domain.
-    pub fn open_at(&self, index: usize) -> Proof {
+    pub fn open_at(&self, index: usize) -> Proof<H> {
         let mut n = self.length();
         assert!(index < n);
 
@@ -358,8 +398,8 @@ impl Prover {
             let pos = q % m;
             let neg = pos + m;
             folds.push((
-                LeafProof::new(&self.values[offset..next_offset], n, pos),
-                LeafProof::new(&self.values[offset..next_offset], n, neg),
+                LeafProof::<H>::new(&self.values[offset..next_offset], n, pos),
+                LeafProof::<H>::new(&self.values[offset..next_offset], n, neg),
             ));
             offset = next_offset;
             n = m;
@@ -370,6 +410,7 @@ impl Prover {
             index,
             value,
             folds,
+            _data: Default::default(),
         }
     }
 }
@@ -380,17 +421,24 @@ mod tests {
     use crate::utils::parse_scalar;
 
     #[test]
-    fn test_merklify_one() {
+    fn test_merklify_one_sha3() {
         let mut values = vec![12.into()];
-        merklify(&mut values, 1);
+        merklify::<Sha3Hash>(&mut values, 1);
         assert_eq!(values, vec![12.into()]);
     }
 
     #[test]
-    fn test_merklify_two() {
+    fn test_merklify_one_poseidon2() {
+        let mut values = vec![12.into()];
+        merklify::<Poseidon2Hash>(&mut values, 1);
+        assert_eq!(values, vec![12.into()]);
+    }
+
+    #[test]
+    fn test_merklify_two_sha3() {
         let mut values = vec![34.into(), 56.into()];
         values.resize(3, 0.into());
-        merklify(&mut values, 2);
+        merklify::<Sha3Hash>(&mut values, 2);
         assert_eq!(
             values,
             vec![
@@ -402,10 +450,25 @@ mod tests {
     }
 
     #[test]
-    fn test_merklify_four() {
+    fn test_merklify_two_poseidon2() {
+        let mut values = vec![34.into(), 56.into()];
+        values.resize(3, 0.into());
+        merklify::<Poseidon2Hash>(&mut values, 2);
+        assert_eq!(
+            values,
+            vec![
+                34.into(),
+                56.into(),
+                parse_scalar("0x5ec03322128c00fc47cb817c548a0dd60d1f10817b4cefe8ad1de3ea4504a552")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_merklify_four_sha3() {
         let mut values = vec![78.into(), 90.into(), 12.into(), 34.into()];
         values.resize(7, 0.into());
-        merklify(&mut values, 4);
+        merklify::<Sha3Hash>(&mut values, 4);
         assert_eq!(
             values,
             vec![
@@ -421,29 +484,62 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_vector_commitment() {
-        let prover = Prover::new(vec![]);
+    fn test_merklify_four_poseidon2() {
+        let mut values = vec![78.into(), 90.into(), 12.into(), 34.into()];
+        values.resize(7, 0.into());
+        merklify::<Poseidon2Hash>(&mut values, 4);
+        assert_eq!(
+            values,
+            vec![
+                78.into(),
+                90.into(),
+                12.into(),
+                34.into(),
+                parse_scalar("0x64276ccf57e84d0b2cbf42907160074c5d3db75ff85bd92d78580624c8cd8260"),
+                parse_scalar("0x165e74be18ef4be6de5e232cd3480dcc38176807ac918b904576964612c5b6de"),
+                parse_scalar("0x1b207cff4c6c97c46c0b950b7524dae299cf3b48d766f0e5990a63fc378cba29"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_empty_vector_commitment_sha3() {
+        let prover = Prover::<Sha3Hash>::new(vec![]);
+        let commitment = prover.commit();
+        assert_eq!(commitment.roots(), vec![Scalar::ZERO]);
+    }
+
+    #[test]
+    fn test_empty_vector_commitment_poseidon2() {
+        let prover = Prover::<Poseidon2Hash>::new(vec![]);
         let commitment = prover.commit();
         assert_eq!(commitment.roots(), vec![Scalar::ZERO]);
     }
 
     #[test]
     fn test_commit_one_element_1() {
-        let prover = Prover::new(vec![12.into()]);
+        let prover = Prover::<Sha3Hash>::new(vec![12.into()]);
         let commitment = prover.commit();
         assert_eq!(commitment.roots(), vec![12.into()]);
     }
 
     #[test]
     fn test_commit_one_element_2() {
-        let prover = Prover::new(vec![34.into()]);
+        let prover = Prover::<Sha3Hash>::new(vec![34.into()]);
+        let commitment = prover.commit();
+        assert_eq!(commitment.roots(), vec![34.into()]);
+    }
+
+    #[test]
+    fn test_commit_one_element_poseidon() {
+        let prover = Prover::<Poseidon2Hash>::new(vec![34.into()]);
         let commitment = prover.commit();
         assert_eq!(commitment.roots(), vec![34.into()]);
     }
 
     #[test]
     fn test_commit_two_elements_1() {
-        let prover = Prover::new(vec![56.into(), 78.into()]);
+        let prover = Prover::<Sha3Hash>::new(vec![56.into(), 78.into()]);
         let commitment = prover.commit();
         assert_eq!(
             commitment.roots(),
@@ -456,7 +552,7 @@ mod tests {
 
     #[test]
     fn test_commit_two_elements_2() {
-        let prover = Prover::new(vec![78.into(), 56.into()]);
+        let prover = Prover::<Sha3Hash>::new(vec![78.into(), 56.into()]);
         let commitment = prover.commit();
         assert_eq!(
             commitment.roots(),
@@ -469,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_commit_two_elements_3() {
-        let prover = Prover::new(vec![78.into(), 90.into()]);
+        let prover = Prover::<Sha3Hash>::new(vec![78.into(), 90.into()]);
         let commitment = prover.commit();
         assert_eq!(
             commitment.roots(),
@@ -481,8 +577,21 @@ mod tests {
     }
 
     #[test]
+    fn test_commit_two_elements_poseidon() {
+        let prover = Prover::<Poseidon2Hash>::new(vec![78.into(), 90.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x64276ccf57e84d0b2cbf42907160074c5d3db75ff85bd92d78580624c8cd8260"),
+                parse_scalar("0x29f412f3ebb68bd1a08894ef0012f570e68012e3b9c99abc5fb465603996219d"),
+            ]
+        );
+    }
+
+    #[test]
     fn test_commit_three_elements_1() {
-        let prover = Prover::new(vec![12.into(), 34.into(), 56.into()]);
+        let prover = Prover::<Sha3Hash>::new(vec![12.into(), 34.into(), 56.into()]);
         let commitment = prover.commit();
         assert_eq!(
             commitment.roots(),
@@ -496,7 +605,7 @@ mod tests {
 
     #[test]
     fn test_commit_three_elements_2() {
-        let prover = Prover::new(vec![78.into(), 90.into(), 12.into()]);
+        let prover = Prover::<Sha3Hash>::new(vec![78.into(), 90.into(), 12.into()]);
         let commitment = prover.commit();
         assert_eq!(
             commitment.roots(),
@@ -509,8 +618,22 @@ mod tests {
     }
 
     #[test]
+    fn test_commit_three_elements_poseidon() {
+        let prover = Prover::<Poseidon2Hash>::new(vec![78.into(), 90.into(), 12.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x0cbbc7748a2f74433a266e8610d2cf53a5c56fdc029bd61e843f4afc4aa4df8d"),
+                parse_scalar("0x1668d9873f5011a10e8742bd738124974202cbf760c9f24912dd386d2b234312"),
+                parse_scalar("0x27d7a92dd73748e2b69c63b0efabcc6b8021904a4fde9ca7dd66f90ab0e3155b"),
+            ]
+        );
+    }
+
+    #[test]
     fn test_commit_four_elements_1() {
-        let prover = Prover::new(vec![12.into(), 34.into(), 56.into(), 0.into()]);
+        let prover = Prover::<Sha3Hash>::new(vec![12.into(), 34.into(), 56.into(), 0.into()]);
         let commitment = prover.commit();
         assert_eq!(
             commitment.roots(),
@@ -524,7 +647,7 @@ mod tests {
 
     #[test]
     fn test_commit_four_elements_2() {
-        let prover = Prover::new(vec![34.into(), 56.into(), 78.into(), 90.into()]);
+        let prover = Prover::<Sha3Hash>::new(vec![34.into(), 56.into(), 78.into(), 90.into()]);
         let commitment = prover.commit();
         assert_eq!(
             commitment.roots(),
@@ -536,8 +659,22 @@ mod tests {
         );
     }
 
-    fn open_and_verify_all(values: Vec<Scalar>) {
-        let prover = Prover::new(values.clone());
+    #[test]
+    fn test_commit_four_elements_poseidon() {
+        let prover = Prover::<Poseidon2Hash>::new(vec![34.into(), 56.into(), 78.into(), 90.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x752cc74f03f5419d2d899ae717ea7d843f5fa3f2db53b87cb24afecf56050db4"),
+                parse_scalar("0x2e6db60e1ec63487e65e09212472aa094f00f270927f00d17d7c1c3937f61a2f"),
+                parse_scalar("0x1138aea576f58a7c574a79187cde3ec230a00c9b4cc84eada73f16010dc85ecf"),
+            ]
+        );
+    }
+
+    fn open_and_verify_all<H: Hash>(values: Vec<Scalar>) {
+        let prover = Prover::<H>::new(values.clone());
         let commitment = prover.commit();
         for (index, value) in values.iter().enumerate() {
             let proof = prover.open_at(index);
@@ -549,27 +686,34 @@ mod tests {
 
     #[test]
     fn test_open_verify_one() {
-        open_and_verify_all(vec![42.into()]);
+        let values = vec![42.into()];
+        open_and_verify_all::<Sha3Hash>(values.clone());
+        open_and_verify_all::<Poseidon2Hash>(values);
     }
 
     #[test]
     fn test_open_verify_two() {
-        open_and_verify_all(vec![56.into(), 78.into()]);
+        let values = vec![56.into(), 78.into()];
+        open_and_verify_all::<Sha3Hash>(values.clone());
+        open_and_verify_all::<Poseidon2Hash>(values);
     }
 
     #[test]
     fn test_open_verify_four() {
-        open_and_verify_all(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let values = vec![12.into(), 34.into(), 56.into(), 78.into()];
+        open_and_verify_all::<Sha3Hash>(values.clone());
+        open_and_verify_all::<Poseidon2Hash>(values);
     }
 
     #[test]
     fn test_open_verify_non_power_of_two() {
-        open_and_verify_all(vec![10.into(), 20.into(), 30.into()]);
+        let values = vec![10.into(), 20.into(), 30.into()];
+        open_and_verify_all::<Sha3Hash>(values.clone());
+        open_and_verify_all::<Poseidon2Hash>(values);
     }
 
-    #[test]
-    fn test_verify_rejects_wrong_value() {
-        let prover = Prover::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+    fn test_verify_rejects_wrong_value_impl<H: Hash>() {
+        let prover = Prover::<H>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
         let commitment = prover.commit();
         let mut proof = prover.open_at(1);
         proof.value = 99.into();
@@ -577,16 +721,26 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_rejects_wrong_commitment() {
-        let prover = Prover::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
-        let other = Prover::new(vec![99.into(), 88.into(), 77.into(), 66.into()]);
+    fn test_verify_rejects_wrong_value() {
+        test_verify_rejects_wrong_value_impl::<Sha3Hash>();
+        test_verify_rejects_wrong_value_impl::<Poseidon2Hash>();
+    }
+
+    fn test_verify_rejects_wrong_commitment_impl<H: Hash>() {
+        let prover = Prover::<H>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let other = Prover::<H>::new(vec![99.into(), 88.into(), 77.into(), 66.into()]);
         let proof = prover.open_at(0);
         assert!(proof.verify(&other.commit()).is_err());
     }
 
     #[test]
-    fn test_verify_rejects_tampered_fold_value() {
-        let prover = Prover::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+    fn test_verify_rejects_wrong_commitment() {
+        test_verify_rejects_wrong_commitment_impl::<Sha3Hash>();
+        test_verify_rejects_wrong_commitment_impl::<Poseidon2Hash>();
+    }
+
+    fn test_verify_rejects_tampered_fold_value_impl<H: Hash>() {
+        let prover = Prover::<H>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
         let commitment = prover.commit();
         let mut proof = prover.open_at(0);
         proof.folds[0].1.value = 99.into();
@@ -594,11 +748,22 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_rejects_tampered_fold_path() {
-        let prover = Prover::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+    fn test_verify_rejects_tampered_fold_value() {
+        test_verify_rejects_tampered_fold_value_impl::<Sha3Hash>();
+        test_verify_rejects_tampered_fold_value_impl::<Poseidon2Hash>();
+    }
+
+    fn test_verify_rejects_tampered_fold_path_impl<H: Hash>() {
+        let prover = Prover::<H>::new(vec![12.into(), 34.into(), 56.into(), 78.into()]);
         let commitment = prover.commit();
         let mut proof = prover.open_at(2);
         proof.folds[0].0.path[0] = 99.into();
         assert!(proof.verify(&commitment).is_err());
+    }
+
+    #[test]
+    fn test_verify_rejects_tampered_fold_path() {
+        test_verify_rejects_tampered_fold_path_impl::<Sha3Hash>();
+        test_verify_rejects_tampered_fold_path_impl::<Poseidon2Hash>();
     }
 }
