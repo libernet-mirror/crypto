@@ -421,14 +421,21 @@ mod tests {
     use crate::utils::parse_scalar;
 
     #[test]
-    fn test_merklify_one() {
+    fn test_merklify_one_sha3() {
         let mut values = vec![12.into()];
         merklify::<Sha3Hash>(&mut values, 1);
         assert_eq!(values, vec![12.into()]);
     }
 
     #[test]
-    fn test_merklify_two() {
+    fn test_merklify_one_poseidon2() {
+        let mut values = vec![12.into()];
+        merklify::<Poseidon2Hash>(&mut values, 1);
+        assert_eq!(values, vec![12.into()]);
+    }
+
+    #[test]
+    fn test_merklify_two_sha3() {
         let mut values = vec![34.into(), 56.into()];
         values.resize(3, 0.into());
         merklify::<Sha3Hash>(&mut values, 2);
@@ -443,7 +450,22 @@ mod tests {
     }
 
     #[test]
-    fn test_merklify_four() {
+    fn test_merklify_two_poseidon2() {
+        let mut values = vec![34.into(), 56.into()];
+        values.resize(3, 0.into());
+        merklify::<Poseidon2Hash>(&mut values, 2);
+        assert_eq!(
+            values,
+            vec![
+                34.into(),
+                56.into(),
+                parse_scalar("0x5ec03322128c00fc47cb817c548a0dd60d1f10817b4cefe8ad1de3ea4504a552")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_merklify_four_sha3() {
         let mut values = vec![78.into(), 90.into(), 12.into(), 34.into()];
         values.resize(7, 0.into());
         merklify::<Sha3Hash>(&mut values, 4);
@@ -462,8 +484,34 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_vector_commitment() {
+    fn test_merklify_four_poseidon2() {
+        let mut values = vec![78.into(), 90.into(), 12.into(), 34.into()];
+        values.resize(7, 0.into());
+        merklify::<Poseidon2Hash>(&mut values, 4);
+        assert_eq!(
+            values,
+            vec![
+                78.into(),
+                90.into(),
+                12.into(),
+                34.into(),
+                parse_scalar("0x64276ccf57e84d0b2cbf42907160074c5d3db75ff85bd92d78580624c8cd8260"),
+                parse_scalar("0x165e74be18ef4be6de5e232cd3480dcc38176807ac918b904576964612c5b6de"),
+                parse_scalar("0x1b207cff4c6c97c46c0b950b7524dae299cf3b48d766f0e5990a63fc378cba29"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_empty_vector_commitment_sha3() {
         let prover = Prover::<Sha3Hash>::new(vec![]);
+        let commitment = prover.commit();
+        assert_eq!(commitment.roots(), vec![Scalar::ZERO]);
+    }
+
+    #[test]
+    fn test_empty_vector_commitment_poseidon2() {
+        let prover = Prover::<Poseidon2Hash>::new(vec![]);
         let commitment = prover.commit();
         assert_eq!(commitment.roots(), vec![Scalar::ZERO]);
     }
@@ -478,6 +526,13 @@ mod tests {
     #[test]
     fn test_commit_one_element_2() {
         let prover = Prover::<Sha3Hash>::new(vec![34.into()]);
+        let commitment = prover.commit();
+        assert_eq!(commitment.roots(), vec![34.into()]);
+    }
+
+    #[test]
+    fn test_commit_one_element_poseidon() {
+        let prover = Prover::<Poseidon2Hash>::new(vec![34.into()]);
         let commitment = prover.commit();
         assert_eq!(commitment.roots(), vec![34.into()]);
     }
@@ -522,6 +577,19 @@ mod tests {
     }
 
     #[test]
+    fn test_commit_two_elements_poseidon() {
+        let prover = Prover::<Poseidon2Hash>::new(vec![78.into(), 90.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x64276ccf57e84d0b2cbf42907160074c5d3db75ff85bd92d78580624c8cd8260"),
+                parse_scalar("0x29f412f3ebb68bd1a08894ef0012f570e68012e3b9c99abc5fb465603996219d"),
+            ]
+        );
+    }
+
+    #[test]
     fn test_commit_three_elements_1() {
         let prover = Prover::<Sha3Hash>::new(vec![12.into(), 34.into(), 56.into()]);
         let commitment = prover.commit();
@@ -545,6 +613,20 @@ mod tests {
                 parse_scalar("0x2012df21bcdbe239bf4821e80c3e0d19585818ec67431dce9a848395417df750"),
                 parse_scalar("0x4b96d008ef7c62786b6df6a4e6238c35a6363af695856915f5b3f8111094426f"),
                 parse_scalar("0x7b630f805c1f1cb8af6d69cb2a48a480de716ce8932b7875ba1fb7941ad4ca0d"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_commit_three_elements_poseidon() {
+        let prover = Prover::<Poseidon2Hash>::new(vec![78.into(), 90.into(), 12.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x0cbbc7748a2f74433a266e8610d2cf53a5c56fdc029bd61e843f4afc4aa4df8d"),
+                parse_scalar("0x1668d9873f5011a10e8742bd738124974202cbf760c9f24912dd386d2b234312"),
+                parse_scalar("0x27d7a92dd73748e2b69c63b0efabcc6b8021904a4fde9ca7dd66f90ab0e3155b"),
             ]
         );
     }
@@ -577,8 +659,22 @@ mod tests {
         );
     }
 
-    fn open_and_verify_all(values: Vec<Scalar>) {
-        let prover = Prover::<Sha3Hash>::new(values.clone());
+    #[test]
+    fn test_commit_four_elements_poseidon() {
+        let prover = Prover::<Poseidon2Hash>::new(vec![34.into(), 56.into(), 78.into(), 90.into()]);
+        let commitment = prover.commit();
+        assert_eq!(
+            commitment.roots(),
+            vec![
+                parse_scalar("0x752cc74f03f5419d2d899ae717ea7d843f5fa3f2db53b87cb24afecf56050db4"),
+                parse_scalar("0x2e6db60e1ec63487e65e09212472aa094f00f270927f00d17d7c1c3937f61a2f"),
+                parse_scalar("0x1138aea576f58a7c574a79187cde3ec230a00c9b4cc84eada73f16010dc85ecf"),
+            ]
+        );
+    }
+
+    fn open_and_verify_all<H: Hash>(values: Vec<Scalar>) {
+        let prover = Prover::<H>::new(values.clone());
         let commitment = prover.commit();
         for (index, value) in values.iter().enumerate() {
             let proof = prover.open_at(index);
@@ -590,22 +686,30 @@ mod tests {
 
     #[test]
     fn test_open_verify_one() {
-        open_and_verify_all(vec![42.into()]);
+        let values = vec![42.into()];
+        open_and_verify_all::<Sha3Hash>(values.clone());
+        open_and_verify_all::<Poseidon2Hash>(values);
     }
 
     #[test]
     fn test_open_verify_two() {
-        open_and_verify_all(vec![56.into(), 78.into()]);
+        let values = vec![56.into(), 78.into()];
+        open_and_verify_all::<Sha3Hash>(values.clone());
+        open_and_verify_all::<Poseidon2Hash>(values);
     }
 
     #[test]
     fn test_open_verify_four() {
-        open_and_verify_all(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let values = vec![12.into(), 34.into(), 56.into(), 78.into()];
+        open_and_verify_all::<Sha3Hash>(values.clone());
+        open_and_verify_all::<Poseidon2Hash>(values);
     }
 
     #[test]
     fn test_open_verify_non_power_of_two() {
-        open_and_verify_all(vec![10.into(), 20.into(), 30.into()]);
+        let values = vec![10.into(), 20.into(), 30.into()];
+        open_and_verify_all::<Sha3Hash>(values.clone());
+        open_and_verify_all::<Poseidon2Hash>(values);
     }
 
     #[test]
