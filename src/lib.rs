@@ -9,6 +9,7 @@ pub mod fri2;
 pub mod fri3;
 pub mod merkle;
 pub mod pcs;
+pub mod plonk;
 pub mod poly;
 pub mod poseidon;
 pub mod utils;
