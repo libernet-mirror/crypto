@@ -458,7 +458,7 @@ impl BatchCommitment {
 ///
 /// Proves `f_j[index] = v_j` for every polynomial `j` with:
 /// 1. a Merkle opening for each `f_j[index]` against `BatchCommitment::roots[j]`;
-/// 2. a single FRI proof for the combined polynomial `g[index] = Sum(r^j · f_j[index])`.
+/// 2. a single FRI proof for the combined polynomial `g[index] = Sum(r^j * f_j[index])`.
 ///
 /// The verifier reconstructs `r` from the commitment, checks each individual Merkle opening, checks
 /// that the combined value equals the RLC of the individual values, then runs the standard FRI
