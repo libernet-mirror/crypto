@@ -400,6 +400,189 @@ impl Prover {
     }
 }
 
+/// Commitment for a batch of polynomials that will be opened at a common query index.
+///
+/// Stores one Merkle root per polynomial and the full FRI commitment of the RLC-combined polynomial
+/// `g = f_0 + r * f_1 + r^2 * f_2 + ...`, where `r` is a Fiat-Shamir challenge derived from the
+/// individual roots.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatchCommitment {
+    /// The Merkle roots of the committed polynomials.
+    roots: Vec<Scalar>,
+    /// The FRI commitment of the RLC for the batch.
+    combined: Commitment,
+}
+
+impl BatchCommitment {
+    pub fn roots(&self) -> &[Scalar] {
+        &self.roots
+    }
+
+    pub fn combined(&self) -> &Commitment {
+        &self.combined
+    }
+}
+
+/// An opening proof for multiple polynomials at the same query index.
+///
+/// Proves `f_j[index] = v_j` for every polynomial `j` with:
+/// 1. a Merkle opening for each `f_j[index]` against `BatchCommitment::roots[j]`;
+/// 2. a single FRI proof for the combined polynomial `g[index] = Sum(r^j * f_j[index])`.
+///
+/// The verifier reconstructs `r` from the commitment, checks each individual Merkle opening, checks
+/// that the combined value equals the RLC of the individual values, then runs the standard FRI
+/// verifier on `g`. That replaces `m` full FRI verifications with `m` simple Merkle proofs plus one
+/// full FRI verification.
+#[derive(Debug, Clone)]
+pub struct BatchProof {
+    /// Index of the domain element to open.
+    index: usize,
+    /// Proves `f_j[index]` against `BatchCommitment::roots[j]`.
+    paths: Vec<LeafProof>,
+    /// The FRI proof for the combined polynomial.
+    combined: Proof,
+}
+
+impl BatchProof {
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// Returns the claimed evaluation of polynomial `j` at the opening index.
+    pub fn value(&self, j: usize) -> &Scalar {
+        self.paths[j].value()
+    }
+
+    /// Computes a random linear combination: `values[0] + r * values[1] + r^2 * values[2] + ...`.
+    fn rlc(values: &[Scalar], r: Scalar) -> Scalar {
+        let mut result = Scalar::ZERO;
+        let mut pow = Scalar::ONE;
+        for value in values {
+            result += pow * value;
+            pow *= r;
+        }
+        result
+    }
+
+    pub fn verify(&self, commitment: &BatchCommitment) -> Result<()> {
+        if self.paths.len() != commitment.roots.len() {
+            return Err(anyhow!(
+                "expected {} polynomial proofs, got {}",
+                commitment.roots.len(),
+                self.paths.len()
+            ));
+        }
+
+        let r = poseidon::hash_t3(
+            std::iter::once(*DST)
+                .chain(commitment.roots.iter().copied())
+                .collect::<Vec<Scalar>>()
+                .as_slice(),
+        );
+
+        for (j, leaf_proof) in self.paths.iter().enumerate() {
+            leaf_proof.verify(self.index, commitment.roots[j])?;
+        }
+
+        let values: Vec<Scalar> = self.paths.iter().map(|p| *p.value()).collect();
+        let rlc = Self::rlc(values.as_slice(), r);
+        if rlc != *self.combined.value() {
+            return Err(anyhow!(
+                "combined value mismatch: got {}, want {}",
+                utils::format_scalar(*self.combined.value()),
+                utils::format_scalar(rlc)
+            ));
+        }
+
+        self.combined.verify(&commitment.combined)
+    }
+}
+
+/// Prover for a batch of polynomials that can be opened at a common query index.
+pub struct BatchProver {
+    /// The size (degree+1) of each polynomial rounded up to the next power of 3.
+    n: usize,
+    /// Per-polynomial ternary Merkle trees, each of length `(3n-1)/2`.
+    trees: Vec<Vec<Scalar>>,
+    /// Proves the random linear combination of the polynomials.
+    combined: Prover,
+}
+
+impl BatchProver {
+    /// Commits to a batch of polynomials.
+    ///
+    /// `values` is an array of polynomials represented in the value domain. Each polynomial is an
+    /// array of evaluations.
+    ///
+    /// All polynomials are zero-padded to the length of the longest one, rounded up to the next
+    /// power of three.
+    pub fn new(values: Vec<Vec<Scalar>>) -> Self {
+        assert!(!values.is_empty());
+        let n = xits::next_power_of_three(values.iter().map(|p| p.len()).max().unwrap());
+        assert!(xits::ilog3(n) <= Scalar::T as usize);
+
+        let tree_size = (3 * n - 1) / 2;
+        let trees: Vec<Vec<Scalar>> = values
+            .into_iter()
+            .map(|mut p| {
+                p.resize(tree_size, Scalar::ZERO);
+                merklify(&mut p, n);
+                p
+            })
+            .collect();
+
+        let roots: Vec<Scalar> = trees.iter().map(|tree| tree[3 * (n - 1) / 2]).collect();
+        let r = poseidon::hash_t3(
+            std::iter::once(*DST)
+                .chain(roots.iter().copied())
+                .collect::<Vec<Scalar>>()
+                .as_slice(),
+        );
+
+        let mut g = vec![Scalar::ZERO; n];
+        let mut pow = Scalar::ONE;
+        for tree in &trees {
+            for i in 0..n {
+                g[i] += pow * tree[i];
+            }
+            pow *= r;
+        }
+
+        Self {
+            n,
+            trees,
+            combined: Prover::new(g),
+        }
+    }
+
+    pub fn commit(&self) -> BatchCommitment {
+        let roots = self
+            .trees
+            .iter()
+            .map(|tree| tree[3 * (self.n - 1) / 2])
+            .collect();
+        BatchCommitment {
+            roots,
+            combined: self.combined.commit(),
+        }
+    }
+
+    pub fn open_at(&self, index: usize) -> BatchProof {
+        assert!(index < self.n);
+        let tree_size = (3 * self.n - 1) / 2;
+        let paths = self
+            .trees
+            .iter()
+            .map(|tree| LeafProof::new(&tree[..tree_size], self.n, index))
+            .collect();
+        BatchProof {
+            index,
+            paths,
+            combined: self.combined.open_at(index),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -685,6 +868,140 @@ mod tests {
         let commitment = prover.commit();
         let mut proof = prover.open_at(0);
         proof.folds[0].1.value = 99.into();
+        assert!(proof.verify(&commitment).is_err());
+    }
+
+    fn batch_open_verify_all(values: Vec<Vec<Scalar>>) {
+        let n = xits::next_power_of_three(values.iter().map(|p| p.len()).max().unwrap());
+        let expected: Vec<Vec<Scalar>> = values
+            .iter()
+            .map(|p| {
+                let mut v = p.clone();
+                v.resize(n, Scalar::ZERO);
+                v
+            })
+            .collect();
+        let prover = BatchProver::new(values);
+        let commitment = prover.commit();
+        for index in 0..n {
+            let proof = prover.open_at(index);
+            assert_eq!(proof.index(), index);
+            for (j, poly) in expected.iter().enumerate() {
+                assert_eq!(*proof.value(j), poly[index]);
+            }
+            assert!(proof.verify(&commitment).is_ok());
+        }
+    }
+
+    #[test]
+    fn test_batch_open_verify_one_poly() {
+        batch_open_verify_all(vec![vec![42.into()]]);
+    }
+
+    #[test]
+    fn test_batch_open_verify_two_polys() {
+        batch_open_verify_all(vec![
+            vec![1.into(), 2.into(), 3.into()],
+            vec![4.into(), 5.into(), 6.into()],
+        ]);
+    }
+
+    #[test]
+    fn test_batch_open_verify_three_polys_non_power_of_three() {
+        batch_open_verify_all(vec![
+            vec![10.into(), 20.into()],
+            vec![30.into(), 40.into()],
+            vec![50.into(), 60.into()],
+        ]);
+    }
+
+    #[test]
+    fn test_batch_open_verify_nine_elements() {
+        batch_open_verify_all(vec![
+            vec![
+                1.into(),
+                2.into(),
+                3.into(),
+                4.into(),
+                5.into(),
+                6.into(),
+                7.into(),
+                8.into(),
+                9.into(),
+            ],
+            vec![
+                9.into(),
+                8.into(),
+                7.into(),
+                6.into(),
+                5.into(),
+                4.into(),
+                3.into(),
+                2.into(),
+                1.into(),
+            ],
+        ]);
+    }
+
+    #[test]
+    fn test_batch_rejects_wrong_commitment() {
+        let polys1 = vec![
+            vec![1.into(), 2.into(), 3.into()],
+            vec![4.into(), 5.into(), 6.into()],
+        ];
+        let polys2 = vec![
+            vec![7.into(), 8.into(), 9.into()],
+            vec![0.into(), 1.into(), 2.into()],
+        ];
+        let prover1 = BatchProver::new(polys1);
+        let prover2 = BatchProver::new(polys2);
+        let proof = prover1.open_at(0);
+        assert!(proof.verify(&prover2.commit()).is_err());
+    }
+
+    #[test]
+    fn test_batch_rejects_tampered_poly_value() {
+        let values = vec![
+            vec![1.into(), 2.into(), 3.into()],
+            vec![4.into(), 5.into(), 6.into()],
+        ];
+        let prover = BatchProver::new(values);
+        let commitment = prover.commit();
+        let mut proof = prover.open_at(0);
+        proof.paths[0].value = 99.into();
+        assert!(proof.verify(&commitment).is_err());
+    }
+
+    #[test]
+    fn test_batch_rejects_tampered_poly_path() {
+        let values = vec![
+            vec![
+                1.into(),
+                2.into(),
+                3.into(),
+                4.into(),
+                5.into(),
+                6.into(),
+                7.into(),
+                8.into(),
+                9.into(),
+            ],
+            vec![
+                9.into(),
+                8.into(),
+                7.into(),
+                6.into(),
+                5.into(),
+                4.into(),
+                3.into(),
+                2.into(),
+                1.into(),
+            ],
+        ];
+        let prover = BatchProver::new(values);
+        let commitment = prover.commit();
+        let mut proof = prover.open_at(0);
+        proof.paths[1].path[0] = (99.into(), 99.into());
         assert!(proof.verify(&commitment).is_err());
     }
 }
