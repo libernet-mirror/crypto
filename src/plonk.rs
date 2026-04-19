@@ -208,6 +208,175 @@ impl CircuitBuilder {
         Wire::Out(gate)
     }
 
+    pub fn add_const_gate(&mut self, value: Scalar) -> Wire {
+        Wire::Out(self.add_raw_gate(0.into(), 0.into(), 1.into(), 0.into(), -value))
+    }
+
+    pub fn add_sum_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
+        self.add_binary_gate(
+            1.into(),
+            1.into(),
+            -Scalar::from(1),
+            0.into(),
+            0.into(),
+            lhs,
+            rhs,
+        )
+    }
+
+    pub fn add_sum_with_const_gate(&mut self, lhs: Option<Wire>, c: Scalar) -> Wire {
+        self.add_unary_gate(1.into(), 0.into(), -Scalar::from(1), 0.into(), c, lhs)
+    }
+
+    pub fn add_sub_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
+        self.add_binary_gate(
+            1.into(),
+            -Scalar::from(1),
+            -Scalar::from(1),
+            0.into(),
+            0.into(),
+            lhs,
+            rhs,
+        )
+    }
+
+    pub fn add_sub_const_gate(&mut self, lhs: Option<Wire>, c: Scalar) -> Wire {
+        self.add_unary_gate(1.into(), 0.into(), -Scalar::from(1), 0.into(), -c, lhs)
+    }
+
+    pub fn add_sub_from_const_gate(&mut self, c: Scalar, rhs: Option<Wire>) -> Wire {
+        self.add_unary_gate(
+            0.into(),
+            -Scalar::from(1),
+            -Scalar::from(1),
+            0.into(),
+            c,
+            rhs,
+        )
+    }
+
+    pub fn add_mul_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
+        self.add_binary_gate(
+            0.into(),
+            0.into(),
+            -Scalar::from(1),
+            1.into(),
+            0.into(),
+            lhs,
+            rhs,
+        )
+    }
+
+    pub fn add_square_gate(&mut self, input: Option<Wire>) -> Wire {
+        self.add_unary_gate(
+            0.into(),
+            0.into(),
+            1.into(),
+            -Scalar::from(1),
+            0.into(),
+            input,
+        )
+    }
+
+    pub fn add_mul_by_const_gate(&mut self, lhs: Option<Wire>, c: Scalar) -> Wire {
+        self.add_unary_gate(c, 0.into(), -Scalar::from(1), 0.into(), 0.into(), lhs)
+    }
+
+    pub fn add_linear_combination_gate(
+        &mut self,
+        c1: Scalar,
+        lhs: Option<Wire>,
+        c2: Scalar,
+        rhs: Option<Wire>,
+    ) -> Wire {
+        self.add_binary_gate(c1, c2, -Scalar::from(1), 0.into(), 0.into(), lhs, rhs)
+    }
+
+    pub fn add_poly2_gate(
+        &mut self,
+        c1: Scalar,
+        c2: Scalar,
+        c3: Scalar,
+        input: Option<Wire>,
+    ) -> Wire {
+        self.add_unary_gate(c2, 0.into(), -Scalar::from(1), c1, c3, input)
+    }
+
+    pub fn add_bit_assertion_gate(&mut self, input: Option<Wire>) {
+        self.add_unary_gate(
+            1.into(),
+            0.into(),
+            0.into(),
+            -Scalar::from(1),
+            0.into(),
+            input,
+        );
+    }
+
+    pub fn add_trit_assertion_gate(&mut self, input: Option<Wire>) {
+        let lhs = self.add_poly2_gate(1.into(), -Scalar::from(3), 2.into(), input);
+        self.add_binary_gate(
+            0.into(),
+            0.into(),
+            0.into(),
+            1.into(),
+            0.into(),
+            lhs.into(),
+            input,
+        );
+    }
+
+    pub fn add_not_gate(&mut self, input: Option<Wire>) -> Wire {
+        self.add_unary_gate(
+            -Scalar::from(1),
+            0.into(),
+            -Scalar::from(1),
+            0.into(),
+            1.into(),
+            input,
+        )
+    }
+
+    pub fn add_and_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
+        self.add_binary_gate(
+            0.into(),
+            0.into(),
+            -Scalar::from(1),
+            1.into(),
+            0.into(),
+            lhs,
+            rhs,
+        )
+    }
+
+    pub fn add_or_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
+        self.add_binary_gate(
+            1.into(),
+            1.into(),
+            -Scalar::from(1),
+            -Scalar::from(1),
+            0.into(),
+            lhs,
+            rhs,
+        )
+    }
+
+    pub fn add_xor_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
+        self.add_binary_gate(
+            1.into(),
+            1.into(),
+            -Scalar::from(1),
+            -Scalar::from(2),
+            0.into(),
+            lhs,
+            rhs,
+        )
+    }
+
+    pub fn declare_public_inputs<I: IntoIterator<Item = Wire>>(&mut self, wires: I) {
+        self.public_inputs = BTreeSet::from_iter(wires);
+    }
+
     // TODO
 }
 
