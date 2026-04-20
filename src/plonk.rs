@@ -1,5 +1,9 @@
 use crate::bluesky::Scalar;
+use crate::pcs;
+use crate::poly;
 use std::collections::{BTreeMap, BTreeSet, btree_map};
+
+type Polynomial = poly::Polynomial<Scalar>;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct GateConstraint {
@@ -375,6 +379,97 @@ impl CircuitBuilder {
 
     pub fn declare_public_inputs<I: IntoIterator<Item = Wire>>(&mut self, wires: I) {
         self.public_inputs = BTreeSet::from_iter(wires);
+    }
+
+    // TODO
+}
+
+#[derive(Debug, Clone)]
+pub struct Proof<H: pcs::Hash> {
+    witness_commitments: [pcs::Commitment; 3],
+    public_inputs: BTreeMap<Wire, Scalar>,
+    permutation_accumulator_commitment: pcs::Commitment,
+    quotient_commitment: pcs::Commitment,
+    proof: pcs::BatchProof<H>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Circuit {
+    size: usize,
+    public_inputs: BTreeSet<Wire>,
+    ql: Polynomial,
+    qr: Polynomial,
+    qo: Polynomial,
+    qm: Polynomial,
+    qc: Polynomial,
+    ql_c: pcs::Commitment,
+    qr_c: pcs::Commitment,
+    qo_c: pcs::Commitment,
+    qm_c: pcs::Commitment,
+    qc_c: pcs::Commitment,
+    sl_values: Vec<Scalar>,
+    sr_values: Vec<Scalar>,
+    so_values: Vec<Scalar>,
+    sl: Polynomial,
+    sr: Polynomial,
+    so: Polynomial,
+    sl_c: pcs::Commitment,
+    sr_c: pcs::Commitment,
+    so_c: pcs::Commitment,
+}
+
+impl Circuit {
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn compress(&self) -> CompressedCircuit {
+        CompressedCircuit {
+            original_size: self.size,
+            ql: self.ql_c.clone(),
+            qr: self.qr_c.clone(),
+            qo: self.qo_c.clone(),
+            qm: self.qm_c.clone(),
+            qc: self.qc_c.clone(),
+            sl: self.sl_c.clone(),
+            sr: self.sr_c.clone(),
+            so: self.so_c.clone(),
+        }
+    }
+
+    pub fn to_compressed(self) -> CompressedCircuit {
+        CompressedCircuit {
+            original_size: self.size,
+            ql: self.ql_c,
+            qr: self.qr_c,
+            qo: self.qo_c,
+            qm: self.qm_c,
+            qc: self.qc_c,
+            sl: self.sl_c,
+            sr: self.sr_c,
+            so: self.so_c,
+        }
+    }
+
+    // TODO
+}
+
+#[derive(Debug, Clone)]
+pub struct CompressedCircuit {
+    original_size: usize,
+    ql: pcs::Commitment,
+    qr: pcs::Commitment,
+    qo: pcs::Commitment,
+    qm: pcs::Commitment,
+    qc: pcs::Commitment,
+    sl: pcs::Commitment,
+    sr: pcs::Commitment,
+    so: pcs::Commitment,
+}
+
+impl CompressedCircuit {
+    pub fn original_size(&self) -> usize {
+        self.original_size
     }
 
     // TODO
