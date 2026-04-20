@@ -135,14 +135,12 @@ impl<H: Hash> Proof<H> {
             source_proof.verify(&commitment.source)?;
             quotient_proof.verify(&commitment.quotient)?;
 
-            let x = Polynomial::<Scalar>::domain_element2(
+            let x = Polynomial::<Scalar>::coset_element2(
                 expected_index,
                 commitment.extended_degree_bound(),
             );
             if *quotient_proof.value() * (x - self.z) != *source_proof.value() - self.y {
-                return Err(anyhow!(
-                    "DEEP-FRI consistency check failed at query {i}: q(x) * (x - z) != f(x) - y"
-                ));
+                return Err(anyhow!("DEEP-FRI consistency check failed at query {i}"));
             }
         }
 
@@ -384,7 +382,7 @@ impl<H: Hash> BatchProof<H> {
             }
             quotient_proof.verify(&commitment.quotient)?;
 
-            let x = Polynomial::<Scalar>::domain_element2(
+            let x = Polynomial::<Scalar>::coset_element2(
                 expected_index,
                 commitment.extended_degree_bound(),
             );

@@ -362,6 +362,15 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         omega.pow_vartime([index as u64, 0, 0, 0])
     }
 
+    /// Returns the X coordinate of the i-th point in the coset LDE domain used by `lde2`.
+    ///
+    /// Equivalent to `F::MULTIPLICATIVE_GENERATOR * domain_element2(index, domain_size)`.
+    ///
+    /// Running time: O(1).
+    pub fn coset_element2(index: usize, domain_size: usize) -> F {
+        F::MULTIPLICATIVE_GENERATOR * Self::domain_element2(index, domain_size)
+    }
+
     /// Same as `evaluate(domain_element2(index, domain_size))`.
     ///
     /// Running time: O(N).
@@ -369,18 +378,38 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         self.evaluate(Self::domain_element2(index, domain_size))
     }
 
-    /// Computes a low-degree extension of the polynomial by evaluating it at `m` locations, where
-    /// `m` is greater than the current length returned by `len()`.
+    /// Same as `evaluate(coset_element2(index, domain_size))`.
     ///
-    /// REQUIRES: `m` must be a power of two, at least as large as `self.len()`, and no larger than
+    /// Running time: O(N).
+    pub fn evaluate_on_two_adic_coset(&self, index: usize, domain_size: usize) -> F {
+        self.evaluate(Self::coset_element2(index, domain_size))
+    }
+
+    /// Computes a low-degree extension of the polynomial by evaluating it at `m` points on the
+    /// coset `shift * <omega_m>`, where `omega_m` is a primitive `m`-th root of unity. The
+    /// evaluation points are `shift * omega_m^i` for `i = 0..m`.
+    ///
+    /// Use `F::MULTIPLICATIVE_GENERATOR` as `shift` to evaluate on a coset that is disjoint from
+    /// the subgroup `<omega_m>`, ensuring that LDE evaluations do not coincide with the original
+    /// evaluation domain and preserving secrecy of the committed polynomial.
+    ///
+    /// The coset shift is applied by multiplying each coefficient `a_k` by `shift^k` before the
+    /// FFT, which is equivalent to substituting `X -> shift * X` in the polynomial.
+    ///
+    /// REQUIRES: `m` must be a power of two at least as large as `self.len()`, and no larger than
     /// `2^(F::S)`.
     ///
     /// Running time: O(M*log(M)).
     pub fn lde2(mut self, m: usize) -> Vec<F> {
         assert!(m.is_power_of_two());
         assert!(m.trailing_zeros() <= F::S);
-        assert!(self.coefficients.len() <= m,);
+        assert!(self.coefficients.len() <= m);
         self.coefficients.resize(m, F::ZERO);
+        let mut shift_pow = F::ONE;
+        for c in self.coefficients.iter_mut() {
+            *c *= shift_pow;
+            shift_pow *= F::MULTIPLICATIVE_GENERATOR;
+        }
         let omega = Self::two_adic_root_of_unity(m);
         Self::fft2(&mut self.coefficients, omega);
         self.coefficients
@@ -1479,8 +1508,12 @@ mod tests {
     #[test]
     fn test_lde2_same_size() {
         let values = vec![12.into(), 34.into(), 56.into(), 78.into()];
-        let p = Polynomial::<Scalar>::encode2(values.clone());
-        assert_eq!(p.lde2(4), values);
+        let p = Polynomial::<Scalar>::encode2(values);
+        let lde = p.clone().lde2(4);
+        assert_eq!(lde[0], p.evaluate_on_two_adic_coset(0, 4));
+        assert_eq!(lde[1], p.evaluate_on_two_adic_coset(1, 4));
+        assert_eq!(lde[2], p.evaluate_on_two_adic_coset(2, 4));
+        assert_eq!(lde[3], p.evaluate_on_two_adic_coset(3, 4));
     }
 
     #[test]
@@ -1488,14 +1521,14 @@ mod tests {
         let values = vec![12.into(), 34.into(), 56.into(), 78.into()];
         let p = Polynomial::<Scalar>::encode2(values);
         let lde = p.clone().lde2(8);
-        assert_eq!(lde[0], p.evaluate_on_two_adic_domain(0, 8));
-        assert_eq!(lde[1], p.evaluate_on_two_adic_domain(1, 8));
-        assert_eq!(lde[2], p.evaluate_on_two_adic_domain(2, 8));
-        assert_eq!(lde[3], p.evaluate_on_two_adic_domain(3, 8));
-        assert_eq!(lde[4], p.evaluate_on_two_adic_domain(4, 8));
-        assert_eq!(lde[5], p.evaluate_on_two_adic_domain(5, 8));
-        assert_eq!(lde[6], p.evaluate_on_two_adic_domain(6, 8));
-        assert_eq!(lde[7], p.evaluate_on_two_adic_domain(7, 8));
+        assert_eq!(lde[0], p.evaluate_on_two_adic_coset(0, 8));
+        assert_eq!(lde[1], p.evaluate_on_two_adic_coset(1, 8));
+        assert_eq!(lde[2], p.evaluate_on_two_adic_coset(2, 8));
+        assert_eq!(lde[3], p.evaluate_on_two_adic_coset(3, 8));
+        assert_eq!(lde[4], p.evaluate_on_two_adic_coset(4, 8));
+        assert_eq!(lde[5], p.evaluate_on_two_adic_coset(5, 8));
+        assert_eq!(lde[6], p.evaluate_on_two_adic_coset(6, 8));
+        assert_eq!(lde[7], p.evaluate_on_two_adic_coset(7, 8));
     }
 
     #[test]
@@ -1503,22 +1536,22 @@ mod tests {
         let values = vec![1.into(), 2.into(), 3.into(), 4.into()];
         let p = Polynomial::<Scalar>::encode2(values);
         let lde = p.clone().lde2(16);
-        assert_eq!(lde[0], p.evaluate_on_two_adic_domain(0, 16));
-        assert_eq!(lde[1], p.evaluate_on_two_adic_domain(1, 16));
-        assert_eq!(lde[2], p.evaluate_on_two_adic_domain(2, 16));
-        assert_eq!(lde[3], p.evaluate_on_two_adic_domain(3, 16));
-        assert_eq!(lde[4], p.evaluate_on_two_adic_domain(4, 16));
-        assert_eq!(lde[5], p.evaluate_on_two_adic_domain(5, 16));
-        assert_eq!(lde[6], p.evaluate_on_two_adic_domain(6, 16));
-        assert_eq!(lde[7], p.evaluate_on_two_adic_domain(7, 16));
-        assert_eq!(lde[8], p.evaluate_on_two_adic_domain(8, 16));
-        assert_eq!(lde[9], p.evaluate_on_two_adic_domain(9, 16));
-        assert_eq!(lde[10], p.evaluate_on_two_adic_domain(10, 16));
-        assert_eq!(lde[11], p.evaluate_on_two_adic_domain(11, 16));
-        assert_eq!(lde[12], p.evaluate_on_two_adic_domain(12, 16));
-        assert_eq!(lde[13], p.evaluate_on_two_adic_domain(13, 16));
-        assert_eq!(lde[14], p.evaluate_on_two_adic_domain(14, 16));
-        assert_eq!(lde[15], p.evaluate_on_two_adic_domain(15, 16));
+        assert_eq!(lde[0], p.evaluate_on_two_adic_coset(0, 16));
+        assert_eq!(lde[1], p.evaluate_on_two_adic_coset(1, 16));
+        assert_eq!(lde[2], p.evaluate_on_two_adic_coset(2, 16));
+        assert_eq!(lde[3], p.evaluate_on_two_adic_coset(3, 16));
+        assert_eq!(lde[4], p.evaluate_on_two_adic_coset(4, 16));
+        assert_eq!(lde[5], p.evaluate_on_two_adic_coset(5, 16));
+        assert_eq!(lde[6], p.evaluate_on_two_adic_coset(6, 16));
+        assert_eq!(lde[7], p.evaluate_on_two_adic_coset(7, 16));
+        assert_eq!(lde[8], p.evaluate_on_two_adic_coset(8, 16));
+        assert_eq!(lde[9], p.evaluate_on_two_adic_coset(9, 16));
+        assert_eq!(lde[10], p.evaluate_on_two_adic_coset(10, 16));
+        assert_eq!(lde[11], p.evaluate_on_two_adic_coset(11, 16));
+        assert_eq!(lde[12], p.evaluate_on_two_adic_coset(12, 16));
+        assert_eq!(lde[13], p.evaluate_on_two_adic_coset(13, 16));
+        assert_eq!(lde[14], p.evaluate_on_two_adic_coset(14, 16));
+        assert_eq!(lde[15], p.evaluate_on_two_adic_coset(15, 16));
     }
 
     #[test]
@@ -1527,10 +1560,10 @@ mod tests {
         let p = Polynomial::<Scalar>::encode2(values);
         assert_eq!(p.len(), 1);
         let lde = p.clone().lde2(4);
-        assert_eq!(lde[0], p.evaluate_on_two_adic_domain(0, 4));
-        assert_eq!(lde[1], p.evaluate_on_two_adic_domain(1, 4));
-        assert_eq!(lde[2], p.evaluate_on_two_adic_domain(2, 4));
-        assert_eq!(lde[3], p.evaluate_on_two_adic_domain(3, 4));
+        assert_eq!(lde[0], p.evaluate_on_two_adic_coset(0, 4));
+        assert_eq!(lde[1], p.evaluate_on_two_adic_coset(1, 4));
+        assert_eq!(lde[2], p.evaluate_on_two_adic_coset(2, 4));
+        assert_eq!(lde[3], p.evaluate_on_two_adic_coset(3, 4));
     }
 
     #[test]
