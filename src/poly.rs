@@ -270,6 +270,34 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         Self::multiply_many_impl(&mut polynomials)
     }
 
+    /// Multiplies two polynomials defined on the value domain, assuming the provided evaluations
+    /// are defined on the same two-adic evaluation domain for both.
+    ///
+    /// REQUIRES: the LHS and RHS must have the same length `n` and it must be a power of two. The
+    /// implied evaluation domain is the set of powers of an `n`-th root of unity.
+    ///
+    /// The returned polynomial is also on the value domain and can be switched to the coefficient
+    /// domain by constructing a `Polynomial` object on it (see `encode2`).
+    pub fn multiply_values2(mut lhs: Vec<F>, mut rhs: Vec<F>) -> Vec<F> {
+        let n = lhs.len();
+        assert!(n.is_power_of_two());
+        assert!(n.trailing_zeros() + 1 <= F::S);
+        assert_eq!(rhs.len(), n);
+        let omega = Self::two_adic_root_of_unity(n);
+        Self::ifft2(&mut lhs, omega);
+        Self::ifft2(&mut rhs, omega);
+        let n2 = n * 2;
+        lhs.resize(n2, F::ZERO);
+        rhs.resize(n2, F::ZERO);
+        let omega = Self::two_adic_root_of_unity(n2);
+        Self::fft2(&mut lhs, omega);
+        Self::fft2(&mut rhs, omega);
+        for i in 0..n2 {
+            lhs[i] *= rhs[i];
+        }
+        lhs
+    }
+
     /// Divides this polynomial by (x - z) using Horner's method. Returns the quotient polynomial
     /// and the remainder scalar.
     ///
@@ -558,6 +586,34 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
         let omega = Self::three_adic_root_of_unity(m);
         Self::fft3(&mut self.coefficients, omega);
         self.coefficients
+    }
+
+    /// Multiplies two polynomials defined on the value domain, assuming the provided evaluations
+    /// are defined on the same three-adic evaluation domain for both.
+    ///
+    /// REQUIRES: the LHS and RHS must have the same length `n` and it must be a power of three.
+    /// The implied evaluation domain is the set of powers of an `n`-th root of unity.
+    ///
+    /// The returned polynomial is also on the value domain and can be switched to the coefficient
+    /// domain by constructing a `Polynomial` object on it (see `encode3`).
+    pub fn multiply_values3(mut lhs: Vec<F>, mut rhs: Vec<F>) -> Vec<F> {
+        let n = lhs.len();
+        assert!(xits::is_power_of_three(n));
+        assert!(xits::ilog3(n) as u32 + 1 <= F::T);
+        assert_eq!(rhs.len(), n);
+        let omega = Self::three_adic_root_of_unity(n);
+        Self::ifft3(&mut lhs, omega);
+        Self::ifft3(&mut rhs, omega);
+        let n3 = n * 3;
+        lhs.resize(n3, F::ZERO);
+        rhs.resize(n3, F::ZERO);
+        let omega = Self::three_adic_root_of_unity(n3);
+        Self::fft3(&mut lhs, omega);
+        Self::fft3(&mut rhs, omega);
+        for i in 0..n3 {
+            lhs[i] *= rhs[i];
+        }
+        lhs
     }
 }
 
@@ -1672,5 +1728,257 @@ mod tests {
         assert_eq!(lde[6], p.evaluate_on_three_adic_domain(6, 9));
         assert_eq!(lde[7], p.evaluate_on_three_adic_domain(7, 9));
         assert_eq!(lde[8], p.evaluate_on_three_adic_domain(8, 9));
+    }
+
+    #[test]
+    fn test_multiply_values2_same_constant() {
+        let lhs = vec![42.into(), 42.into()];
+        let rhs = vec![42.into(), 42.into()];
+        let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0], 1764.into());
+        assert_eq!(result[1], 1764.into());
+        assert_eq!(result[2], 1764.into());
+        assert_eq!(result[3], 1764.into());
+    }
+
+    #[test]
+    fn test_multiply_values2_different_constants() {
+        let lhs = vec![3.into(), 3.into()];
+        let rhs = vec![7.into(), 7.into()];
+        let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0], 21.into());
+        assert_eq!(result[1], 21.into());
+        assert_eq!(result[2], 21.into());
+        assert_eq!(result[3], 21.into());
+    }
+
+    #[test]
+    fn test_multiply_values2_two_linear_polynomials() {
+        let p = Polynomial::<Scalar>::with_coefficients(vec![1.into(), 2.into()]);
+        let q = Polynomial::<Scalar>::with_coefficients(vec![3.into(), 4.into()]);
+        let lhs = vec![
+            p.evaluate_on_two_adic_domain(0, 2),
+            p.evaluate_on_two_adic_domain(1, 2),
+        ];
+        let rhs = vec![
+            q.evaluate_on_two_adic_domain(0, 2),
+            q.evaluate_on_two_adic_domain(1, 2),
+        ];
+        let product = p.multiply(q).unwrap();
+        let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0], product.evaluate_on_two_adic_domain(0, 4));
+        assert_eq!(result[1], product.evaluate_on_two_adic_domain(1, 4));
+        assert_eq!(result[2], product.evaluate_on_two_adic_domain(2, 4));
+        assert_eq!(result[3], product.evaluate_on_two_adic_domain(3, 4));
+    }
+
+    #[test]
+    fn test_multiply_values2_four_values() {
+        let p =
+            Polynomial::<Scalar>::with_coefficients(vec![1.into(), 2.into(), 3.into(), 4.into()]);
+        let q =
+            Polynomial::<Scalar>::with_coefficients(vec![5.into(), 6.into(), 7.into(), 8.into()]);
+        let lhs = vec![
+            p.evaluate_on_two_adic_domain(0, 4),
+            p.evaluate_on_two_adic_domain(1, 4),
+            p.evaluate_on_two_adic_domain(2, 4),
+            p.evaluate_on_two_adic_domain(3, 4),
+        ];
+        let rhs = vec![
+            q.evaluate_on_two_adic_domain(0, 4),
+            q.evaluate_on_two_adic_domain(1, 4),
+            q.evaluate_on_two_adic_domain(2, 4),
+            q.evaluate_on_two_adic_domain(3, 4),
+        ];
+        let product = p.multiply(q).unwrap();
+        let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
+        assert_eq!(result.len(), 8);
+        assert_eq!(result[0], product.evaluate_on_two_adic_domain(0, 8));
+        assert_eq!(result[1], product.evaluate_on_two_adic_domain(1, 8));
+        assert_eq!(result[2], product.evaluate_on_two_adic_domain(2, 8));
+        assert_eq!(result[3], product.evaluate_on_two_adic_domain(3, 8));
+        assert_eq!(result[4], product.evaluate_on_two_adic_domain(4, 8));
+        assert_eq!(result[5], product.evaluate_on_two_adic_domain(5, 8));
+        assert_eq!(result[6], product.evaluate_on_two_adic_domain(6, 8));
+        assert_eq!(result[7], product.evaluate_on_two_adic_domain(7, 8));
+    }
+
+    #[test]
+    fn test_multiply_values2_commutative() {
+        let p = Polynomial::<Scalar>::with_coefficients(vec![1.into(), 2.into()]);
+        let q = Polynomial::<Scalar>::with_coefficients(vec![3.into(), 4.into()]);
+        let values_p = vec![
+            p.evaluate_on_two_adic_domain(0, 2),
+            p.evaluate_on_two_adic_domain(1, 2),
+        ];
+        let values_q = vec![
+            q.evaluate_on_two_adic_domain(0, 2),
+            q.evaluate_on_two_adic_domain(1, 2),
+        ];
+        let result_pq = Polynomial::<Scalar>::multiply_values2(values_p.clone(), values_q.clone());
+        let result_qp = Polynomial::<Scalar>::multiply_values2(values_q, values_p);
+        assert_eq!(result_pq, result_qp);
+    }
+
+    #[test]
+    fn test_multiply_values3_same_constant() {
+        let lhs = vec![42.into(), 42.into(), 42.into()];
+        let rhs = vec![42.into(), 42.into(), 42.into()];
+        let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
+        assert_eq!(result.len(), 9);
+        assert_eq!(result[0], 1764.into());
+        assert_eq!(result[1], 1764.into());
+        assert_eq!(result[2], 1764.into());
+        assert_eq!(result[3], 1764.into());
+        assert_eq!(result[4], 1764.into());
+        assert_eq!(result[5], 1764.into());
+        assert_eq!(result[6], 1764.into());
+        assert_eq!(result[7], 1764.into());
+        assert_eq!(result[8], 1764.into());
+    }
+
+    #[test]
+    fn test_multiply_values3_different_constants() {
+        let lhs = vec![3.into(), 3.into(), 3.into()];
+        let rhs = vec![7.into(), 7.into(), 7.into()];
+        let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
+        assert_eq!(result.len(), 9);
+        assert_eq!(result[0], 21.into());
+        assert_eq!(result[1], 21.into());
+        assert_eq!(result[2], 21.into());
+        assert_eq!(result[3], 21.into());
+        assert_eq!(result[4], 21.into());
+        assert_eq!(result[5], 21.into());
+        assert_eq!(result[6], 21.into());
+        assert_eq!(result[7], 21.into());
+        assert_eq!(result[8], 21.into());
+    }
+
+    #[test]
+    fn test_multiply_values3_two_linear_polynomials() {
+        let p = Polynomial::<Scalar>::with_coefficients(vec![1.into(), 2.into()]);
+        let q = Polynomial::<Scalar>::with_coefficients(vec![3.into(), 4.into()]);
+        let lhs = vec![
+            p.evaluate_on_three_adic_domain(0, 3),
+            p.evaluate_on_three_adic_domain(1, 3),
+            p.evaluate_on_three_adic_domain(2, 3),
+        ];
+        let rhs = vec![
+            q.evaluate_on_three_adic_domain(0, 3),
+            q.evaluate_on_three_adic_domain(1, 3),
+            q.evaluate_on_three_adic_domain(2, 3),
+        ];
+        let product = p.multiply(q).unwrap();
+        let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
+        assert_eq!(result.len(), 9);
+        assert_eq!(result[0], product.evaluate_on_three_adic_domain(0, 9));
+        assert_eq!(result[1], product.evaluate_on_three_adic_domain(1, 9));
+        assert_eq!(result[2], product.evaluate_on_three_adic_domain(2, 9));
+        assert_eq!(result[3], product.evaluate_on_three_adic_domain(3, 9));
+        assert_eq!(result[4], product.evaluate_on_three_adic_domain(4, 9));
+        assert_eq!(result[5], product.evaluate_on_three_adic_domain(5, 9));
+        assert_eq!(result[6], product.evaluate_on_three_adic_domain(6, 9));
+        assert_eq!(result[7], product.evaluate_on_three_adic_domain(7, 9));
+        assert_eq!(result[8], product.evaluate_on_three_adic_domain(8, 9));
+    }
+
+    #[test]
+    fn test_multiply_values3_nine_values() {
+        let p = Polynomial::<Scalar>::with_coefficients(vec![
+            1.into(),
+            2.into(),
+            3.into(),
+            4.into(),
+            5.into(),
+            6.into(),
+            7.into(),
+            8.into(),
+            9.into(),
+        ]);
+        let q = Polynomial::<Scalar>::with_coefficients(vec![
+            10.into(),
+            11.into(),
+            12.into(),
+            13.into(),
+            14.into(),
+            15.into(),
+            16.into(),
+            17.into(),
+            18.into(),
+        ]);
+        let lhs = vec![
+            p.evaluate_on_three_adic_domain(0, 9),
+            p.evaluate_on_three_adic_domain(1, 9),
+            p.evaluate_on_three_adic_domain(2, 9),
+            p.evaluate_on_three_adic_domain(3, 9),
+            p.evaluate_on_three_adic_domain(4, 9),
+            p.evaluate_on_three_adic_domain(5, 9),
+            p.evaluate_on_three_adic_domain(6, 9),
+            p.evaluate_on_three_adic_domain(7, 9),
+            p.evaluate_on_three_adic_domain(8, 9),
+        ];
+        let rhs = vec![
+            q.evaluate_on_three_adic_domain(0, 9),
+            q.evaluate_on_three_adic_domain(1, 9),
+            q.evaluate_on_three_adic_domain(2, 9),
+            q.evaluate_on_three_adic_domain(3, 9),
+            q.evaluate_on_three_adic_domain(4, 9),
+            q.evaluate_on_three_adic_domain(5, 9),
+            q.evaluate_on_three_adic_domain(6, 9),
+            q.evaluate_on_three_adic_domain(7, 9),
+            q.evaluate_on_three_adic_domain(8, 9),
+        ];
+        let product = p.multiply(q).unwrap();
+        let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
+        assert_eq!(result.len(), 27);
+        assert_eq!(result[0], product.evaluate_on_three_adic_domain(0, 27));
+        assert_eq!(result[1], product.evaluate_on_three_adic_domain(1, 27));
+        assert_eq!(result[2], product.evaluate_on_three_adic_domain(2, 27));
+        assert_eq!(result[3], product.evaluate_on_three_adic_domain(3, 27));
+        assert_eq!(result[4], product.evaluate_on_three_adic_domain(4, 27));
+        assert_eq!(result[5], product.evaluate_on_three_adic_domain(5, 27));
+        assert_eq!(result[6], product.evaluate_on_three_adic_domain(6, 27));
+        assert_eq!(result[7], product.evaluate_on_three_adic_domain(7, 27));
+        assert_eq!(result[8], product.evaluate_on_three_adic_domain(8, 27));
+        assert_eq!(result[9], product.evaluate_on_three_adic_domain(9, 27));
+        assert_eq!(result[10], product.evaluate_on_three_adic_domain(10, 27));
+        assert_eq!(result[11], product.evaluate_on_three_adic_domain(11, 27));
+        assert_eq!(result[12], product.evaluate_on_three_adic_domain(12, 27));
+        assert_eq!(result[13], product.evaluate_on_three_adic_domain(13, 27));
+        assert_eq!(result[14], product.evaluate_on_three_adic_domain(14, 27));
+        assert_eq!(result[15], product.evaluate_on_three_adic_domain(15, 27));
+        assert_eq!(result[16], product.evaluate_on_three_adic_domain(16, 27));
+        assert_eq!(result[17], product.evaluate_on_three_adic_domain(17, 27));
+        assert_eq!(result[18], product.evaluate_on_three_adic_domain(18, 27));
+        assert_eq!(result[19], product.evaluate_on_three_adic_domain(19, 27));
+        assert_eq!(result[20], product.evaluate_on_three_adic_domain(20, 27));
+        assert_eq!(result[21], product.evaluate_on_three_adic_domain(21, 27));
+        assert_eq!(result[22], product.evaluate_on_three_adic_domain(22, 27));
+        assert_eq!(result[23], product.evaluate_on_three_adic_domain(23, 27));
+        assert_eq!(result[24], product.evaluate_on_three_adic_domain(24, 27));
+        assert_eq!(result[25], product.evaluate_on_three_adic_domain(25, 27));
+        assert_eq!(result[26], product.evaluate_on_three_adic_domain(26, 27));
+    }
+
+    #[test]
+    fn test_multiply_values3_commutative() {
+        let p = Polynomial::<Scalar>::with_coefficients(vec![1.into(), 2.into()]);
+        let q = Polynomial::<Scalar>::with_coefficients(vec![3.into(), 4.into()]);
+        let values_p = vec![
+            p.evaluate_on_three_adic_domain(0, 3),
+            p.evaluate_on_three_adic_domain(1, 3),
+            p.evaluate_on_three_adic_domain(2, 3),
+        ];
+        let values_q = vec![
+            q.evaluate_on_three_adic_domain(0, 3),
+            q.evaluate_on_three_adic_domain(1, 3),
+            q.evaluate_on_three_adic_domain(2, 3),
+        ];
+        let result_pq = Polynomial::<Scalar>::multiply_values3(values_p.clone(), values_q.clone());
+        let result_qp = Polynomial::<Scalar>::multiply_values3(values_q, values_p);
+        assert_eq!(result_pq, result_qp);
     }
 }
