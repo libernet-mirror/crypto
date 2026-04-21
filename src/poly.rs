@@ -1566,10 +1566,15 @@ mod tests {
         let values = vec![12.into(), 34.into(), 56.into(), 78.into()];
         let p = Polynomial::<Scalar>::encode2(values);
         let lde = p.clone().lde2(4);
-        assert_eq!(lde[0], p.evaluate_on_two_adic_coset(0, 4));
-        assert_eq!(lde[1], p.evaluate_on_two_adic_coset(1, 4));
-        assert_eq!(lde[2], p.evaluate_on_two_adic_coset(2, 4));
-        assert_eq!(lde[3], p.evaluate_on_two_adic_coset(3, 4));
+        assert_eq!(
+            lde,
+            vec![
+                p.evaluate_on_two_adic_coset(0, 4),
+                p.evaluate_on_two_adic_coset(1, 4),
+                p.evaluate_on_two_adic_coset(2, 4),
+                p.evaluate_on_two_adic_coset(3, 4),
+            ]
+        );
     }
 
     #[test]
@@ -1577,14 +1582,19 @@ mod tests {
         let values = vec![12.into(), 34.into(), 56.into(), 78.into()];
         let p = Polynomial::<Scalar>::encode2(values);
         let lde = p.clone().lde2(8);
-        assert_eq!(lde[0], p.evaluate_on_two_adic_coset(0, 8));
-        assert_eq!(lde[1], p.evaluate_on_two_adic_coset(1, 8));
-        assert_eq!(lde[2], p.evaluate_on_two_adic_coset(2, 8));
-        assert_eq!(lde[3], p.evaluate_on_two_adic_coset(3, 8));
-        assert_eq!(lde[4], p.evaluate_on_two_adic_coset(4, 8));
-        assert_eq!(lde[5], p.evaluate_on_two_adic_coset(5, 8));
-        assert_eq!(lde[6], p.evaluate_on_two_adic_coset(6, 8));
-        assert_eq!(lde[7], p.evaluate_on_two_adic_coset(7, 8));
+        assert_eq!(
+            lde,
+            vec![
+                p.evaluate_on_two_adic_coset(0, 8),
+                p.evaluate_on_two_adic_coset(1, 8),
+                p.evaluate_on_two_adic_coset(2, 8),
+                p.evaluate_on_two_adic_coset(3, 8),
+                p.evaluate_on_two_adic_coset(4, 8),
+                p.evaluate_on_two_adic_coset(5, 8),
+                p.evaluate_on_two_adic_coset(6, 8),
+                p.evaluate_on_two_adic_coset(7, 8),
+            ]
+        );
     }
 
     #[test]
@@ -1592,22 +1602,27 @@ mod tests {
         let values = vec![1.into(), 2.into(), 3.into(), 4.into()];
         let p = Polynomial::<Scalar>::encode2(values);
         let lde = p.clone().lde2(16);
-        assert_eq!(lde[0], p.evaluate_on_two_adic_coset(0, 16));
-        assert_eq!(lde[1], p.evaluate_on_two_adic_coset(1, 16));
-        assert_eq!(lde[2], p.evaluate_on_two_adic_coset(2, 16));
-        assert_eq!(lde[3], p.evaluate_on_two_adic_coset(3, 16));
-        assert_eq!(lde[4], p.evaluate_on_two_adic_coset(4, 16));
-        assert_eq!(lde[5], p.evaluate_on_two_adic_coset(5, 16));
-        assert_eq!(lde[6], p.evaluate_on_two_adic_coset(6, 16));
-        assert_eq!(lde[7], p.evaluate_on_two_adic_coset(7, 16));
-        assert_eq!(lde[8], p.evaluate_on_two_adic_coset(8, 16));
-        assert_eq!(lde[9], p.evaluate_on_two_adic_coset(9, 16));
-        assert_eq!(lde[10], p.evaluate_on_two_adic_coset(10, 16));
-        assert_eq!(lde[11], p.evaluate_on_two_adic_coset(11, 16));
-        assert_eq!(lde[12], p.evaluate_on_two_adic_coset(12, 16));
-        assert_eq!(lde[13], p.evaluate_on_two_adic_coset(13, 16));
-        assert_eq!(lde[14], p.evaluate_on_two_adic_coset(14, 16));
-        assert_eq!(lde[15], p.evaluate_on_two_adic_coset(15, 16));
+        assert_eq!(
+            lde,
+            vec![
+                p.evaluate_on_two_adic_coset(0, 16),
+                p.evaluate_on_two_adic_coset(1, 16),
+                p.evaluate_on_two_adic_coset(2, 16),
+                p.evaluate_on_two_adic_coset(3, 16),
+                p.evaluate_on_two_adic_coset(4, 16),
+                p.evaluate_on_two_adic_coset(5, 16),
+                p.evaluate_on_two_adic_coset(6, 16),
+                p.evaluate_on_two_adic_coset(7, 16),
+                p.evaluate_on_two_adic_coset(8, 16),
+                p.evaluate_on_two_adic_coset(9, 16),
+                p.evaluate_on_two_adic_coset(10, 16),
+                p.evaluate_on_two_adic_coset(11, 16),
+                p.evaluate_on_two_adic_coset(12, 16),
+                p.evaluate_on_two_adic_coset(13, 16),
+                p.evaluate_on_two_adic_coset(14, 16),
+                p.evaluate_on_two_adic_coset(15, 16),
+            ]
+        );
     }
 
     #[test]
@@ -1616,10 +1631,15 @@ mod tests {
         let p = Polynomial::<Scalar>::encode2(values);
         assert_eq!(p.len(), 1);
         let lde = p.clone().lde2(4);
-        assert_eq!(lde[0], p.evaluate_on_two_adic_coset(0, 4));
-        assert_eq!(lde[1], p.evaluate_on_two_adic_coset(1, 4));
-        assert_eq!(lde[2], p.evaluate_on_two_adic_coset(2, 4));
-        assert_eq!(lde[3], p.evaluate_on_two_adic_coset(3, 4));
+        assert_eq!(
+            lde,
+            vec![
+                p.evaluate_on_two_adic_coset(0, 4),
+                p.evaluate_on_two_adic_coset(1, 4),
+                p.evaluate_on_two_adic_coset(2, 4),
+                p.evaluate_on_two_adic_coset(3, 4),
+            ]
+        );
     }
 
     #[test]
@@ -1634,15 +1654,20 @@ mod tests {
         let values = vec![12.into(), 34.into(), 56.into()];
         let p = Polynomial::<Scalar>::encode3(values);
         let lde = p.clone().lde3(9);
-        assert_eq!(lde[0], p.evaluate_on_three_adic_domain(0, 9));
-        assert_eq!(lde[1], p.evaluate_on_three_adic_domain(1, 9));
-        assert_eq!(lde[2], p.evaluate_on_three_adic_domain(2, 9));
-        assert_eq!(lde[3], p.evaluate_on_three_adic_domain(3, 9));
-        assert_eq!(lde[4], p.evaluate_on_three_adic_domain(4, 9));
-        assert_eq!(lde[5], p.evaluate_on_three_adic_domain(5, 9));
-        assert_eq!(lde[6], p.evaluate_on_three_adic_domain(6, 9));
-        assert_eq!(lde[7], p.evaluate_on_three_adic_domain(7, 9));
-        assert_eq!(lde[8], p.evaluate_on_three_adic_domain(8, 9));
+        assert_eq!(
+            lde,
+            vec![
+                p.evaluate_on_three_adic_domain(0, 9),
+                p.evaluate_on_three_adic_domain(1, 9),
+                p.evaluate_on_three_adic_domain(2, 9),
+                p.evaluate_on_three_adic_domain(3, 9),
+                p.evaluate_on_three_adic_domain(4, 9),
+                p.evaluate_on_three_adic_domain(5, 9),
+                p.evaluate_on_three_adic_domain(6, 9),
+                p.evaluate_on_three_adic_domain(7, 9),
+                p.evaluate_on_three_adic_domain(8, 9),
+            ]
+        );
     }
 
     #[test]
@@ -1650,33 +1675,38 @@ mod tests {
         let values = vec![1.into(), 2.into(), 3.into()];
         let p = Polynomial::<Scalar>::encode3(values);
         let lde = p.clone().lde3(27);
-        assert_eq!(lde[0], p.evaluate_on_three_adic_domain(0, 27));
-        assert_eq!(lde[1], p.evaluate_on_three_adic_domain(1, 27));
-        assert_eq!(lde[2], p.evaluate_on_three_adic_domain(2, 27));
-        assert_eq!(lde[3], p.evaluate_on_three_adic_domain(3, 27));
-        assert_eq!(lde[4], p.evaluate_on_three_adic_domain(4, 27));
-        assert_eq!(lde[5], p.evaluate_on_three_adic_domain(5, 27));
-        assert_eq!(lde[6], p.evaluate_on_three_adic_domain(6, 27));
-        assert_eq!(lde[7], p.evaluate_on_three_adic_domain(7, 27));
-        assert_eq!(lde[8], p.evaluate_on_three_adic_domain(8, 27));
-        assert_eq!(lde[9], p.evaluate_on_three_adic_domain(9, 27));
-        assert_eq!(lde[10], p.evaluate_on_three_adic_domain(10, 27));
-        assert_eq!(lde[11], p.evaluate_on_three_adic_domain(11, 27));
-        assert_eq!(lde[12], p.evaluate_on_three_adic_domain(12, 27));
-        assert_eq!(lde[13], p.evaluate_on_three_adic_domain(13, 27));
-        assert_eq!(lde[14], p.evaluate_on_three_adic_domain(14, 27));
-        assert_eq!(lde[15], p.evaluate_on_three_adic_domain(15, 27));
-        assert_eq!(lde[16], p.evaluate_on_three_adic_domain(16, 27));
-        assert_eq!(lde[17], p.evaluate_on_three_adic_domain(17, 27));
-        assert_eq!(lde[18], p.evaluate_on_three_adic_domain(18, 27));
-        assert_eq!(lde[19], p.evaluate_on_three_adic_domain(19, 27));
-        assert_eq!(lde[20], p.evaluate_on_three_adic_domain(20, 27));
-        assert_eq!(lde[21], p.evaluate_on_three_adic_domain(21, 27));
-        assert_eq!(lde[22], p.evaluate_on_three_adic_domain(22, 27));
-        assert_eq!(lde[23], p.evaluate_on_three_adic_domain(23, 27));
-        assert_eq!(lde[24], p.evaluate_on_three_adic_domain(24, 27));
-        assert_eq!(lde[25], p.evaluate_on_three_adic_domain(25, 27));
-        assert_eq!(lde[26], p.evaluate_on_three_adic_domain(26, 27));
+        assert_eq!(
+            lde,
+            vec![
+                p.evaluate_on_three_adic_domain(0, 27),
+                p.evaluate_on_three_adic_domain(1, 27),
+                p.evaluate_on_three_adic_domain(2, 27),
+                p.evaluate_on_three_adic_domain(3, 27),
+                p.evaluate_on_three_adic_domain(4, 27),
+                p.evaluate_on_three_adic_domain(5, 27),
+                p.evaluate_on_three_adic_domain(6, 27),
+                p.evaluate_on_three_adic_domain(7, 27),
+                p.evaluate_on_three_adic_domain(8, 27),
+                p.evaluate_on_three_adic_domain(9, 27),
+                p.evaluate_on_three_adic_domain(10, 27),
+                p.evaluate_on_three_adic_domain(11, 27),
+                p.evaluate_on_three_adic_domain(12, 27),
+                p.evaluate_on_three_adic_domain(13, 27),
+                p.evaluate_on_three_adic_domain(14, 27),
+                p.evaluate_on_three_adic_domain(15, 27),
+                p.evaluate_on_three_adic_domain(16, 27),
+                p.evaluate_on_three_adic_domain(17, 27),
+                p.evaluate_on_three_adic_domain(18, 27),
+                p.evaluate_on_three_adic_domain(19, 27),
+                p.evaluate_on_three_adic_domain(20, 27),
+                p.evaluate_on_three_adic_domain(21, 27),
+                p.evaluate_on_three_adic_domain(22, 27),
+                p.evaluate_on_three_adic_domain(23, 27),
+                p.evaluate_on_three_adic_domain(24, 27),
+                p.evaluate_on_three_adic_domain(25, 27),
+                p.evaluate_on_three_adic_domain(26, 27),
+            ]
+        );
     }
 
     #[test]
@@ -1684,33 +1714,38 @@ mod tests {
         let values = (1u64..=9).map(Scalar::from).collect();
         let p = Polynomial::<Scalar>::encode3(values);
         let lde = p.clone().lde3(27);
-        assert_eq!(lde[0], p.evaluate_on_three_adic_domain(0, 27));
-        assert_eq!(lde[1], p.evaluate_on_three_adic_domain(1, 27));
-        assert_eq!(lde[2], p.evaluate_on_three_adic_domain(2, 27));
-        assert_eq!(lde[3], p.evaluate_on_three_adic_domain(3, 27));
-        assert_eq!(lde[4], p.evaluate_on_three_adic_domain(4, 27));
-        assert_eq!(lde[5], p.evaluate_on_three_adic_domain(5, 27));
-        assert_eq!(lde[6], p.evaluate_on_three_adic_domain(6, 27));
-        assert_eq!(lde[7], p.evaluate_on_three_adic_domain(7, 27));
-        assert_eq!(lde[8], p.evaluate_on_three_adic_domain(8, 27));
-        assert_eq!(lde[9], p.evaluate_on_three_adic_domain(9, 27));
-        assert_eq!(lde[10], p.evaluate_on_three_adic_domain(10, 27));
-        assert_eq!(lde[11], p.evaluate_on_three_adic_domain(11, 27));
-        assert_eq!(lde[12], p.evaluate_on_three_adic_domain(12, 27));
-        assert_eq!(lde[13], p.evaluate_on_three_adic_domain(13, 27));
-        assert_eq!(lde[14], p.evaluate_on_three_adic_domain(14, 27));
-        assert_eq!(lde[15], p.evaluate_on_three_adic_domain(15, 27));
-        assert_eq!(lde[16], p.evaluate_on_three_adic_domain(16, 27));
-        assert_eq!(lde[17], p.evaluate_on_three_adic_domain(17, 27));
-        assert_eq!(lde[18], p.evaluate_on_three_adic_domain(18, 27));
-        assert_eq!(lde[19], p.evaluate_on_three_adic_domain(19, 27));
-        assert_eq!(lde[20], p.evaluate_on_three_adic_domain(20, 27));
-        assert_eq!(lde[21], p.evaluate_on_three_adic_domain(21, 27));
-        assert_eq!(lde[22], p.evaluate_on_three_adic_domain(22, 27));
-        assert_eq!(lde[23], p.evaluate_on_three_adic_domain(23, 27));
-        assert_eq!(lde[24], p.evaluate_on_three_adic_domain(24, 27));
-        assert_eq!(lde[25], p.evaluate_on_three_adic_domain(25, 27));
-        assert_eq!(lde[26], p.evaluate_on_three_adic_domain(26, 27));
+        assert_eq!(
+            lde,
+            vec![
+                p.evaluate_on_three_adic_domain(0, 27),
+                p.evaluate_on_three_adic_domain(1, 27),
+                p.evaluate_on_three_adic_domain(2, 27),
+                p.evaluate_on_three_adic_domain(3, 27),
+                p.evaluate_on_three_adic_domain(4, 27),
+                p.evaluate_on_three_adic_domain(5, 27),
+                p.evaluate_on_three_adic_domain(6, 27),
+                p.evaluate_on_three_adic_domain(7, 27),
+                p.evaluate_on_three_adic_domain(8, 27),
+                p.evaluate_on_three_adic_domain(9, 27),
+                p.evaluate_on_three_adic_domain(10, 27),
+                p.evaluate_on_three_adic_domain(11, 27),
+                p.evaluate_on_three_adic_domain(12, 27),
+                p.evaluate_on_three_adic_domain(13, 27),
+                p.evaluate_on_three_adic_domain(14, 27),
+                p.evaluate_on_three_adic_domain(15, 27),
+                p.evaluate_on_three_adic_domain(16, 27),
+                p.evaluate_on_three_adic_domain(17, 27),
+                p.evaluate_on_three_adic_domain(18, 27),
+                p.evaluate_on_three_adic_domain(19, 27),
+                p.evaluate_on_three_adic_domain(20, 27),
+                p.evaluate_on_three_adic_domain(21, 27),
+                p.evaluate_on_three_adic_domain(22, 27),
+                p.evaluate_on_three_adic_domain(23, 27),
+                p.evaluate_on_three_adic_domain(24, 27),
+                p.evaluate_on_three_adic_domain(25, 27),
+                p.evaluate_on_three_adic_domain(26, 27),
+            ]
+        );
     }
 
     #[test]
@@ -1719,15 +1754,20 @@ mod tests {
         let p = Polynomial::<Scalar>::encode3(values);
         assert_eq!(p.len(), 1);
         let lde = p.clone().lde3(9);
-        assert_eq!(lde[0], p.evaluate_on_three_adic_domain(0, 9));
-        assert_eq!(lde[1], p.evaluate_on_three_adic_domain(1, 9));
-        assert_eq!(lde[2], p.evaluate_on_three_adic_domain(2, 9));
-        assert_eq!(lde[3], p.evaluate_on_three_adic_domain(3, 9));
-        assert_eq!(lde[4], p.evaluate_on_three_adic_domain(4, 9));
-        assert_eq!(lde[5], p.evaluate_on_three_adic_domain(5, 9));
-        assert_eq!(lde[6], p.evaluate_on_three_adic_domain(6, 9));
-        assert_eq!(lde[7], p.evaluate_on_three_adic_domain(7, 9));
-        assert_eq!(lde[8], p.evaluate_on_three_adic_domain(8, 9));
+        assert_eq!(
+            lde,
+            vec![
+                p.evaluate_on_three_adic_domain(0, 9),
+                p.evaluate_on_three_adic_domain(1, 9),
+                p.evaluate_on_three_adic_domain(2, 9),
+                p.evaluate_on_three_adic_domain(3, 9),
+                p.evaluate_on_three_adic_domain(4, 9),
+                p.evaluate_on_three_adic_domain(5, 9),
+                p.evaluate_on_three_adic_domain(6, 9),
+                p.evaluate_on_three_adic_domain(7, 9),
+                p.evaluate_on_three_adic_domain(8, 9),
+            ]
+        );
     }
 
     #[test]
@@ -1735,11 +1775,10 @@ mod tests {
         let lhs = vec![42.into(), 42.into()];
         let rhs = vec![42.into(), 42.into()];
         let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
-        assert_eq!(result.len(), 4);
-        assert_eq!(result[0], 1764.into());
-        assert_eq!(result[1], 1764.into());
-        assert_eq!(result[2], 1764.into());
-        assert_eq!(result[3], 1764.into());
+        assert_eq!(
+            result,
+            vec![1764.into(), 1764.into(), 1764.into(), 1764.into()]
+        );
     }
 
     #[test]
@@ -1747,11 +1786,7 @@ mod tests {
         let lhs = vec![3.into(), 3.into()];
         let rhs = vec![7.into(), 7.into()];
         let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
-        assert_eq!(result.len(), 4);
-        assert_eq!(result[0], 21.into());
-        assert_eq!(result[1], 21.into());
-        assert_eq!(result[2], 21.into());
-        assert_eq!(result[3], 21.into());
+        assert_eq!(result, vec![21.into(), 21.into(), 21.into(), 21.into()]);
     }
 
     #[test]
@@ -1768,11 +1803,15 @@ mod tests {
         ];
         let product = p.multiply(q).unwrap();
         let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
-        assert_eq!(result.len(), 4);
-        assert_eq!(result[0], product.evaluate_on_two_adic_domain(0, 4));
-        assert_eq!(result[1], product.evaluate_on_two_adic_domain(1, 4));
-        assert_eq!(result[2], product.evaluate_on_two_adic_domain(2, 4));
-        assert_eq!(result[3], product.evaluate_on_two_adic_domain(3, 4));
+        assert_eq!(
+            result,
+            vec![
+                product.evaluate_on_two_adic_domain(0, 4),
+                product.evaluate_on_two_adic_domain(1, 4),
+                product.evaluate_on_two_adic_domain(2, 4),
+                product.evaluate_on_two_adic_domain(3, 4),
+            ]
+        );
     }
 
     #[test]
@@ -1795,15 +1834,19 @@ mod tests {
         ];
         let product = p.multiply(q).unwrap();
         let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
-        assert_eq!(result.len(), 8);
-        assert_eq!(result[0], product.evaluate_on_two_adic_domain(0, 8));
-        assert_eq!(result[1], product.evaluate_on_two_adic_domain(1, 8));
-        assert_eq!(result[2], product.evaluate_on_two_adic_domain(2, 8));
-        assert_eq!(result[3], product.evaluate_on_two_adic_domain(3, 8));
-        assert_eq!(result[4], product.evaluate_on_two_adic_domain(4, 8));
-        assert_eq!(result[5], product.evaluate_on_two_adic_domain(5, 8));
-        assert_eq!(result[6], product.evaluate_on_two_adic_domain(6, 8));
-        assert_eq!(result[7], product.evaluate_on_two_adic_domain(7, 8));
+        assert_eq!(
+            result,
+            vec![
+                product.evaluate_on_two_adic_domain(0, 8),
+                product.evaluate_on_two_adic_domain(1, 8),
+                product.evaluate_on_two_adic_domain(2, 8),
+                product.evaluate_on_two_adic_domain(3, 8),
+                product.evaluate_on_two_adic_domain(4, 8),
+                product.evaluate_on_two_adic_domain(5, 8),
+                product.evaluate_on_two_adic_domain(6, 8),
+                product.evaluate_on_two_adic_domain(7, 8),
+            ]
+        );
     }
 
     #[test]
@@ -1828,16 +1871,20 @@ mod tests {
         let lhs = vec![42.into(), 42.into(), 42.into()];
         let rhs = vec![42.into(), 42.into(), 42.into()];
         let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
-        assert_eq!(result.len(), 9);
-        assert_eq!(result[0], 1764.into());
-        assert_eq!(result[1], 1764.into());
-        assert_eq!(result[2], 1764.into());
-        assert_eq!(result[3], 1764.into());
-        assert_eq!(result[4], 1764.into());
-        assert_eq!(result[5], 1764.into());
-        assert_eq!(result[6], 1764.into());
-        assert_eq!(result[7], 1764.into());
-        assert_eq!(result[8], 1764.into());
+        assert_eq!(
+            result,
+            vec![
+                1764.into(),
+                1764.into(),
+                1764.into(),
+                1764.into(),
+                1764.into(),
+                1764.into(),
+                1764.into(),
+                1764.into(),
+                1764.into(),
+            ]
+        );
     }
 
     #[test]
@@ -1845,16 +1892,20 @@ mod tests {
         let lhs = vec![3.into(), 3.into(), 3.into()];
         let rhs = vec![7.into(), 7.into(), 7.into()];
         let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
-        assert_eq!(result.len(), 9);
-        assert_eq!(result[0], 21.into());
-        assert_eq!(result[1], 21.into());
-        assert_eq!(result[2], 21.into());
-        assert_eq!(result[3], 21.into());
-        assert_eq!(result[4], 21.into());
-        assert_eq!(result[5], 21.into());
-        assert_eq!(result[6], 21.into());
-        assert_eq!(result[7], 21.into());
-        assert_eq!(result[8], 21.into());
+        assert_eq!(
+            result,
+            vec![
+                21.into(),
+                21.into(),
+                21.into(),
+                21.into(),
+                21.into(),
+                21.into(),
+                21.into(),
+                21.into(),
+                21.into(),
+            ]
+        );
     }
 
     #[test]
@@ -1873,16 +1924,20 @@ mod tests {
         ];
         let product = p.multiply(q).unwrap();
         let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
-        assert_eq!(result.len(), 9);
-        assert_eq!(result[0], product.evaluate_on_three_adic_domain(0, 9));
-        assert_eq!(result[1], product.evaluate_on_three_adic_domain(1, 9));
-        assert_eq!(result[2], product.evaluate_on_three_adic_domain(2, 9));
-        assert_eq!(result[3], product.evaluate_on_three_adic_domain(3, 9));
-        assert_eq!(result[4], product.evaluate_on_three_adic_domain(4, 9));
-        assert_eq!(result[5], product.evaluate_on_three_adic_domain(5, 9));
-        assert_eq!(result[6], product.evaluate_on_three_adic_domain(6, 9));
-        assert_eq!(result[7], product.evaluate_on_three_adic_domain(7, 9));
-        assert_eq!(result[8], product.evaluate_on_three_adic_domain(8, 9));
+        assert_eq!(
+            result,
+            vec![
+                product.evaluate_on_three_adic_domain(0, 9),
+                product.evaluate_on_three_adic_domain(1, 9),
+                product.evaluate_on_three_adic_domain(2, 9),
+                product.evaluate_on_three_adic_domain(3, 9),
+                product.evaluate_on_three_adic_domain(4, 9),
+                product.evaluate_on_three_adic_domain(5, 9),
+                product.evaluate_on_three_adic_domain(6, 9),
+                product.evaluate_on_three_adic_domain(7, 9),
+                product.evaluate_on_three_adic_domain(8, 9),
+            ]
+        );
     }
 
     #[test]
@@ -1933,34 +1988,38 @@ mod tests {
         ];
         let product = p.multiply(q).unwrap();
         let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
-        assert_eq!(result.len(), 27);
-        assert_eq!(result[0], product.evaluate_on_three_adic_domain(0, 27));
-        assert_eq!(result[1], product.evaluate_on_three_adic_domain(1, 27));
-        assert_eq!(result[2], product.evaluate_on_three_adic_domain(2, 27));
-        assert_eq!(result[3], product.evaluate_on_three_adic_domain(3, 27));
-        assert_eq!(result[4], product.evaluate_on_three_adic_domain(4, 27));
-        assert_eq!(result[5], product.evaluate_on_three_adic_domain(5, 27));
-        assert_eq!(result[6], product.evaluate_on_three_adic_domain(6, 27));
-        assert_eq!(result[7], product.evaluate_on_three_adic_domain(7, 27));
-        assert_eq!(result[8], product.evaluate_on_three_adic_domain(8, 27));
-        assert_eq!(result[9], product.evaluate_on_three_adic_domain(9, 27));
-        assert_eq!(result[10], product.evaluate_on_three_adic_domain(10, 27));
-        assert_eq!(result[11], product.evaluate_on_three_adic_domain(11, 27));
-        assert_eq!(result[12], product.evaluate_on_three_adic_domain(12, 27));
-        assert_eq!(result[13], product.evaluate_on_three_adic_domain(13, 27));
-        assert_eq!(result[14], product.evaluate_on_three_adic_domain(14, 27));
-        assert_eq!(result[15], product.evaluate_on_three_adic_domain(15, 27));
-        assert_eq!(result[16], product.evaluate_on_three_adic_domain(16, 27));
-        assert_eq!(result[17], product.evaluate_on_three_adic_domain(17, 27));
-        assert_eq!(result[18], product.evaluate_on_three_adic_domain(18, 27));
-        assert_eq!(result[19], product.evaluate_on_three_adic_domain(19, 27));
-        assert_eq!(result[20], product.evaluate_on_three_adic_domain(20, 27));
-        assert_eq!(result[21], product.evaluate_on_three_adic_domain(21, 27));
-        assert_eq!(result[22], product.evaluate_on_three_adic_domain(22, 27));
-        assert_eq!(result[23], product.evaluate_on_three_adic_domain(23, 27));
-        assert_eq!(result[24], product.evaluate_on_three_adic_domain(24, 27));
-        assert_eq!(result[25], product.evaluate_on_three_adic_domain(25, 27));
-        assert_eq!(result[26], product.evaluate_on_three_adic_domain(26, 27));
+        assert_eq!(
+            result,
+            vec![
+                product.evaluate_on_three_adic_domain(0, 27),
+                product.evaluate_on_three_adic_domain(1, 27),
+                product.evaluate_on_three_adic_domain(2, 27),
+                product.evaluate_on_three_adic_domain(3, 27),
+                product.evaluate_on_three_adic_domain(4, 27),
+                product.evaluate_on_three_adic_domain(5, 27),
+                product.evaluate_on_three_adic_domain(6, 27),
+                product.evaluate_on_three_adic_domain(7, 27),
+                product.evaluate_on_three_adic_domain(8, 27),
+                product.evaluate_on_three_adic_domain(9, 27),
+                product.evaluate_on_three_adic_domain(10, 27),
+                product.evaluate_on_three_adic_domain(11, 27),
+                product.evaluate_on_three_adic_domain(12, 27),
+                product.evaluate_on_three_adic_domain(13, 27),
+                product.evaluate_on_three_adic_domain(14, 27),
+                product.evaluate_on_three_adic_domain(15, 27),
+                product.evaluate_on_three_adic_domain(16, 27),
+                product.evaluate_on_three_adic_domain(17, 27),
+                product.evaluate_on_three_adic_domain(18, 27),
+                product.evaluate_on_three_adic_domain(19, 27),
+                product.evaluate_on_three_adic_domain(20, 27),
+                product.evaluate_on_three_adic_domain(21, 27),
+                product.evaluate_on_three_adic_domain(22, 27),
+                product.evaluate_on_three_adic_domain(23, 27),
+                product.evaluate_on_three_adic_domain(24, 27),
+                product.evaluate_on_three_adic_domain(25, 27),
+                product.evaluate_on_three_adic_domain(26, 27),
+            ]
+        );
     }
 
     #[test]
