@@ -12,66 +12,9 @@ pub use fri2::{Hash, Poseidon2Hash, Sha3Hash};
 /// Target security level in bits.
 pub const LAMBDA: u32 = 128;
 
-/// Stores the FRI commitments to both the source LDE and the DEEP-FRI quotient LDE, together with
-/// the parameters needed by the verifier.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Commitment {
-    /// FRI commitment of the source polynomial's LDE. Soundness implies
-    /// `deg(source) < degree_bound`.
-    source: fri2::Commitment,
-    /// FRI commitment of the DEEP-FRI quotient polynomial's LDE.
-    ///
-    /// Combined with the algebraic check in `verify`, this implies
-    /// `deg(quotient) < degree_bound - 1`.
-    quotient: fri2::Commitment,
-    /// The degree bound on the source polynomial, i.e. `deg(source) < degree_bound`. Equal to the
-    /// padded polynomial length.
-    degree_bound: usize,
-    /// Log2 of the blowup factor. The LDE domain has size `degree_bound * 2^blowup_exp`.
-    blowup_exp: u32,
-}
-
-impl Commitment {
-    /// Returns `d`, the degree bound: `deg(source) < d`.
-    pub fn degree_bound(&self) -> usize {
-        self.degree_bound
-    }
-
-    /// Returns the LDE domain size (`degree_bound * 2^blowup_exp`).
-    pub fn extended_degree_bound(&self) -> usize {
-        self.degree_bound << self.blowup_exp
-    }
-
-    /// Returns the number of query positions needed to achieve `LAMBDA` bits of soundness.
-    ///
-    /// Each query reduces the soundness error by a factor of `2^blowup_exp` (the blowup), so the
-    /// required count is `ceil(LAMBDA / blowup_exp)`.
-    pub fn num_queries(&self) -> usize {
-        LAMBDA.div_ceil(self.blowup_exp) as usize
-    }
-
-    /// Derives the random query indices for this commitment via Fiat-Shamir.
-    pub fn get_query_indices<H: Hash>(&self) -> Vec<usize> {
-        static DST: LazyLock<Scalar> =
-            LazyLock::new(|| utils::hash_to_scalar(b"libernet/pcs/query"));
-        let mut inputs =
-            Vec::with_capacity(1 + self.source.roots().len() + self.quotient.roots().len());
-        inputs.push(*DST);
-        inputs.extend_from_slice(self.source.roots());
-        inputs.extend_from_slice(self.quotient.roots());
-        let seed = H::hash_many(&inputs);
-        (0..self.num_queries() as u64)
-            .map(|i| {
-                let hash = H::hash(seed, i.into());
-                hash.to_le_u64()[0] as usize % self.extended_degree_bound()
-            })
-            .collect()
-    }
-}
-
 /// Commits to a batch of polynomials for efficient batch opening.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BatchCommitment {
+pub struct Commitment {
     /// FRI commitments of each source polynomial's LDE.
     sources: Vec<fri2::Commitment>,
     /// FRI commitment of the combined DEEP-FRI quotient polynomial's LDE.
@@ -85,7 +28,24 @@ pub struct BatchCommitment {
     blowup_exp: u32,
 }
 
-impl BatchCommitment {
+impl Commitment {
+    /// Constructs a DEEP-FRI `Commitment` from FRI commitments for a set of source polynomials, a
+    /// FRI commitment for the combined quotient polynomial, a degree bound parameter for the source
+    /// polynomials, and a blowup factor expressed in base-2 logarithm form.
+    pub fn new(
+        sources: Vec<fri2::Commitment>,
+        quotient: fri2::Commitment,
+        degree_bound: usize,
+        blowup_exp: u32,
+    ) -> Self {
+        Self {
+            sources,
+            quotient,
+            degree_bound,
+            blowup_exp,
+        }
+    }
+
     /// Returns the degree bound: `max(deg(f_j)) < degree_bound`.
     pub fn degree_bound(&self) -> usize {
         self.degree_bound
@@ -165,7 +125,7 @@ impl<H: Hash> Proof<H> {
     ///    commitment, and the combined quotient proof is verified against the quotient commitment.
     /// 2. **Algebraic consistency**: at every query index `i`, the DEEP-FRI relation
     ///    `q(x_i) = Sum(r^j * (f_j(x_i) - y_j) / (x_i - z_j))` is checked.
-    pub fn verify(&self, commitment: &BatchCommitment) -> Result<()> {
+    pub fn verify(&self, commitment: &Commitment) -> Result<()> {
         let k = commitment.sources.len();
         if k != self.len() {
             return Err(anyhow!("expected {k} evaluations, got {}", self.y.len()));
@@ -324,8 +284,8 @@ impl<H: Hash> Prover<H> {
     }
 
     /// Returns the batch PCS commitment.
-    pub fn commit(&self) -> BatchCommitment {
-        BatchCommitment {
+    pub fn commit(&self) -> Commitment {
+        Commitment {
             sources: self.source_fris.iter().map(|f| f.commit()).collect(),
             quotient: self.quotient_fri.commit(),
             degree_bound: self.n,
@@ -337,7 +297,7 @@ impl<H: Hash> Prover<H> {
     ///
     /// Query indices are derived from the combined commitment via Fiat-Shamir, so `commitment` must
     /// be the one produced by `self.commit()`.
-    pub fn prove(&self, commitment: &BatchCommitment) -> Proof<H> {
+    pub fn prove(&self, commitment: &Commitment) -> Proof<H> {
         let indices = commitment.get_query_indices::<H>();
         let source_proofs = self
             .source_fris

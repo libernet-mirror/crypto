@@ -1,9 +1,13 @@
 use crate::bluesky::Scalar;
+use crate::fri2;
 use crate::pcs;
 use crate::poly;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use ff::Field;
 use std::collections::{BTreeMap, BTreeSet, btree_map};
+
+/// Re-export the available hash backends.
+pub use pcs::{Hash, Poseidon2Hash, Sha3Hash};
 
 type Polynomial = poly::Polynomial<Scalar>;
 
@@ -690,11 +694,13 @@ impl CircuitBuilder {
 
 #[derive(Debug, Clone)]
 pub struct Proof<H: pcs::Hash> {
-    witness_commitments: [pcs::Commitment; 3],
+    degree_bound: usize,
+    blowup_exp: u32,
+    witness_commitments: [fri2::Commitment; 3],
     public_inputs: BTreeMap<Wire, Scalar>,
-    permutation_accumulator_commitment: pcs::Commitment,
-    quotient_commitment: pcs::Commitment,
-    proof: pcs::Proof<H>,
+    permutation_accumulator_commitment: fri2::Commitment,
+    quotient_commitment: fri2::Commitment,
+    inner_proof: pcs::Proof<H>,
 }
 
 #[derive(Debug, Clone)]
@@ -716,20 +722,52 @@ impl Circuit {
         self.size
     }
 
-    // TODO
+    pub fn prove<H: Hash>(&self, witness: Witness, blowup_exp: u32) -> Result<Proof<H>> {
+        if witness.size() != self.size {
+            return Err(anyhow!(
+                "incorrect witness size (got {}, want {})",
+                witness.size(),
+                self.size
+            ));
+        }
+
+        // TODO
+        todo!()
+    }
+
+    pub fn verify<H: Hash>(&self, proof: Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
+        let mut witness_commitments = proof.witness_commitments.to_vec();
+        for (wire, _) in &proof.public_inputs {
+            match wire {
+                Wire::LeftIn(_) => witness_commitments.push(proof.witness_commitments[0].clone()),
+                Wire::RightIn(_) => witness_commitments.push(proof.witness_commitments[1].clone()),
+                Wire::Out(_) => witness_commitments.push(proof.witness_commitments[2].clone()),
+            }
+        }
+        let commitment = pcs::Commitment::new(
+            witness_commitments,
+            proof.quotient_commitment,
+            proof.degree_bound,
+            proof.blowup_exp,
+        );
+        proof.inner_proof.verify(&commitment)?;
+
+        // TODO
+        todo!()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct CompressedCircuit {
     original_size: usize,
-    ql: pcs::Commitment,
-    qr: pcs::Commitment,
-    qo: pcs::Commitment,
-    qm: pcs::Commitment,
-    qc: pcs::Commitment,
-    sl: pcs::Commitment,
-    sr: pcs::Commitment,
-    so: pcs::Commitment,
+    ql: fri2::Commitment,
+    qr: fri2::Commitment,
+    qo: fri2::Commitment,
+    qm: fri2::Commitment,
+    qc: fri2::Commitment,
+    sl: fri2::Commitment,
+    sr: fri2::Commitment,
+    so: fri2::Commitment,
 }
 
 impl CompressedCircuit {
@@ -737,7 +775,10 @@ impl CompressedCircuit {
         self.original_size
     }
 
-    // TODO
+    pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
+        // TODO
+        todo!()
+    }
 }
 
 #[cfg(test)]
