@@ -390,65 +390,26 @@ pub struct Proof<H: pcs::Hash> {
     public_inputs: BTreeMap<Wire, Scalar>,
     permutation_accumulator_commitment: pcs::Commitment,
     quotient_commitment: pcs::Commitment,
-    proof: pcs::BatchProof<H>,
+    proof: pcs::Proof<H>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Circuit {
     size: usize,
     public_inputs: BTreeSet<Wire>,
-    ql: Polynomial,
-    qr: Polynomial,
-    qo: Polynomial,
-    qm: Polynomial,
-    qc: Polynomial,
-    ql_c: pcs::Commitment,
-    qr_c: pcs::Commitment,
-    qo_c: pcs::Commitment,
-    qm_c: pcs::Commitment,
-    qc_c: pcs::Commitment,
-    sl_values: Vec<Scalar>,
-    sr_values: Vec<Scalar>,
-    so_values: Vec<Scalar>,
-    sl: Polynomial,
-    sr: Polynomial,
-    so: Polynomial,
-    sl_c: pcs::Commitment,
-    sr_c: pcs::Commitment,
-    so_c: pcs::Commitment,
+    ql: Vec<Scalar>,
+    qr: Vec<Scalar>,
+    qo: Vec<Scalar>,
+    qm: Vec<Scalar>,
+    qc: Vec<Scalar>,
+    sl: Vec<Scalar>,
+    sr: Vec<Scalar>,
+    so: Vec<Scalar>,
 }
 
 impl Circuit {
     pub fn size(&self) -> usize {
         self.size
-    }
-
-    pub fn compress(&self) -> CompressedCircuit {
-        CompressedCircuit {
-            original_size: self.size,
-            ql: self.ql_c.clone(),
-            qr: self.qr_c.clone(),
-            qo: self.qo_c.clone(),
-            qm: self.qm_c.clone(),
-            qc: self.qc_c.clone(),
-            sl: self.sl_c.clone(),
-            sr: self.sr_c.clone(),
-            so: self.so_c.clone(),
-        }
-    }
-
-    pub fn to_compressed(self) -> CompressedCircuit {
-        CompressedCircuit {
-            original_size: self.size,
-            ql: self.ql_c,
-            qr: self.qr_c,
-            qo: self.qo_c,
-            qm: self.qm_c,
-            qc: self.qc_c,
-            sl: self.sl_c,
-            sr: self.sr_c,
-            so: self.so_c,
-        }
     }
 
     // TODO
