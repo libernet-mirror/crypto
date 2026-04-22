@@ -2,6 +2,7 @@ use crate::bluesky::Scalar;
 use crate::fri2;
 use crate::pcs;
 use crate::poly;
+use crate::utils;
 use anyhow::{Result, anyhow};
 use ff::Field;
 use std::collections::{BTreeMap, BTreeSet, btree_map};
@@ -731,6 +732,51 @@ impl Circuit {
             ));
         }
 
+        let xi = H::hash_many(&[
+            utils::hash_to_scalar(b"libernet/plonk/challenge"),
+            H::hash_many(witness.left.as_slice()),
+            H::hash_many(witness.right.as_slice()),
+            H::hash_many(witness.out.as_slice()),
+        ]);
+
+        let random = H::hash(xi, 0.into());
+        let alpha = H::hash(xi, 1.into());
+        let beta = H::hash(xi, 2.into());
+        let gamma = H::hash(xi, 3.into());
+
+        let prover = pcs::Prover::<H>::from_values(
+            [
+                witness.left.clone(),
+                witness.right.clone(),
+                witness.out.clone(),
+            ]
+            .into_iter()
+            .chain(self.public_inputs.iter().map(|&wire| match wire {
+                Wire::LeftIn(_) => witness.left.clone(),
+                Wire::RightIn(_) => witness.right.clone(),
+                Wire::Out(_) => witness.out.clone(),
+            }))
+            .collect(),
+            blowup_exp,
+            [xi, xi, xi]
+                .into_iter()
+                .chain(self.public_inputs.iter().map(|&wire| {
+                    Polynomial::domain_element2(
+                        match wire {
+                            Wire::LeftIn(gate) => gate,
+                            Wire::RightIn(gate) => gate,
+                            Wire::Out(gate) => gate,
+                        } as usize,
+                        self.size,
+                    )
+                }))
+                .collect(),
+            random,
+        );
+
+        let commitment = prover.commit();
+        let inner_proof = prover.prove(&commitment);
+
         // TODO
         todo!()
     }
@@ -1365,19 +1411,69 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_circuit1() {
+    fn test_circuit1<H: Hash>(blowup_exp: u32) {
         let (circuit, gate) = build_test_circuit();
-        // let proof = circuit
-        //     .prove(witness(
-        //         vec![3.into(), 9.into(), 3.into(), 30.into()],
-        //         vec![3.into(), 3.into(), 27.into(), 5.into()],
-        //         vec![9.into(), 27.into(), 30.into(), 35.into()],
-        //     ))
-        //     .unwrap();
+        let proof = circuit
+            .prove::<H>(
+                witness(
+                    vec![3.into(), 9.into(), 3.into(), 30.into()],
+                    vec![3.into(), 3.into(), 27.into(), 5.into()],
+                    vec![9.into(), 27.into(), 30.into(), 35.into()],
+                ),
+                blowup_exp,
+            )
+            .unwrap();
         // let public_inputs = circuit.verify(&proof).unwrap();
         // assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
         // assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 35.into());
+    }
+
+    #[test]
+    fn test_circuit1_blowup_2() {
+        test_circuit1::<Sha3Hash>(1);
+        test_circuit1::<Poseidon2Hash>(1);
+    }
+
+    #[test]
+    fn test_circuit1_blowup_4() {
+        test_circuit1::<Sha3Hash>(2);
+        test_circuit1::<Poseidon2Hash>(2);
+    }
+
+    #[test]
+    fn test_circuit1_blowup_8() {
+        test_circuit1::<Sha3Hash>(3);
+        test_circuit1::<Poseidon2Hash>(3);
+    }
+
+    #[test]
+    fn test_circuit1_blowup_16() {
+        test_circuit1::<Sha3Hash>(4);
+        test_circuit1::<Poseidon2Hash>(4);
+    }
+
+    #[test]
+    fn test_circuit1_blowup_32() {
+        test_circuit1::<Sha3Hash>(5);
+        test_circuit1::<Poseidon2Hash>(5);
+    }
+
+    #[test]
+    fn test_circuit1_blowup_64() {
+        test_circuit1::<Sha3Hash>(6);
+        test_circuit1::<Poseidon2Hash>(6);
+    }
+
+    #[test]
+    fn test_circuit1_blowup_128() {
+        test_circuit1::<Sha3Hash>(7);
+        test_circuit1::<Poseidon2Hash>(7);
+    }
+
+    #[test]
+    fn test_circuit1_blowup_256() {
+        test_circuit1::<Sha3Hash>(8);
+        test_circuit1::<Poseidon2Hash>(8);
     }
 
     // TODO
