@@ -791,11 +791,39 @@ impl Circuit {
         })
     }
 
-    pub fn verify<H: Hash>(&self, proof: Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
-        proof.inner_proof.verify(&proof.commitment)?;
+    pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
+        let inner_proof = &proof.inner_proof;
 
-        // TODO
-        todo!()
+        if inner_proof.len() != 3 + self.public_inputs.len() {
+            return Err(anyhow!("incorrect number of openings"));
+        }
+
+        // TODO: this algorithm is insecure because even though it checks that the opened
+        // coordinates match the expected ones it doesn't check that the polynomial being opened is
+        // the correct one (L, R, or O).
+        for (i, &wire) in self.public_inputs.iter().enumerate() {
+            let x = Polynomial::domain_element2(
+                match wire {
+                    Wire::LeftIn(gate) => gate,
+                    Wire::RightIn(gate) => gate,
+                    Wire::Out(gate) => gate,
+                } as usize,
+                self.size,
+            );
+            let z = *inner_proof.z(i + 3);
+            if z != x {
+                return Err(anyhow!("unexpected opening at {}", utils::format_scalar(z)));
+            }
+        }
+
+        inner_proof.verify(&proof.commitment)?;
+
+        Ok(self
+            .public_inputs
+            .iter()
+            .enumerate()
+            .map(|(i, &wire)| (wire, *inner_proof.y(i + 3)))
+            .collect())
     }
 }
 
@@ -1419,9 +1447,9 @@ mod tests {
                 blowup_exp,
             )
             .unwrap();
-        // let public_inputs = circuit.verify(&proof).unwrap();
-        // assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
-        // assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 35.into());
+        let public_inputs = circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 35.into());
     }
 
     #[test]
