@@ -218,28 +218,25 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         return self.coefficients;
     }
 
-    /// Multiplies two polynomials, returning an error if the FFT capacity is exceeded -- that is,
-    /// if the degree of the product is greater than or equal to 2^(F::S).
-    pub fn multiply(self, other: Self) -> Result<Self> {
+    /// Multiplies two polynomials. Panics if the FFT capacity is exceeded -- that is, if the degree
+    /// of the product is greater than or equal to 2^(F::S).
+    pub fn multiply(self, other: Self) -> Self {
         let mut a = self.coefficients;
         let mut b = other.coefficients;
 
         if a.is_empty() || b.is_empty() {
-            return Ok(Polynomial {
+            return Polynomial {
                 coefficients: vec![],
-            });
+            };
         }
         if a.len() == 1 {
-            return Ok(Polynomial { coefficients: b } * a[0]);
+            return Polynomial { coefficients: b } * a[0];
         }
         if b.len() == 1 {
-            return Ok(Polynomial { coefficients: a } * b[0]);
+            return Polynomial { coefficients: a } * b[0];
         }
 
         let n = (a.len() + b.len() - 1).next_power_of_two();
-        if n.trailing_zeros() > F::S {
-            return Err(anyhow!("FFT capacity exceeded"));
-        }
 
         a.resize(n, 0.into());
         b.resize(n, 0.into());
@@ -256,16 +253,16 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         if let Some(i) = a.iter().rposition(|value| *value != F::ZERO) {
             a.truncate(i + 1);
         }
-        Ok(Polynomial { coefficients: a })
+        Polynomial { coefficients: a }
     }
 
     /// Internal implementation of `multiply_many`.
-    fn multiply_many_impl(polynomials: &mut [Self]) -> Result<Self> {
+    fn multiply_many_impl(polynomials: &mut [Self]) -> Self {
         match polynomials.len() {
-            0 => Ok(Polynomial {
+            0 => Polynomial {
                 coefficients: vec![],
-            }),
-            1 => Ok(std::mem::take(&mut polynomials[0])),
+            },
+            1 => std::mem::take(&mut polynomials[0]),
             2 => {
                 let lhs = std::mem::take(&mut polynomials[0]);
                 let rhs = std::mem::take(&mut polynomials[1]);
@@ -273,8 +270,8 @@ impl<F: PrimeField + Ord> Polynomial<F> {
             }
             n => {
                 let (left, right) = polynomials.split_at_mut(n / 2);
-                let left = Self::multiply_many_impl(left)?;
-                let right = Self::multiply_many_impl(right)?;
+                let left = Self::multiply_many_impl(left);
+                let right = Self::multiply_many_impl(right);
                 left.multiply(right)
             }
         }
@@ -285,7 +282,7 @@ impl<F: PrimeField + Ord> Polynomial<F> {
     ///
     /// REQUIRES: the `polynomials` array must have at least 1 element, otherwise the function will
     /// panic.
-    pub fn multiply_many<const N: usize>(mut polynomials: [Self; N]) -> Result<Self> {
+    pub fn multiply_many<const N: usize>(mut polynomials: [Self; N]) -> Self {
         assert!(N > 0);
         Self::multiply_many_impl(&mut polynomials)
     }
@@ -788,6 +785,20 @@ impl<F: PrimeField + Ord> MulAssign<F> for Polynomial<F> {
         for i in 0..self.len() {
             self.coefficients[i] *= rhs;
         }
+    }
+}
+
+impl<F: PrimeField + Ord> Mul<Polynomial<F>> for Polynomial<F> {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.multiply(rhs)
+    }
+}
+
+impl<F: PrimeField + Ord> MulAssign<Polynomial<F>> for Polynomial<F> {
+    fn mul_assign(&mut self, rhs: Self) {
+        *self = std::mem::take(self).multiply(rhs);
     }
 }
 
@@ -1407,7 +1418,7 @@ mod tests {
     fn test_multiply_empty() {
         let p1 = Polynomial::<Scalar>::default();
         let p2 = Polynomial::<Scalar>::default();
-        assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
+        assert_eq!(p1.multiply(p2), Polynomial::default());
     }
 
     #[test]
@@ -1416,7 +1427,7 @@ mod tests {
         let p2 = Polynomial::<Scalar> {
             coefficients: vec![12.into(), 34.into()],
         };
-        assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
+        assert_eq!(p1.multiply(p2), Polynomial::default());
     }
 
     #[test]
@@ -1425,7 +1436,7 @@ mod tests {
             coefficients: vec![56.into(), 78.into()],
         };
         let p2 = Polynomial::<Scalar>::default();
-        assert_eq!(p1.multiply(p2).unwrap(), Polynomial::default());
+        assert_eq!(p1.multiply(p2), Polynomial::default());
     }
 
     #[test]
@@ -1437,7 +1448,7 @@ mod tests {
             coefficients: vec![12.into(), 34.into(), 56.into()],
         };
         assert_eq!(
-            p1.multiply(p2).unwrap(),
+            p1.multiply(p2),
             Polynomial {
                 coefficients: vec![36.into(), 102.into(), 168.into()]
             }
@@ -1453,7 +1464,7 @@ mod tests {
             coefficients: vec![3.into()],
         };
         assert_eq!(
-            p1.multiply(p2).unwrap(),
+            p1.multiply(p2),
             Polynomial {
                 coefficients: vec![36.into(), 102.into(), 168.into()]
             }
@@ -1469,7 +1480,7 @@ mod tests {
             coefficients: vec![34.into()],
         };
         assert_eq!(
-            p1.multiply(p2).unwrap(),
+            p1.multiply(p2),
             Polynomial {
                 coefficients: vec![408.into()]
             }
@@ -1487,8 +1498,8 @@ mod tests {
         let result = Polynomial::<Scalar> {
             coefficients: vec![3.into(), 10.into(), 8.into()],
         };
-        assert_eq!(p1.clone().multiply(p2.clone()).unwrap(), result);
-        assert_eq!(p2.multiply(p1).unwrap(), result);
+        assert_eq!(p1.clone().multiply(p2.clone()), result);
+        assert_eq!(p2.multiply(p1), result);
     }
 
     #[test]
@@ -1502,8 +1513,40 @@ mod tests {
         let result = Polynomial::<Scalar> {
             coefficients: vec![3.into(), 10.into(), 13.into(), 10.into()],
         };
-        assert_eq!(p1.clone().multiply(p2.clone()).unwrap(), result);
-        assert_eq!(p2.multiply(p1).unwrap(), result);
+        assert_eq!(p1.clone().multiply(p2.clone()), result);
+        assert_eq!(p2.multiply(p1), result);
+    }
+
+    #[test]
+    fn test_polynomial_mul_op() {
+        let p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into(), 5.into()],
+        };
+        let result = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 10.into(), 13.into(), 10.into()],
+        };
+        assert_eq!(p1.clone() * p2.clone(), result);
+        assert_eq!(p2 * p1, result);
+    }
+
+    #[test]
+    fn test_polynomial_mul_assign() {
+        let mut p1 = Polynomial::<Scalar> {
+            coefficients: vec![1.into(), 2.into()],
+        };
+        let p2 = Polynomial::<Scalar> {
+            coefficients: vec![3.into(), 4.into(), 5.into()],
+        };
+        p1 *= p2;
+        assert_eq!(
+            p1,
+            Polynomial::<Scalar> {
+                coefficients: vec![3.into(), 10.into(), 13.into(), 10.into()],
+            }
+        );
     }
 
     #[test]
@@ -1511,7 +1554,7 @@ mod tests {
         let p = Polynomial::<Scalar> {
             coefficients: vec![12.into(), 34.into()],
         };
-        assert_eq!(Polynomial::multiply_many([p.clone()]).unwrap(), p);
+        assert_eq!(Polynomial::multiply_many([p.clone()]), p);
     }
 
     #[test]
@@ -1525,11 +1568,8 @@ mod tests {
         let result = Polynomial::<Scalar> {
             coefficients: vec![3.into(), 10.into(), 13.into(), 10.into()],
         };
-        assert_eq!(
-            Polynomial::multiply_many([p1.clone(), p2.clone()]).unwrap(),
-            result
-        );
-        assert_eq!(Polynomial::multiply_many([p2, p1]).unwrap(), result);
+        assert_eq!(Polynomial::multiply_many([p1.clone(), p2.clone()]), result);
+        assert_eq!(Polynomial::multiply_many([p2, p1]), result);
     }
 
     #[test]
@@ -1555,27 +1595,27 @@ mod tests {
             ],
         };
         assert_eq!(
-            Polynomial::multiply_many([p1.clone(), p2.clone(), p3.clone()]).unwrap(),
+            Polynomial::multiply_many([p1.clone(), p2.clone(), p3.clone()]),
             result
         );
         assert_eq!(
-            Polynomial::multiply_many([p1.clone(), p3.clone(), p2.clone()]).unwrap(),
+            Polynomial::multiply_many([p1.clone(), p3.clone(), p2.clone()]),
             result
         );
         assert_eq!(
-            Polynomial::multiply_many([p2.clone(), p1.clone(), p3.clone()]).unwrap(),
+            Polynomial::multiply_many([p2.clone(), p1.clone(), p3.clone()]),
             result
         );
         assert_eq!(
-            Polynomial::multiply_many([p2.clone(), p3.clone(), p1.clone()]).unwrap(),
+            Polynomial::multiply_many([p2.clone(), p3.clone(), p1.clone()]),
             result
         );
         assert_eq!(
-            Polynomial::multiply_many([p3.clone(), p1.clone(), p2.clone()]).unwrap(),
+            Polynomial::multiply_many([p3.clone(), p1.clone(), p2.clone()]),
             result
         );
         assert_eq!(
-            Polynomial::multiply_many([p3.clone(), p2.clone(), p1.clone()]).unwrap(),
+            Polynomial::multiply_many([p3.clone(), p2.clone(), p1.clone()]),
             result
         );
     }
@@ -1598,19 +1638,19 @@ mod tests {
             coefficients: vec![105.into(), 596.into(), 1244.into(), 1136.into(), 384.into()],
         };
         assert_eq!(
-            Polynomial::multiply_many([p1.clone(), p2.clone(), p3.clone(), p4.clone()]).unwrap(),
+            Polynomial::multiply_many([p1.clone(), p2.clone(), p3.clone(), p4.clone()]),
             result
         );
         assert_eq!(
-            Polynomial::multiply_many([p1.clone(), p2.clone(), p4.clone(), p3.clone()]).unwrap(),
+            Polynomial::multiply_many([p1.clone(), p2.clone(), p4.clone(), p3.clone()]),
             result
         );
         assert_eq!(
-            Polynomial::multiply_many([p1.clone(), p3.clone(), p2.clone(), p4.clone()]).unwrap(),
+            Polynomial::multiply_many([p1.clone(), p3.clone(), p2.clone(), p4.clone()]),
             result
         );
         assert_eq!(
-            Polynomial::multiply_many([p1.clone(), p3.clone(), p4.clone(), p2.clone()]).unwrap(),
+            Polynomial::multiply_many([p1.clone(), p3.clone(), p4.clone(), p2.clone()]),
             result
         );
         // okay, not gonna try all permutations -- too much typing for too little gain.
@@ -1639,12 +1679,8 @@ mod tests {
         let l = Polynomial::<Scalar>::encode2(vec![3.into(), 9.into(), 3.into(), 30.into()]);
         let r = Polynomial::<Scalar>::encode2(vec![3.into(), 3.into(), 27.into(), 5.into()]);
         let o = Polynomial::<Scalar>::encode2(vec![9.into(), 27.into(), 30.into(), 35.into()]);
-        let lr = l.clone().multiply(r.clone()).unwrap();
-        let p = ql.multiply(l).unwrap()
-            + qr.multiply(r).unwrap()
-            + qo.multiply(o).unwrap()
-            + qm.multiply(lr).unwrap()
-            + qc;
+        let lr = l.clone().multiply(r.clone());
+        let p = ql.multiply(l) + qr.multiply(r) + qo.multiply(o) + qm.multiply(lr) + qc;
         let q = p.divide_by_zero(4).unwrap();
         assert_eq!(q.len(), 6);
     }
@@ -1659,12 +1695,8 @@ mod tests {
         let l = Polynomial::<Scalar>::encode2(vec![3.into(), 9.into(), 3.into(), 30.into()]);
         let r = Polynomial::<Scalar>::encode2(vec![3.into(), 3.into(), 27.into(), 1.into()]);
         let o = Polynomial::<Scalar>::encode2(vec![9.into(), 27.into(), 30.into(), 35.into()]);
-        let lr = l.clone().multiply(r.clone()).unwrap();
-        let p = ql.multiply(l).unwrap()
-            + qr.multiply(r).unwrap()
-            + qo.multiply(o).unwrap()
-            + qm.multiply(lr).unwrap()
-            + qc;
+        let lr = l.clone().multiply(r.clone());
+        let p = ql.multiply(l) + qr.multiply(r) + qo.multiply(o) + qm.multiply(lr) + qc;
         let q = p.divide_by_zero(4).unwrap();
         assert_eq!(q.len(), 6);
     }
@@ -1909,7 +1941,7 @@ mod tests {
             q.evaluate_on_two_adic_domain(0, 2),
             q.evaluate_on_two_adic_domain(1, 2),
         ];
-        let product = p.multiply(q).unwrap();
+        let product = p.multiply(q);
         let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
         assert_eq!(
             result,
@@ -1940,7 +1972,7 @@ mod tests {
             q.evaluate_on_two_adic_domain(2, 4),
             q.evaluate_on_two_adic_domain(3, 4),
         ];
-        let product = p.multiply(q).unwrap();
+        let product = p.multiply(q);
         let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
         assert_eq!(
             result,
@@ -2030,7 +2062,7 @@ mod tests {
             q.evaluate_on_three_adic_domain(1, 3),
             q.evaluate_on_three_adic_domain(2, 3),
         ];
-        let product = p.multiply(q).unwrap();
+        let product = p.multiply(q);
         let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
         assert_eq!(
             result,
@@ -2094,7 +2126,7 @@ mod tests {
             q.evaluate_on_three_adic_domain(7, 9),
             q.evaluate_on_three_adic_domain(8, 9),
         ];
-        let product = p.multiply(q).unwrap();
+        let product = p.multiply(q);
         let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
         assert_eq!(
             result,

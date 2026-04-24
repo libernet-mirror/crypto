@@ -673,18 +673,7 @@ impl CircuitBuilder {
             .chain(std::iter::repeat_n(Scalar::ZERO, pad))
             .collect();
         let (sl, sr, so) = self.build_identity_permutation();
-        Circuit {
-            size: n,
-            public_inputs: self.public_inputs,
-            ql,
-            qr,
-            qo,
-            qm,
-            qc,
-            sl,
-            sr,
-            so,
-        }
+        Circuit::new(n, self.public_inputs, ql, qr, qo, qm, qc, sl, sr, so)
     }
 
     pub fn check_witness(&self, witness: &Witness) -> Result<()> {
@@ -704,17 +693,56 @@ pub struct Proof<H: pcs::Hash> {
 pub struct Circuit {
     size: usize,
     public_inputs: BTreeSet<Wire>,
-    ql: Vec<Scalar>,
-    qr: Vec<Scalar>,
-    qo: Vec<Scalar>,
-    qm: Vec<Scalar>,
-    qc: Vec<Scalar>,
+    ql: Polynomial,
+    qr: Polynomial,
+    qo: Polynomial,
+    qm: Polynomial,
+    qc: Polynomial,
     sl: Vec<Scalar>,
     sr: Vec<Scalar>,
     so: Vec<Scalar>,
 }
 
 impl Circuit {
+    fn new(
+        size: usize,
+        public_inputs: BTreeSet<Wire>,
+        ql: Vec<Scalar>,
+        qr: Vec<Scalar>,
+        qo: Vec<Scalar>,
+        qm: Vec<Scalar>,
+        qc: Vec<Scalar>,
+        sl: Vec<Scalar>,
+        sr: Vec<Scalar>,
+        so: Vec<Scalar>,
+    ) -> Self {
+        assert_eq!(size, ql.len());
+        assert_eq!(size, qr.len());
+        assert_eq!(size, qo.len());
+        assert_eq!(size, qm.len());
+        assert_eq!(size, qc.len());
+        assert_eq!(size, sl.len());
+        assert_eq!(size, sr.len());
+        assert_eq!(size, so.len());
+        let ql = Polynomial::encode2(ql);
+        let qr = Polynomial::encode2(qr);
+        let qo = Polynomial::encode2(qo);
+        let qm = Polynomial::encode2(qm);
+        let qc = Polynomial::encode2(qc);
+        Self {
+            size,
+            public_inputs,
+            ql,
+            qr,
+            qo,
+            qm,
+            qc,
+            sl,
+            sr,
+            so,
+        }
+    }
+
     pub fn size(&self) -> usize {
         self.size
     }
@@ -739,21 +767,30 @@ impl Circuit {
         let beta = H::hash(xi, 2.into());
         let gamma = H::hash(xi, 3.into());
 
-        let prover = pcs::Prover::<H>::from_values(
-            [
-                witness.left.clone(),
-                witness.right.clone(),
-                witness.out.clone(),
-            ]
-            .into_iter()
-            .chain(self.public_inputs.iter().map(|&wire| match wire {
-                Wire::LeftIn(_) => witness.left.clone(),
-                Wire::RightIn(_) => witness.right.clone(),
-                Wire::Out(_) => witness.out.clone(),
-            }))
-            .collect(),
+        let left = Polynomial::encode2(witness.left.clone());
+        let right = Polynomial::encode2(witness.right.clone());
+        let out = Polynomial::encode2(witness.out.clone());
+
+        let quotient = {
+            let gate_constraint = self.ql.clone() * left.clone()
+                + self.qr.clone() * right.clone()
+                + self.qo.clone() * out.clone()
+                + Polynomial::multiply_many([self.qm.clone(), left.clone(), right.clone()])
+                + self.qc.clone();
+            gate_constraint.divide_by_zero(self.size)?
+        };
+
+        let prover = pcs::Prover::<H>::new(
+            [left.clone(), right.clone(), out.clone(), quotient]
+                .into_iter()
+                .chain(self.public_inputs.iter().map(|&wire| match wire {
+                    Wire::LeftIn(_) => left.clone(),
+                    Wire::RightIn(_) => right.clone(),
+                    Wire::Out(_) => out.clone(),
+                }))
+                .collect(),
             blowup_exp,
-            [xi, xi, xi]
+            [xi, xi, xi, xi]
                 .into_iter()
                 .chain(self.public_inputs.iter().map(|&wire| {
                     Polynomial::domain_element2(
@@ -794,8 +831,18 @@ impl Circuit {
     pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
         let inner_proof = &proof.inner_proof;
 
-        if inner_proof.len() != 3 + self.public_inputs.len() {
+        if inner_proof.len() != 4 + self.public_inputs.len() {
             return Err(anyhow!("incorrect number of openings"));
+        }
+
+        // TODO: recompute xi via Fiat-Shamir rather than taking it from the proof, otherwise the
+        // prover can forge it.
+        let xi = *inner_proof.z(0);
+
+        for i in 1..4 {
+            if xi != *inner_proof.z(i) {
+                return Err(anyhow!("invalid opening"));
+            }
         }
 
         // TODO: this algorithm is insecure because even though it checks that the opened
@@ -810,7 +857,7 @@ impl Circuit {
                 } as usize,
                 self.size,
             );
-            let z = *inner_proof.z(i + 3);
+            let z = *inner_proof.z(i + 4);
             if z != x {
                 return Err(anyhow!("unexpected opening at {}", utils::format_scalar(z)));
             }
@@ -818,11 +865,26 @@ impl Circuit {
 
         inner_proof.verify(&proof.commitment)?;
 
+        let left = *inner_proof.y(0);
+        let right = *inner_proof.y(1);
+        let out = *inner_proof.y(2);
+        let quotient = *inner_proof.y(3);
+        let zero = xi.pow([self.size as u64, 0, 0, 0]) - Scalar::ONE;
+        let constraint = self.ql.evaluate(xi) * left
+            + self.qr.evaluate(xi) * right
+            + self.qo.evaluate(xi) * out
+            + self.qm.evaluate(xi) * left * right
+            + self.qc.evaluate(xi);
+
+        if constraint != quotient * zero {
+            return Err(anyhow!("constraint violation"));
+        }
+
         Ok(self
             .public_inputs
             .iter()
             .enumerate()
-            .map(|(i, &wire)| (wire, *inner_proof.y(i + 3)))
+            .map(|(i, &wire)| (wire, *inner_proof.y(i + 4)))
             .collect())
     }
 }
