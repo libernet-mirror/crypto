@@ -52,8 +52,16 @@ pub struct Commitment {
 }
 
 impl Commitment {
+    /// Returns the Merkle roots of all folding rounds, which are k if the original polynomial had
+    /// degree<N, with N=3^k.
     pub fn roots(&self) -> &[Scalar] {
         self.roots.as_slice()
+    }
+
+    /// Returns the Merkle root hash of the committed polynomial, which is the first hash stored in
+    /// the commitment.
+    pub fn root(&self) -> Scalar {
+        *self.roots.first().unwrap()
     }
 }
 
@@ -354,6 +362,14 @@ impl Prover {
         self.count
     }
 
+    /// Returns the Merkle root hash of the committed vector.
+    ///
+    /// This is equivalent to the first root stored in the commiment returned by `commit()`.
+    pub fn root_hash(&self) -> Scalar {
+        let n = self.length();
+        self.values[(n - 1) * 2]
+    }
+
     /// Creates the FRI commitment for the committed vector.
     pub fn commit(&self) -> Commitment {
         let mut n = self.length();
@@ -468,6 +484,7 @@ mod tests {
         let prover = Prover::new(vec![]);
         let commitment = prover.commit();
         assert_eq!(commitment.roots(), vec![Scalar::ZERO]);
+        assert_eq!(commitment.root(), Scalar::ZERO);
     }
 
     #[test]
@@ -475,6 +492,7 @@ mod tests {
         let prover = Prover::new(vec![12.into()]);
         let commitment = prover.commit();
         assert_eq!(commitment.roots(), vec![12.into()]);
+        assert_eq!(commitment.root(), 12.into());
     }
 
     #[test]
@@ -482,6 +500,7 @@ mod tests {
         let prover = Prover::new(vec![34.into()]);
         let commitment = prover.commit();
         assert_eq!(commitment.roots(), vec![34.into()]);
+        assert_eq!(commitment.root(), 34.into());
     }
 
     #[test]
@@ -494,6 +513,10 @@ mod tests {
                 parse_scalar("0x782b98187d82e99def511fe7c7b8be449ddeacbc16190b3e5b09935aa1352e68"),
                 parse_scalar("0x7bf5334e0ef8727840282a567988144cd4230b0dd12b5c7f660b1a70e1f30bd8"),
             ]
+        );
+        assert_eq!(
+            commitment.root(),
+            parse_scalar("0x782b98187d82e99def511fe7c7b8be449ddeacbc16190b3e5b09935aa1352e68")
         );
     }
 
@@ -508,6 +531,10 @@ mod tests {
                 parse_scalar("0x688fbe7c24366e25ce879e8d34aff0fa21ea9d5c511045700298877e5fde9b3c"),
             ]
         );
+        assert_eq!(
+            commitment.root(),
+            parse_scalar("0x2dc37da8609d4b9d333d1660264e9cc0402c0c2e76a31d334e926b2b1b65e5f6")
+        );
     }
 
     #[test]
@@ -520,6 +547,10 @@ mod tests {
                 parse_scalar("0x2dfc8ad00312f501c230ed8a1949f1bef30bc9ba70a396f1a4ee894cc7b02703"),
                 parse_scalar("0x5181f1bc1364bf1402fe6b64d67e08693add577d36b9950e876a6109f49dd96f"),
             ]
+        );
+        assert_eq!(
+            commitment.root(),
+            parse_scalar("0x2dfc8ad00312f501c230ed8a1949f1bef30bc9ba70a396f1a4ee894cc7b02703")
         );
     }
 
@@ -534,6 +565,10 @@ mod tests {
                 parse_scalar("0x7bf5334e0ef8727840282a567988144cd4230b0dd12b5c7f660b1a70e1f30bd8"),
             ]
         );
+        assert_eq!(
+            commitment.root(),
+            parse_scalar("0x782b98187d82e99def511fe7c7b8be449ddeacbc16190b3e5b09935aa1352e68")
+        );
     }
 
     #[test]
@@ -546,6 +581,10 @@ mod tests {
                 parse_scalar("0x236092ebefc7e6565e0e75414d8fdce1ce2e19bb59002d36b794b9c3111bb9cd"),
                 parse_scalar("0x7245aef7c5350ac88c79b4e4e38a731b5f74ec16764f37ae88ed5acbbdb1c6cd"),
             ]
+        );
+        assert_eq!(
+            commitment.root(),
+            parse_scalar("0x236092ebefc7e6565e0e75414d8fdce1ce2e19bb59002d36b794b9c3111bb9cd")
         );
     }
 
@@ -560,6 +599,10 @@ mod tests {
                 parse_scalar("0x1378e8b4af85f154a8418f6d42180f5b24abf8b2f2e8f6395ee5e4066020f6fa"),
                 parse_scalar("0x4b09fed4ebea20ffa93b130a9dd35d30899f3baaa450f6c676eded4391910a6a"),
             ]
+        );
+        assert_eq!(
+            commitment.root(),
+            parse_scalar("0x15bc73f34d10d0269af70050d2e6dbe50c7486acdce791b66143dd6a49566605")
         );
     }
 
@@ -585,6 +628,10 @@ mod tests {
                 parse_scalar("0x4b09fed4ebea20ffa93b130a9dd35d30899f3baaa450f6c676eded4391910a6a"),
             ]
         );
+        assert_eq!(
+            commitment.root(),
+            parse_scalar("0x15bc73f34d10d0269af70050d2e6dbe50c7486acdce791b66143dd6a49566605")
+        );
     }
 
     #[test]
@@ -608,6 +655,10 @@ mod tests {
                 parse_scalar("0x7b4a7923d7ad754e5641f3d29b385c67b9910a15e3e83d2f56df18d5df51146d"),
                 parse_scalar("0x798bb437e054919147e6c4579a8fd33cdc62b3c3628cdaa1125e025d2b17da81"),
             ]
+        );
+        assert_eq!(
+            commitment.root(),
+            parse_scalar("0x2c4e52ae8124220a5df522f37ccb8f6be7506ade1251e462a769db6c876ae321")
         );
     }
 

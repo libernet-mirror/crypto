@@ -185,6 +185,26 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         }
     }
 
+    /// Recovers the ordered list of values encoded by `encode2`.
+    ///
+    /// This is the inverse of `encode2`: given a polynomial produced by `encode2(values)`, calling
+    /// `decode2` returns a list equal to `values` (possibly padded with trailing zeros to the next
+    /// power of two).
+    ///
+    /// Under the hood we use the two-adic Fast Fourier Transform algorithm (`fft2`). The
+    /// polynomial's coefficient list is zero-padded to the next power of two before the transform
+    /// is applied.
+    ///
+    /// Running time: O(N*logN).
+    pub fn decode2(self) -> Vec<F> {
+        let mut data = self.coefficients;
+        let n = data.len().next_power_of_two();
+        data.resize(n, F::ZERO);
+        let omega = Self::two_adic_root_of_unity(n);
+        Self::fft2(&mut data, omega);
+        data
+    }
+
     /// Returns the number of coefficients, which is equal to the maximum degree plus 1.
     pub fn len(&self) -> usize {
         self.coefficients.len()
@@ -548,6 +568,26 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
         Polynomial {
             coefficients: values,
         }
+    }
+
+    /// Recovers the ordered list of values encoded by `encode3`.
+    ///
+    /// This is the inverse of `encode3`: given a polynomial produced by `encode3(values)`, calling
+    /// `decode3` returns a list equal to `values` (possibly padded with trailing zeros to the next
+    /// power of three).
+    ///
+    /// Under the hood we use the three-adic Fast Fourier Transform algorithm (`fft3`). The
+    /// polynomial's coefficient list is zero-padded to the next power of three before the transform
+    /// is applied.
+    ///
+    /// Running time: O(N*logN).
+    pub fn decode3(self) -> Vec<F> {
+        let mut data = self.coefficients;
+        let n = xits::next_power_of_three(data.len());
+        data.resize(n, F::ZERO);
+        let omega = Self::three_adic_root_of_unity(n);
+        Self::fft3(&mut data, omega);
+        data
     }
 
     /// Returns the X coordinate of the i-th element of a list encoded with `encode3`.
@@ -1159,6 +1199,36 @@ mod tests {
     }
 
     #[test]
+    fn test_decode2_one_value() {
+        let values = vec![42.into()];
+        let polynomial = Polynomial::<Scalar>::encode2(values.clone());
+        assert_eq!(polynomial.decode2(), values);
+    }
+
+    #[test]
+    fn test_decode2_two_values() {
+        let values = vec![12.into(), 34.into()];
+        let polynomial = Polynomial::<Scalar>::encode2(values.clone());
+        assert_eq!(polynomial.decode2(), values);
+    }
+
+    #[test]
+    fn test_decode2_three_values() {
+        let polynomial = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into(), 56.into()]);
+        assert_eq!(
+            polynomial.decode2(),
+            vec![12.into(), 34.into(), 56.into(), 0.into()]
+        );
+    }
+
+    #[test]
+    fn test_decode2_four_values() {
+        let values = vec![12.into(), 34.into(), 56.into(), 78.into()];
+        let polynomial = Polynomial::<Scalar>::encode2(values.clone());
+        assert_eq!(polynomial.decode2(), values);
+    }
+
+    #[test]
     fn test_encode3_one_value_1() {
         let p1 = Polynomial::<Scalar>::encode3(vec![42.into()]);
         let p2 = Polynomial::<Scalar>::encode3(vec![42.into()]);
@@ -1293,6 +1363,44 @@ mod tests {
         assert_eq!(p.evaluate_on_three_adic_domain(7, 9), 33.into());
         assert_eq!(p.evaluate(Polynomial::domain_element3(8, 9)), 44.into());
         assert_eq!(p.evaluate_on_three_adic_domain(8, 9), 44.into());
+    }
+
+    #[test]
+    fn test_decode3_one_value() {
+        let values = vec![42.into()];
+        let polynomial = Polynomial::<Scalar>::encode3(values.clone());
+        assert_eq!(polynomial.decode3(), values);
+    }
+
+    #[test]
+    fn test_decode3_two_values() {
+        let values = vec![12.into(), 34.into()];
+        let polynomial = Polynomial::<Scalar>::encode3(values.clone());
+        assert_eq!(polynomial.decode3(), vec![12.into(), 34.into(), 0.into()]);
+    }
+
+    #[test]
+    fn test_decode3_three_values() {
+        let values = vec![12.into(), 34.into(), 56.into()];
+        let polynomial = Polynomial::<Scalar>::encode3(values.clone());
+        assert_eq!(polynomial.decode3(), values);
+    }
+
+    #[test]
+    fn test_decode3_nine_values() {
+        let values = vec![
+            12.into(),
+            34.into(),
+            56.into(),
+            78.into(),
+            90.into(),
+            11.into(),
+            22.into(),
+            33.into(),
+            44.into(),
+        ];
+        let polynomial = Polynomial::<Scalar>::encode3(values.clone());
+        assert_eq!(polynomial.decode3(), values);
     }
 
     #[test]

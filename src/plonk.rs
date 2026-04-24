@@ -695,12 +695,8 @@ impl CircuitBuilder {
 
 #[derive(Debug, Clone)]
 pub struct Proof<H: pcs::Hash> {
-    degree_bound: usize,
-    blowup_exp: u32,
-    witness_commitments: [fri2::Commitment; 3],
     public_inputs: BTreeMap<Wire, Scalar>,
-    permutation_accumulator_commitment: fri2::Commitment,
-    quotient_commitment: fri2::Commitment,
+    commitment: pcs::Commitment,
     inner_proof: pcs::Proof<H>,
 }
 
@@ -739,7 +735,6 @@ impl Circuit {
             H::hash_many(witness.out.as_slice()),
         ]);
 
-        let random = H::hash(xi, 0.into());
         let alpha = H::hash(xi, 1.into());
         let beta = H::hash(xi, 2.into());
         let gamma = H::hash(xi, 3.into());
@@ -771,32 +766,33 @@ impl Circuit {
                     )
                 }))
                 .collect(),
-            random,
         );
 
         let commitment = prover.commit();
         let inner_proof = prover.prove(&commitment);
 
-        // TODO
-        todo!()
+        Ok(Proof {
+            public_inputs: self
+                .public_inputs
+                .iter()
+                .map(|&wire| {
+                    (
+                        wire,
+                        match wire {
+                            Wire::LeftIn(gate) => witness.left[gate as usize],
+                            Wire::RightIn(gate) => witness.right[gate as usize],
+                            Wire::Out(gate) => witness.out[gate as usize],
+                        },
+                    )
+                })
+                .collect(),
+            commitment,
+            inner_proof,
+        })
     }
 
     pub fn verify<H: Hash>(&self, proof: Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
-        let mut witness_commitments = proof.witness_commitments.to_vec();
-        for (wire, _) in &proof.public_inputs {
-            match wire {
-                Wire::LeftIn(_) => witness_commitments.push(proof.witness_commitments[0].clone()),
-                Wire::RightIn(_) => witness_commitments.push(proof.witness_commitments[1].clone()),
-                Wire::Out(_) => witness_commitments.push(proof.witness_commitments[2].clone()),
-            }
-        }
-        let commitment = pcs::Commitment::new(
-            witness_commitments,
-            proof.quotient_commitment,
-            proof.degree_bound,
-            proof.blowup_exp,
-        );
-        proof.inner_proof.verify(&commitment)?;
+        proof.inner_proof.verify(&proof.commitment)?;
 
         // TODO
         todo!()
