@@ -3,7 +3,7 @@ use crate::fri2;
 use crate::pcs;
 use crate::poly;
 use crate::utils;
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use ff::Field;
 use std::collections::{BTreeMap, BTreeSet, btree_map};
 
@@ -743,9 +743,12 @@ pub struct Circuit {
     qo: Polynomial,
     qm: Polynomial,
     qc: Polynomial,
-    sl: Vec<Scalar>,
-    sr: Vec<Scalar>,
-    so: Vec<Scalar>,
+    sl_values: Vec<Scalar>,
+    sl: Polynomial,
+    sr_values: Vec<Scalar>,
+    sr: Polynomial,
+    so_values: Vec<Scalar>,
+    so: Polynomial,
 }
 
 impl Circuit {
@@ -774,6 +777,12 @@ impl Circuit {
         let qo = Polynomial::encode2(qo);
         let qm = Polynomial::encode2(qm);
         let qc = Polynomial::encode2(qc);
+        let sl_values = sl;
+        let sl = Polynomial::encode2(sl_values.clone());
+        let sr_values = sr;
+        let sr = Polynomial::encode2(sr_values.clone());
+        let so_values = so;
+        let so = Polynomial::encode2(so_values.clone());
         Self {
             size,
             public_inputs,
@@ -782,14 +791,92 @@ impl Circuit {
             qo,
             qm,
             qc,
+            sl_values,
             sl,
+            sr_values,
             sr,
+            so_values,
             so,
         }
     }
 
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    /// Builds the two polynomials used in the permutation argument. The components of the returned
+    /// tuple are the coordinate pair accumulator and the recurrence constraint, respectively.
+    fn build_permutation_argument(
+        &self,
+        witness: &Witness,
+        left: &Polynomial,
+        right: &Polynomial,
+        out: &Polynomial,
+        alpha: Scalar,
+        beta: Scalar,
+        gamma: Scalar,
+    ) -> Result<(Polynomial, Polynomial)> {
+        let n = padded_size(self.size);
+        let k1 = k1();
+        let k2 = k2();
+
+        let sl = self.sl_values.as_slice();
+        let sr = self.sr_values.as_slice();
+        let so = self.so_values.as_slice();
+
+        let mut accumulator = vec![Scalar::ZERO; n + 1];
+
+        accumulator[0] = 1.into();
+        for i in 0..n {
+            let x = Polynomial::domain_element2(i, n);
+            accumulator[i + 1] = accumulator[i]
+                * (witness.left[i] + beta * x + gamma)
+                * (witness.right[i] + beta * k1 * x + gamma)
+                * (witness.out[i] + beta * k2 * x + gamma)
+                * ((witness.left[i] + beta * sl[i] + gamma)
+                    * (witness.right[i] + beta * sr[i] + gamma)
+                    * (witness.out[i] + beta * so[i] + gamma))
+                    .invert()
+                    .into_option()
+                    .context("division by zero in permutation accumulator")?;
+        }
+
+        if accumulator.pop().unwrap() != 1.into() {
+            return Err(anyhow!("permutation accumulator wraparound check failed"));
+        }
+
+        let accumulator = Polynomial::encode2(accumulator);
+
+        let shifted = {
+            let mut coefficients = accumulator.clone().take();
+            let omega = Polynomial::domain_element2(1, n);
+            let mut x = Scalar::ONE;
+            for coefficient in coefficients.iter_mut() {
+                *coefficient *= x;
+                x *= omega;
+            }
+            Polynomial::with_coefficients(coefficients)
+        };
+
+        let recurrence_constraint = Polynomial::multiply_many([
+            shifted,
+            left.clone() + self.sl.clone() * beta + gamma,
+            right.clone() + self.sr.clone() * beta + gamma,
+            out.clone() + self.so.clone() * beta + gamma,
+        ]) - Polynomial::multiply_many([
+            accumulator.clone(),
+            left.clone() + Polynomial::with_coefficients(vec![gamma, beta]),
+            right.clone() + Polynomial::with_coefficients(vec![gamma, beta * k1]),
+            out.clone() + Polynomial::with_coefficients(vec![gamma, beta * k2]),
+        ]);
+
+        let fixpoint_constraint =
+            (accumulator.clone() - Scalar::ONE) * Polynomial::lagrange0(n).clone();
+
+        let permutation_constraint =
+            recurrence_constraint * alpha + fixpoint_constraint * alpha.square();
+
+        Ok((accumulator, permutation_constraint))
     }
 
     pub fn prove<H: Hash>(&self, witness: Witness, blowup_exp: u32) -> Result<Proof<H>> {
@@ -816,26 +903,39 @@ impl Circuit {
         let right = Polynomial::encode2(witness.right.clone());
         let out = Polynomial::encode2(witness.out.clone());
 
+        let (permutation_accumulator, permutation_constraint) =
+            self.build_permutation_argument(&witness, &left, &right, &out, alpha, beta, gamma)?;
+
         let quotient = {
             let gate_constraint = self.ql.clone() * left.clone()
                 + self.qr.clone() * right.clone()
                 + self.qo.clone() * out.clone()
                 + Polynomial::multiply_many([self.qm.clone(), left.clone(), right.clone()])
                 + self.qc.clone();
-            gate_constraint.divide_by_zero(self.size)?
+            let constraint = gate_constraint + permutation_constraint;
+            constraint.divide_by_zero(self.size)?
         };
 
+        let omega = Polynomial::domain_element2(1, self.size);
+
         let prover = pcs::Prover::<H>::new(
-            [left.clone(), right.clone(), out.clone(), quotient]
-                .into_iter()
-                .chain(self.public_inputs.iter().map(|&wire| match wire {
-                    Wire::LeftIn(_) => left.clone(),
-                    Wire::RightIn(_) => right.clone(),
-                    Wire::Out(_) => out.clone(),
-                }))
-                .collect(),
+            [
+                left.clone(),
+                right.clone(),
+                out.clone(),
+                permutation_accumulator.clone(),
+                permutation_accumulator,
+                quotient,
+            ]
+            .into_iter()
+            .chain(self.public_inputs.iter().map(|&wire| match wire {
+                Wire::LeftIn(_) => left.clone(),
+                Wire::RightIn(_) => right.clone(),
+                Wire::Out(_) => out.clone(),
+            }))
+            .collect(),
             blowup_exp,
-            [xi, xi, xi, xi]
+            [xi, xi, xi, xi, xi * omega, xi]
                 .into_iter()
                 .chain(self.public_inputs.iter().map(|&wire| {
                     Polynomial::domain_element2(
@@ -873,10 +973,18 @@ impl Circuit {
         })
     }
 
+    fn lagrange0(x: Scalar, n: usize) -> Scalar {
+        (x.pow_vartime([n as u64, 0, 0, 0]) - Scalar::ONE)
+            * (Scalar::from(n as u64) * (x - Scalar::ONE))
+                .invert()
+                .into_option()
+                .unwrap()
+    }
+
     pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
         let inner_proof = &proof.inner_proof;
 
-        if inner_proof.len() != 4 + self.public_inputs.len() {
+        if inner_proof.len() != 6 + self.public_inputs.len() {
             return Err(anyhow!("incorrect number of openings"));
         }
 
@@ -884,10 +992,15 @@ impl Circuit {
         // prover can forge it.
         let xi = *inner_proof.z(0);
 
-        for i in 1..4 {
-            if xi != *inner_proof.z(i) {
+        for i in (1..6).skip(4) {
+            if *inner_proof.z(i) != xi {
                 return Err(anyhow!("invalid opening"));
             }
+        }
+
+        let omega = Polynomial::domain_element2(1, self.size);
+        if *inner_proof.z(4) != xi * omega {
+            return Err(anyhow!("invalid opening"));
         }
 
         // TODO: this algorithm is insecure because even though it checks that the opened
@@ -902,7 +1015,7 @@ impl Circuit {
                 } as usize,
                 self.size,
             );
-            let z = *inner_proof.z(i + 4);
+            let z = *inner_proof.z(i + 6);
             if z != x {
                 return Err(anyhow!("unexpected opening at {}", utils::format_scalar(z)));
             }
@@ -910,18 +1023,41 @@ impl Circuit {
 
         inner_proof.verify(&proof.commitment)?;
 
+        let alpha = H::hash(xi, 1.into());
+        let beta = H::hash(xi, 2.into());
+        let gamma = H::hash(xi, 3.into());
+
         let left = *inner_proof.y(0);
         let right = *inner_proof.y(1);
         let out = *inner_proof.y(2);
-        let quotient = *inner_proof.y(3);
+        let permutation_accumulator = *inner_proof.y(3);
+        let shifted_permutation_accumulator = *inner_proof.y(4);
+        let quotient = *inner_proof.y(5);
         let zero = xi.pow([self.size as u64, 0, 0, 0]) - Scalar::ONE;
-        let constraint = self.ql.evaluate(xi) * left
+
+        let gate_constraint = self.ql.evaluate(xi) * left
             + self.qr.evaluate(xi) * right
             + self.qo.evaluate(xi) * out
             + self.qm.evaluate(xi) * left * right
             + self.qc.evaluate(xi);
 
-        if constraint != quotient * zero {
+        let permutation_numerator = (left + beta * xi + gamma)
+            * (right + beta * k1() * xi + gamma)
+            * (out + beta * k2() * xi + gamma);
+        let permutation_denominator = {
+            (left + beta * self.sl.evaluate(xi) + gamma)
+                * (right + beta * self.sr.evaluate(xi) + gamma)
+                * (out + beta * self.so.evaluate(xi) + gamma)
+        };
+        let permutation_constraint = shifted_permutation_accumulator * permutation_denominator
+            - permutation_accumulator * permutation_numerator;
+        let permutation_fixpoint =
+            (permutation_accumulator - Scalar::from(1)) * Self::lagrange0(xi, self.size);
+
+        let full_constraint = gate_constraint
+            + alpha * permutation_constraint
+            + alpha.square() * permutation_fixpoint;
+        if full_constraint != quotient * zero {
             return Err(anyhow!("constraint violation"));
         }
 
@@ -929,7 +1065,7 @@ impl Circuit {
             .public_inputs
             .iter()
             .enumerate()
-            .map(|(i, &wire)| (wire, *inner_proof.y(i + 4)))
+            .map(|(i, &wire)| (wire, *inner_proof.y(i + 6)))
             .collect())
     }
 }
@@ -956,6 +1092,21 @@ impl CompressedCircuit {
         // TODO
         todo!()
     }
+}
+
+/// Represents a reusable PLONK chip that you can use to build circuits.
+pub trait Chip<const I: usize, const O: usize> {
+    fn build(
+        &self,
+        builder: &mut CircuitBuilder,
+        inputs: [Option<Wire>; I],
+    ) -> Result<[Option<Wire>; O]>;
+
+    fn witness(
+        &self,
+        witness: &mut Witness,
+        inputs: [WireOrUnconstrained; I],
+    ) -> Result<[WireOrUnconstrained; O]>;
 }
 
 #[cfg(test)]
