@@ -386,6 +386,15 @@ impl CircuitBuilder {
         self.gates.len()
     }
 
+    /// Returns the number of gates added so far.
+    ///
+    /// This is the same as casting `len()` to `u32`.
+    pub fn gate_count(&self) -> u32 {
+        let len = self.len();
+        assert!(len <= u32::MAX as usize);
+        len as u32
+    }
+
     pub fn add_raw_gate(
         &mut self,
         ql: Scalar,
@@ -677,8 +686,44 @@ impl CircuitBuilder {
     }
 
     pub fn check_witness(&self, witness: &Witness) -> Result<()> {
-        // TODO
-        todo!()
+        let size = self.gates.len();
+        if witness.size() != size {
+            return Err(anyhow!(
+                "incorrect witness size (got {}, want {})",
+                witness.size(),
+                size
+            ));
+        }
+        for i in 0..size {
+            let lhs = witness.left[i];
+            let rhs = witness.right[i];
+            let out = witness.out[i];
+            let (ql, qr, qo, qm, qc) = match self.gates[i] {
+                GateConstraint { ql, qr, qo, qm, qc } => (ql, qr, qo, qm, qc),
+            };
+            if ql * lhs + qr * rhs + qo * out + qm * lhs * rhs + qc != 0.into() {
+                return Err(anyhow!("gate constraint {} violated", i));
+            }
+        }
+        for node in self.wires.iter_nodes() {
+            let mut iter = node.iter();
+            let value = match *iter.next().unwrap() {
+                Wire::LeftIn(index) => witness.left[index as usize],
+                Wire::RightIn(index) => witness.right[index as usize],
+                Wire::Out(index) => witness.out[index as usize],
+            };
+            while let Some(wire) = iter.next() {
+                let next = match *wire {
+                    Wire::LeftIn(index) => witness.left[index as usize],
+                    Wire::RightIn(index) => witness.right[index as usize],
+                    Wire::Out(index) => witness.out[index as usize],
+                };
+                if next != value {
+                    return Err(anyhow!("wire constraint violated"));
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1560,6 +1605,109 @@ mod tests {
     fn test_circuit1_blowup_256() {
         test_circuit1::<Sha3Hash>(8);
         test_circuit1::<Poseidon2Hash>(8);
+    }
+
+    #[test]
+    fn test_circuit1_with_helpers() {
+        let mut builder = CircuitBuilder::default();
+        let input = Wire::LeftIn(builder.gate_count());
+        let gate1 = builder.add_square_gate(input.into());
+        let gate2 = builder.add_mul_gate(gate1.into(), input.into());
+        let gate3 = builder.add_sum_gate(input.into(), gate2.into());
+        let gate4 = builder.add_sum_with_const_gate(gate3.into(), 5.into());
+        builder.declare_public_inputs([gate4]);
+        let witness = witness(
+            vec![3.into(), 9.into(), 3.into(), 30.into()],
+            vec![3.into(), 3.into(), 27.into(), 30.into()],
+            vec![9.into(), 27.into(), 30.into(), 35.into()],
+        );
+        assert!(builder.check_witness(&witness).is_ok());
+        let circuit = builder.build();
+        let proof = circuit.prove::<Sha3Hash>(witness, 3).unwrap();
+        let public_inputs = circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&gate4).unwrap(), 35.into());
+    }
+
+    fn test_circuit2<H: Hash>(blowup_exp: u32) {
+        let (circuit, gate) = build_test_circuit();
+        let proof = circuit
+            .prove::<H>(
+                witness(
+                    vec![4.into(), 16.into(), 4.into(), 68.into()],
+                    vec![4.into(), 4.into(), 64.into(), 5.into()],
+                    vec![16.into(), 64.into(), 68.into(), 73.into()],
+                ),
+                blowup_exp,
+            )
+            .unwrap();
+        let public_inputs = circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 73.into());
+    }
+
+    #[test]
+    fn test_circuit2_blowup_2() {
+        test_circuit2::<Sha3Hash>(1);
+        test_circuit2::<Poseidon2Hash>(1);
+    }
+
+    #[test]
+    fn test_circuit2_blowup_4() {
+        test_circuit2::<Sha3Hash>(2);
+        test_circuit2::<Poseidon2Hash>(2);
+    }
+
+    #[test]
+    fn test_circuit2_blowup_8() {
+        test_circuit2::<Sha3Hash>(3);
+        test_circuit2::<Poseidon2Hash>(3);
+    }
+
+    #[test]
+    fn test_circuit2_blowup_16() {
+        test_circuit2::<Sha3Hash>(4);
+        test_circuit2::<Poseidon2Hash>(4);
+    }
+
+    #[test]
+    fn test_circuit2_blowup_32() {
+        test_circuit2::<Sha3Hash>(5);
+        test_circuit2::<Poseidon2Hash>(5);
+    }
+
+    #[test]
+    fn test_circuit2_blowup_64() {
+        test_circuit2::<Sha3Hash>(6);
+        test_circuit2::<Poseidon2Hash>(6);
+    }
+
+    #[test]
+    fn test_circuit2_blowup_128() {
+        test_circuit2::<Sha3Hash>(7);
+        test_circuit2::<Poseidon2Hash>(7);
+    }
+
+    #[test]
+    fn test_circuit2_blowup_256() {
+        test_circuit2::<Sha3Hash>(8);
+        test_circuit2::<Poseidon2Hash>(8);
+    }
+
+    #[test]
+    fn test_gate_constraint_violation() {
+        let (circuit, _) = build_test_circuit();
+        assert!(
+            circuit
+                .prove::<Sha3Hash>(
+                    witness(
+                        vec![4.into(), 16.into(), 4.into(), 68.into()],
+                        vec![4.into(), 4.into(), 64.into(), 5.into()],
+                        vec![16.into(), 64.into(), 68.into(), 35.into()],
+                    ),
+                    2
+                )
+                .is_err()
+        );
     }
 
     // TODO
