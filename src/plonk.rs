@@ -651,38 +651,60 @@ impl CircuitBuilder {
     pub fn build(self) -> Circuit {
         let n = padded_size(self.gates.len());
         let pad = n - self.gates.len();
-        let ql = self
-            .gates
-            .iter()
-            .map(|gate| gate.ql)
-            .chain(std::iter::repeat_n(Scalar::ZERO, pad))
-            .collect();
-        let qr = self
-            .gates
-            .iter()
-            .map(|gate| gate.qr)
-            .chain(std::iter::repeat_n(Scalar::ZERO, pad))
-            .collect();
-        let qo = self
-            .gates
-            .iter()
-            .map(|gate| gate.qo)
-            .chain(std::iter::repeat_n(Scalar::ZERO, pad))
-            .collect();
-        let qm = self
-            .gates
-            .iter()
-            .map(|gate| gate.qm)
-            .chain(std::iter::repeat_n(Scalar::ZERO, pad))
-            .collect();
-        let qc = self
-            .gates
-            .iter()
-            .map(|gate| gate.qc)
-            .chain(std::iter::repeat_n(Scalar::ZERO, pad))
-            .collect();
-        let (sl, sr, so) = self.build_identity_permutation();
-        Circuit::new(n, self.public_inputs, ql, qr, qo, qm, qc, sl, sr, so)
+        let ql = Polynomial::encode2(
+            self.gates
+                .iter()
+                .map(|gate| gate.ql)
+                .chain(std::iter::repeat_n(Scalar::ZERO, pad))
+                .collect(),
+        );
+        let qr = Polynomial::encode2(
+            self.gates
+                .iter()
+                .map(|gate| gate.qr)
+                .chain(std::iter::repeat_n(Scalar::ZERO, pad))
+                .collect(),
+        );
+        let qo = Polynomial::encode2(
+            self.gates
+                .iter()
+                .map(|gate| gate.qo)
+                .chain(std::iter::repeat_n(Scalar::ZERO, pad))
+                .collect(),
+        );
+        let qm = Polynomial::encode2(
+            self.gates
+                .iter()
+                .map(|gate| gate.qm)
+                .chain(std::iter::repeat_n(Scalar::ZERO, pad))
+                .collect(),
+        );
+        let qc = Polynomial::encode2(
+            self.gates
+                .iter()
+                .map(|gate| gate.qc)
+                .chain(std::iter::repeat_n(Scalar::ZERO, pad))
+                .collect(),
+        );
+        let (sl_values, sr_values, so_values) = self.build_identity_permutation();
+        let sl = Polynomial::encode2(sl_values.clone());
+        let sr = Polynomial::encode2(sr_values.clone());
+        let so = Polynomial::encode2(so_values.clone());
+        Circuit {
+            size: self.gates.len(),
+            public_inputs: self.public_inputs,
+            ql,
+            qr,
+            qo,
+            qm,
+            qc,
+            sl_values,
+            sl,
+            sr_values,
+            sr,
+            so_values,
+            so,
+        }
     }
 
     pub fn check_witness(&self, witness: &Witness) -> Result<()> {
@@ -752,54 +774,6 @@ pub struct Circuit {
 }
 
 impl Circuit {
-    fn new(
-        size: usize,
-        public_inputs: BTreeSet<Wire>,
-        ql: Vec<Scalar>,
-        qr: Vec<Scalar>,
-        qo: Vec<Scalar>,
-        qm: Vec<Scalar>,
-        qc: Vec<Scalar>,
-        sl: Vec<Scalar>,
-        sr: Vec<Scalar>,
-        so: Vec<Scalar>,
-    ) -> Self {
-        assert_eq!(size, ql.len());
-        assert_eq!(size, qr.len());
-        assert_eq!(size, qo.len());
-        assert_eq!(size, qm.len());
-        assert_eq!(size, qc.len());
-        assert_eq!(size, sl.len());
-        assert_eq!(size, sr.len());
-        assert_eq!(size, so.len());
-        let ql = Polynomial::encode2(ql);
-        let qr = Polynomial::encode2(qr);
-        let qo = Polynomial::encode2(qo);
-        let qm = Polynomial::encode2(qm);
-        let qc = Polynomial::encode2(qc);
-        let sl_values = sl;
-        let sl = Polynomial::encode2(sl_values.clone());
-        let sr_values = sr;
-        let sr = Polynomial::encode2(sr_values.clone());
-        let so_values = so;
-        let so = Polynomial::encode2(so_values.clone());
-        Self {
-            size,
-            public_inputs,
-            ql,
-            qr,
-            qo,
-            qm,
-            qc,
-            sl_values,
-            sl,
-            sr_values,
-            sr,
-            so_values,
-            so,
-        }
-    }
-
     pub fn size(&self) -> usize {
         self.size
     }
