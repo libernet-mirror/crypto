@@ -231,8 +231,7 @@ pub fn hash_t4(inputs: &[Scalar]) -> Scalar {
     hash::<BlueSkyConfig4, Scalar, 4>(inputs)
 }
 
-/// PLONK chip for our Poseidon hash instance (see the `hash` function above for the exact
-/// parameters).
+/// PLONK chip for our Poseidon hash instance over the BlueSky field.
 ///
 /// `T` is the state vector size and `I` is the number of input scalars.
 #[derive(Debug, Default)]

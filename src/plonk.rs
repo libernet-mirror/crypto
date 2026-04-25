@@ -859,6 +859,8 @@ impl Circuit {
             ));
         }
 
+        let n = padded_size(self.size);
+
         let xi = H::hash_many(&[
             utils::hash_to_scalar(b"libernet/plonk/challenge"),
             H::hash_many(witness.left.as_slice()),
@@ -889,10 +891,10 @@ impl Circuit {
             let constraint = gate_constraint
                 + permutation_fixpoint_constraint * alpha
                 + permutation_recurrence_constraint * alpha.square();
-            constraint.divide_by_zero(self.size)?
+            constraint.divide_by_zero(n)?
         };
 
-        let omega = Polynomial::domain_element2(1, self.size);
+        let omega = Polynomial::domain_element2(1, n);
 
         let prover = pcs::Prover::<H>::new(
             [
@@ -920,7 +922,7 @@ impl Circuit {
                             Wire::RightIn(gate) => gate,
                             Wire::Out(gate) => gate,
                         } as usize,
-                        self.size,
+                        n,
                     )
                 }))
                 .collect(),
@@ -964,6 +966,8 @@ impl Circuit {
             return Err(anyhow!("incorrect number of openings"));
         }
 
+        let n = padded_size(self.size);
+
         // TODO: recompute xi via Fiat-Shamir rather than taking it from the proof, otherwise the
         // prover can forge it.
         let xi = *inner_proof.z(0);
@@ -974,7 +978,7 @@ impl Circuit {
             }
         }
 
-        let omega = Polynomial::domain_element2(1, self.size);
+        let omega = Polynomial::domain_element2(1, n);
         if *inner_proof.z(4) != xi * omega {
             return Err(anyhow!("invalid opening"));
         }
@@ -989,7 +993,7 @@ impl Circuit {
                     Wire::RightIn(gate) => gate,
                     Wire::Out(gate) => gate,
                 } as usize,
-                self.size,
+                n,
             );
             let z = *inner_proof.z(i + 6);
             if z != x {
@@ -1009,7 +1013,7 @@ impl Circuit {
         let permutation_accumulator = *inner_proof.y(3);
         let shifted_permutation_accumulator = *inner_proof.y(4);
         let quotient = *inner_proof.y(5);
-        let zero = xi.pow([self.size as u64, 0, 0, 0]) - Scalar::ONE;
+        let zero = xi.pow([n as u64, 0, 0, 0]) - Scalar::ONE;
 
         let gate_constraint = self.ql.evaluate(xi) * left
             + self.qr.evaluate(xi) * right
@@ -1029,7 +1033,7 @@ impl Circuit {
             * permutation_denominator
             - permutation_accumulator * permutation_numerator;
         let permutation_fixpoint_constraint =
-            (permutation_accumulator - Scalar::from(1)) * Self::lagrange0(xi, self.size);
+            (permutation_accumulator - Scalar::from(1)) * Self::lagrange0(xi, n);
 
         let full_constraint = gate_constraint
             + alpha * permutation_fixpoint_constraint
