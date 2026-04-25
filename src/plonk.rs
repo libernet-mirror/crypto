@@ -805,17 +805,17 @@ impl Circuit {
     }
 
     /// Builds the two polynomials used in the permutation argument. The components of the returned
-    /// tuple are the coordinate pair accumulator and the recurrence constraint, respectively.
+    /// tuple are, respectively: the coordinate pair accumulator, the fixpoint constraint, and the
+    /// recurrence constraint.
     fn build_permutation_argument(
         &self,
         witness: &Witness,
         left: &Polynomial,
         right: &Polynomial,
         out: &Polynomial,
-        alpha: Scalar,
         beta: Scalar,
         gamma: Scalar,
-    ) -> Result<(Polynomial, Polynomial)> {
+    ) -> Result<(Polynomial, Polynomial, Polynomial)> {
         let n = padded_size(self.size);
         let k1 = k1();
         let k2 = k2();
@@ -873,10 +873,7 @@ impl Circuit {
         let fixpoint_constraint =
             (accumulator.clone() - Scalar::ONE) * Polynomial::lagrange0(n).clone();
 
-        let permutation_constraint =
-            recurrence_constraint * alpha + fixpoint_constraint * alpha.square();
-
-        Ok((accumulator, permutation_constraint))
+        Ok((accumulator, fixpoint_constraint, recurrence_constraint))
     }
 
     pub fn prove<H: Hash>(&self, witness: Witness, blowup_exp: u32) -> Result<Proof<H>> {
@@ -903,8 +900,11 @@ impl Circuit {
         let right = Polynomial::encode2(witness.right.clone());
         let out = Polynomial::encode2(witness.out.clone());
 
-        let (permutation_accumulator, permutation_constraint) =
-            self.build_permutation_argument(&witness, &left, &right, &out, alpha, beta, gamma)?;
+        let (
+            permutation_accumulator,
+            permutation_fixpoint_constraint,
+            permutation_recurrence_constraint,
+        ) = self.build_permutation_argument(&witness, &left, &right, &out, beta, gamma)?;
 
         let quotient = {
             let gate_constraint = self.ql.clone() * left.clone()
@@ -912,7 +912,9 @@ impl Circuit {
                 + self.qo.clone() * out.clone()
                 + Polynomial::multiply_many([self.qm.clone(), left.clone(), right.clone()])
                 + self.qc.clone();
-            let constraint = gate_constraint + permutation_constraint;
+            let constraint = gate_constraint
+                + permutation_fixpoint_constraint * alpha
+                + permutation_recurrence_constraint * alpha.square();
             constraint.divide_by_zero(self.size)?
         };
 
@@ -1049,14 +1051,15 @@ impl Circuit {
                 * (right + beta * self.sr.evaluate(xi) + gamma)
                 * (out + beta * self.so.evaluate(xi) + gamma)
         };
-        let permutation_constraint = shifted_permutation_accumulator * permutation_denominator
+        let permutation_recurrence_constraint = shifted_permutation_accumulator
+            * permutation_denominator
             - permutation_accumulator * permutation_numerator;
-        let permutation_fixpoint =
+        let permutation_fixpoint_constraint =
             (permutation_accumulator - Scalar::from(1)) * Self::lagrange0(xi, self.size);
 
         let full_constraint = gate_constraint
-            + alpha * permutation_constraint
-            + alpha.square() * permutation_fixpoint;
+            + alpha * permutation_fixpoint_constraint
+            + alpha.square() * permutation_recurrence_constraint;
         if full_constraint != quotient * zero {
             return Err(anyhow!("constraint violation"));
         }
