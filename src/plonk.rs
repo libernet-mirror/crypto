@@ -1029,7 +1029,7 @@ impl Circuit {
         }
 
         let n = padded_size(self.size);
-        let pcs_degree_bound = n * 4;
+        let pcs_degree_bound = (self.size * 3).next_power_of_two();
 
         let public_inputs = self
             .public_inputs
