@@ -12,6 +12,15 @@ pub use pcs::{Hash, Poseidon2Hash, Sha3Hash};
 
 type Polynomial = poly::Polynomial<Scalar>;
 
+/// Number of extra rows that implicitly added to all circuits and witnesses for blinding.
+///
+/// Blinding rows are appended at the end using NOP gates and random scalars in the witness.
+///
+/// The reason why PLONK requires 3 of them is that they must be strictly more than the number of
+/// off-domain locations opened in the underlying polynomial commitment scheme, and PLONK requires
+/// opening two such locations: the Fiat-Shamir challenge xi and also xi*omega (the latter is for
+/// the coordinate pair accumulator polynomial of the permutation argument, which contains the
+/// witness columns in its definition).
 pub const NUM_BLINDING_ROWS: usize = 3;
 
 const K1: Scalar = Scalar::from_const(71);
@@ -1748,14 +1757,9 @@ mod tests {
         left.resize(padded_size, Scalar::ZERO);
         right.resize(padded_size, Scalar::ZERO);
         out.resize(padded_size, Scalar::ZERO);
-        for i in 0..NUM_BLINDING_ROWS {
-            left[original_size + i] = utils::get_random_scalar();
-            right[original_size + i] = utils::get_random_scalar();
-            out[original_size + i] = utils::get_random_scalar();
-        }
         Witness {
             size: blinded_size,
-            gate_counter: 0,
+            gate_counter: original_size as u32,
             left,
             right,
             out,
