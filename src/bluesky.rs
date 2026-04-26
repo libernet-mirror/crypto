@@ -16,19 +16,19 @@ use subtle::{
 };
 
 #[inline(always)]
-fn add(a: u64, b: u64) -> (u64, u64) {
+const fn add(a: u64, b: u64) -> (u64, u64) {
     let sum = (a as u128) + (b as u128);
     (sum as u64, (sum >> 64) as u64)
 }
 
 #[inline(always)]
-fn sub(a: u64, b: u64) -> (u64, u64) {
+const fn sub(a: u64, b: u64) -> (u64, u64) {
     let ret = (a as u128).wrapping_sub(b as u128);
     (ret as u64, (ret >> 64) as u64)
 }
 
 #[inline(always)]
-fn mul(lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {
+const fn mul(lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {
     let product = (lhs as u128) * (rhs as u128) + carry as u128;
     (product as u64, (product >> 64) as u64)
 }
@@ -128,7 +128,7 @@ impl Scalar {
     /// Subtracts p. Assumes no underflow, ie. `self` must be greater than or equal to p.
     ///
     /// Used in several algorithms to bring a value back into the [0, p) range.
-    fn subp(&self) -> Self {
+    const fn subp(&self) -> Self {
         let (s0, b0) = sub(self.0, Self::P[0]);
         let (s1, b1) = sbb(self.1, Self::P[1], b0);
         let (s2, b2) = sbb(self.2, Self::P[2], b1);
@@ -137,12 +137,30 @@ impl Scalar {
     }
 
     /// Compares raw scalars, ignoring Montgomery form.
-    fn cmp_raw(&self, other: &Self) -> Ordering {
-        (self.3, self.2, self.1, self.0).cmp(&(other.3, other.2, other.1, other.0))
+    const fn cmp_raw(&self, other: &Self) -> Ordering {
+        if self.3 < other.3 {
+            Ordering::Less
+        } else if self.3 > other.3 {
+            Ordering::Greater
+        } else if self.2 < other.2 {
+            Ordering::Less
+        } else if self.2 > other.2 {
+            Ordering::Greater
+        } else if self.1 < other.1 {
+            Ordering::Less
+        } else if self.1 > other.1 {
+            Ordering::Greater
+        } else if self.0 < other.0 {
+            Ordering::Less
+        } else if self.0 > other.0 {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
     }
 
     /// Performs Montgomery multiplication using CIOS over 64-bit limbs.
-    fn mont_mul(lhs: &Self, rhs: &Self) -> Self {
+    const fn mont_mul(lhs: &Self, rhs: &Self) -> Self {
         let mut t0: u64;
         let mut t1: u64;
         let mut t2: u64;
@@ -220,7 +238,7 @@ impl Scalar {
     /// This is exactly the same as `mont_mul(Scalar(1, 0, 0, 0))` but slightly faster because it
     /// exploits the fact that we're multiplying by (1, 0, 0, 0), so it skips all "row" phases and
     /// only performs the "redc" phases.
-    fn to_raw(&self) -> Self {
+    const fn to_raw(&self) -> Self {
         let mut t0 = self.0;
         let mut t1 = self.1;
         let mut t2 = self.2;
@@ -265,6 +283,12 @@ impl Scalar {
             Ordering::Greater => result.subp(),
             _ => result,
         }
+    }
+
+    /// Constructs scalars at compile time.
+    pub const fn from_const(value: u64) -> Scalar {
+        let raw = Self(value, 0, 0, 0);
+        Self::mont_mul(&raw, &Self::R)
     }
 
     /// Constructs a scalar from the given little-endian byte representation, returning `None` if

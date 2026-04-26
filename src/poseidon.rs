@@ -396,8 +396,12 @@ where
         let sum = builder.add_sum_gate(sum.into(), state[2].into());
         state[0] = builder.add_sum_gate(state[0].into(), sum.into());
         state[1] = builder.add_sum_gate(state[1].into(), sum.into());
-        state[2] =
-            builder.add_linear_combination_gate(2.into(), state[2].into(), 1.into(), sum.into());
+        state[2] = builder.add_linear_combination_gate(
+            Scalar::from_const(2),
+            state[2].into(),
+            Scalar::from_const(1),
+            sum.into(),
+        );
         state
     }
 
@@ -406,7 +410,12 @@ where
         let sum = witness.add(sum.into(), state[2].into());
         state[0] = witness.add(state[0].into(), sum.into());
         state[1] = witness.add(state[1].into(), sum.into());
-        state[2] = witness.combine(2.into(), state[2].into(), 1.into(), sum.into());
+        state[2] = witness.combine(
+            Scalar::from_const(2),
+            state[2].into(),
+            Scalar::from_const(1),
+            sum.into(),
+        );
         state
     }
 
@@ -421,9 +430,9 @@ where
         let m = BlueSkyConfig4::get_internal_matrix();
         std::array::from_fn(|i| {
             builder.add_linear_combination_gate(
-                m[i * 5] - Scalar::from(1),
+                m[i * 5] - Scalar::from_const(1),
                 state[i].into(),
-                1.into(),
+                Scalar::from_const(1),
                 sum.into(),
             )
         })
@@ -436,9 +445,9 @@ where
         let m = BlueSkyConfig4::get_internal_matrix();
         std::array::from_fn(|i| {
             witness.combine(
-                m[i * 5] - Scalar::from(1),
+                m[i * 5] - Scalar::from_const(1),
                 state[i].into(),
-                1.into(),
+                Scalar::from_const(1),
                 sum.into(),
             )
         })
@@ -604,6 +613,7 @@ where
 mod tests {
     use super::*;
     use crate::pcs::Sha3Hash;
+    use crate::plonk::{self, NUM_BLINDING_ROWS};
     use crate::utils::parse_scalar;
     use blstrs::Scalar as BlsScalar;
     use primitive_types::U256;
@@ -864,7 +874,7 @@ mod tests {
             .unwrap()[0]
             .unwrap();
         builder.declare_public_inputs(input_wires.into_iter().chain(std::iter::once(result_wire)));
-        let mut witness = Witness::new(builder.len());
+        let mut witness = Witness::new(builder.len() + plonk::NUM_BLINDING_ROWS);
         for i in 0..I {
             witness.assert_constant(inputs[i]);
         }
@@ -891,57 +901,57 @@ mod tests {
 
     #[test]
     fn test_hash_chip_t3_1() {
-        test_hash_chip::<3, 1>([42.into()], 648);
+        test_hash_chip::<3, 1>([42.into()], 651);
     }
 
     #[test]
     fn test_hash_chip_t3_2() {
-        test_hash_chip::<3, 2>([1.into(), 2.into()], 648);
+        test_hash_chip::<3, 2>([1.into(), 2.into()], 651);
     }
 
     #[test]
     fn test_hash_chip_t3_3() {
-        test_hash_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1295);
+        test_hash_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1298);
     }
 
     #[test]
     fn test_hash_chip_t3_4() {
-        test_hash_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1297);
+        test_hash_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1300);
     }
 
     #[test]
     fn test_hash_chip_t3_5() {
         test_hash_chip::<3, 5>(
             [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-            1944,
+            1947,
         );
     }
 
     #[test]
     fn test_hash_chip_t4_1() {
-        test_hash_chip::<4, 1>([42.into()], 856);
+        test_hash_chip::<4, 1>([42.into()], 859);
     }
 
     #[test]
     fn test_hash_chip_t4_2() {
-        test_hash_chip::<4, 2>([1.into(), 2.into()], 856);
+        test_hash_chip::<4, 2>([1.into(), 2.into()], 859);
     }
 
     #[test]
     fn test_hash_chip_t4_3() {
-        test_hash_chip::<4, 3>([3.into(), 4.into(), 5.into()], 856);
+        test_hash_chip::<4, 3>([3.into(), 4.into(), 5.into()], 859);
     }
 
     #[test]
     fn test_hash_chip_t4_4() {
-        test_hash_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1710);
+        test_hash_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1713);
     }
 
     #[test]
     fn test_hash_chip_t4_5() {
         test_hash_chip::<4, 5>(
             [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-            1712,
+            1715,
         );
     }
 
@@ -959,7 +969,7 @@ mod tests {
             .unwrap()[0]
             .unwrap();
         builder.declare_public_inputs([result_wire]);
-        let mut witness = Witness::new(builder.len());
+        let mut witness = Witness::new(builder.len() + NUM_BLINDING_ROWS);
         assert_eq!(
             chip.witness(
                 &mut witness,
@@ -981,57 +991,57 @@ mod tests {
 
     #[test]
     fn test_preimage_chip_t3_1() {
-        test_preimage_chip::<3, 1>([42.into()], 647);
+        test_preimage_chip::<3, 1>([42.into()], 650);
     }
 
     #[test]
     fn test_preimage_chip_t3_2() {
-        test_preimage_chip::<3, 2>([1.into(), 2.into()], 646);
+        test_preimage_chip::<3, 2>([1.into(), 2.into()], 649);
     }
 
     #[test]
     fn test_preimage_chip_t3_3() {
-        test_preimage_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1292);
+        test_preimage_chip::<3, 3>([3.into(), 4.into(), 5.into()], 1295);
     }
 
     #[test]
     fn test_preimage_chip_t3_4() {
-        test_preimage_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1293);
+        test_preimage_chip::<3, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1296);
     }
 
     #[test]
     fn test_preimage_chip_t3_5() {
         test_preimage_chip::<3, 5>(
             [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-            1939,
+            1942,
         );
     }
 
     #[test]
     fn test_preimage_chip_t4_1() {
-        test_preimage_chip::<4, 1>([42.into()], 855);
+        test_preimage_chip::<4, 1>([42.into()], 858);
     }
 
     #[test]
     fn test_preimage_chip_t4_2() {
-        test_preimage_chip::<4, 2>([1.into(), 2.into()], 854);
+        test_preimage_chip::<4, 2>([1.into(), 2.into()], 857);
     }
 
     #[test]
     fn test_preimage_chip_t4_3() {
-        test_preimage_chip::<4, 3>([3.into(), 4.into(), 5.into()], 853);
+        test_preimage_chip::<4, 3>([3.into(), 4.into(), 5.into()], 856);
     }
 
     #[test]
     fn test_preimage_chip_t4_4() {
-        test_preimage_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1706);
+        test_preimage_chip::<4, 4>([6.into(), 7.into(), 8.into(), 9.into()], 1709);
     }
 
     #[test]
     fn test_preimage_chip_t4_5() {
         test_preimage_chip::<4, 5>(
             [10.into(), 11.into(), 12.into(), 13.into(), 14.into()],
-            1707,
+            1710,
         );
     }
 }

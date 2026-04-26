@@ -12,13 +12,10 @@ pub use pcs::{Hash, Poseidon2Hash, Sha3Hash};
 
 type Polynomial = poly::Polynomial<Scalar>;
 
-fn k1() -> Scalar {
-    71.into()
-}
+pub const NUM_BLINDING_ROWS: usize = 3;
 
-fn k2() -> Scalar {
-    104.into()
-}
+const K1: Scalar = Scalar::from_const(71);
+const K2: Scalar = Scalar::from_const(104);
 
 fn padded_size(n: usize) -> usize {
     std::cmp::max(2, n.next_power_of_two())
@@ -330,7 +327,12 @@ impl Witness {
     }
 
     pub fn assert_trit(&mut self, input: WireOrUnconstrained) {
-        let lhs = self.poly2(1.into(), -Scalar::from(3), 2.into(), input);
+        let lhs = self.poly2(
+            Scalar::from_const(1),
+            -Scalar::from_const(3),
+            Scalar::from_const(2),
+            input,
+        );
         let gate = self.pop_gate();
         self.copy(lhs.into(), Wire::LeftIn(gate));
         self.copy(input, Wire::RightIn(gate));
@@ -341,7 +343,7 @@ impl Witness {
         self.copy(input, Wire::LeftIn(gate));
         let input = self.copy(input, Wire::RightIn(gate));
         let out = Wire::Out(gate);
-        self.set(out, Scalar::from(1) - input);
+        self.set(out, Scalar::from_const(1) - input);
         out
     }
 
@@ -368,8 +370,21 @@ impl Witness {
         let lhs = self.copy(lhs, Wire::LeftIn(gate));
         let rhs = self.copy(rhs, Wire::RightIn(gate));
         let out = Wire::Out(gate);
-        self.set(out, lhs + rhs - Scalar::from(2) * lhs * rhs);
+        self.set(out, lhs + rhs - Scalar::from_const(2) * lhs * rhs);
         out
+    }
+
+    fn blind_row(&mut self) {
+        let gate = self.pop_gate();
+        self.set(Wire::LeftIn(gate), utils::get_random_scalar());
+        self.set(Wire::RightIn(gate), utils::get_random_scalar());
+        self.set(Wire::Out(gate), utils::get_random_scalar());
+    }
+
+    fn blind(&mut self) {
+        self.blind_row();
+        self.blind_row();
+        self.blind_row();
     }
 }
 
@@ -450,48 +465,78 @@ impl CircuitBuilder {
         Wire::Out(gate)
     }
 
+    pub fn add_nop_gate(&mut self) {
+        self.add_raw_gate(
+            Scalar::ZERO,
+            Scalar::ZERO,
+            Scalar::ZERO,
+            Scalar::ZERO,
+            Scalar::ZERO,
+        );
+    }
+
     pub fn add_const_gate(&mut self, value: Scalar) -> Wire {
-        Wire::Out(self.add_raw_gate(0.into(), 0.into(), 1.into(), 0.into(), -value))
+        Wire::Out(self.add_raw_gate(
+            Scalar::from_const(0),
+            Scalar::from_const(0),
+            Scalar::from_const(1),
+            Scalar::from_const(0),
+            -value,
+        ))
     }
 
     pub fn add_sum_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
         self.add_binary_gate(
-            1.into(),
-            1.into(),
-            -Scalar::from(1),
-            0.into(),
-            0.into(),
+            Scalar::from_const(1),
+            Scalar::from_const(1),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
+            Scalar::from_const(0),
             lhs,
             rhs,
         )
     }
 
     pub fn add_sum_with_const_gate(&mut self, lhs: Option<Wire>, c: Scalar) -> Wire {
-        self.add_unary_gate(1.into(), 0.into(), -Scalar::from(1), 0.into(), c, lhs)
+        self.add_unary_gate(
+            Scalar::from_const(1),
+            Scalar::from_const(0),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
+            c,
+            lhs,
+        )
     }
 
     pub fn add_sub_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
         self.add_binary_gate(
-            1.into(),
-            -Scalar::from(1),
-            -Scalar::from(1),
-            0.into(),
-            0.into(),
+            Scalar::from_const(1),
+            -Scalar::from_const(1),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
+            Scalar::from_const(0),
             lhs,
             rhs,
         )
     }
 
     pub fn add_sub_const_gate(&mut self, lhs: Option<Wire>, c: Scalar) -> Wire {
-        self.add_unary_gate(1.into(), 0.into(), -Scalar::from(1), 0.into(), -c, lhs)
+        self.add_unary_gate(
+            Scalar::from_const(1),
+            Scalar::from_const(0),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
+            -c,
+            lhs,
+        )
     }
 
     pub fn add_sub_from_const_gate(&mut self, c: Scalar, rhs: Option<Wire>) -> Wire {
         self.add_unary_gate(
-            0.into(),
-            -Scalar::from(1),
-            -Scalar::from(1),
-            0.into(),
+            Scalar::from_const(0),
+            -Scalar::from_const(1),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
             c,
             rhs,
         )
@@ -499,11 +544,11 @@ impl CircuitBuilder {
 
     pub fn add_mul_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
         self.add_binary_gate(
-            0.into(),
-            0.into(),
-            -Scalar::from(1),
-            1.into(),
-            0.into(),
+            Scalar::from_const(0),
+            Scalar::from_const(0),
+            -Scalar::from_const(1),
+            Scalar::from_const(1),
+            Scalar::from_const(0),
             lhs,
             rhs,
         )
@@ -511,17 +556,24 @@ impl CircuitBuilder {
 
     pub fn add_square_gate(&mut self, input: Option<Wire>) -> Wire {
         self.add_unary_gate(
-            0.into(),
-            0.into(),
-            1.into(),
-            -Scalar::from(1),
-            0.into(),
+            Scalar::from_const(0),
+            Scalar::from_const(0),
+            Scalar::from_const(1),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
             input,
         )
     }
 
     pub fn add_mul_by_const_gate(&mut self, lhs: Option<Wire>, c: Scalar) -> Wire {
-        self.add_unary_gate(c, 0.into(), -Scalar::from(1), 0.into(), 0.into(), lhs)
+        self.add_unary_gate(
+            c,
+            Scalar::from_const(0),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
+            Scalar::from_const(0),
+            lhs,
+        )
     }
 
     pub fn add_linear_combination_gate(
@@ -531,7 +583,15 @@ impl CircuitBuilder {
         c2: Scalar,
         rhs: Option<Wire>,
     ) -> Wire {
-        self.add_binary_gate(c1, c2, -Scalar::from(1), 0.into(), 0.into(), lhs, rhs)
+        self.add_binary_gate(
+            c1,
+            c2,
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
+            Scalar::from_const(0),
+            lhs,
+            rhs,
+        )
     }
 
     pub fn add_poly2_gate(
@@ -541,28 +601,40 @@ impl CircuitBuilder {
         c3: Scalar,
         input: Option<Wire>,
     ) -> Wire {
-        self.add_unary_gate(c2, 0.into(), -Scalar::from(1), c1, c3, input)
+        self.add_unary_gate(
+            c2,
+            Scalar::from_const(0),
+            -Scalar::from_const(1),
+            c1,
+            c3,
+            input,
+        )
     }
 
     pub fn add_bit_assertion_gate(&mut self, input: Option<Wire>) {
         self.add_unary_gate(
-            1.into(),
-            0.into(),
-            0.into(),
-            -Scalar::from(1),
-            0.into(),
+            Scalar::from_const(1),
+            Scalar::from_const(0),
+            Scalar::from_const(0),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
             input,
         );
     }
 
     pub fn add_trit_assertion_gate(&mut self, input: Option<Wire>) {
-        let lhs = self.add_poly2_gate(1.into(), -Scalar::from(3), 2.into(), input);
+        let lhs = self.add_poly2_gate(
+            Scalar::from_const(1),
+            -Scalar::from_const(3),
+            Scalar::from_const(2),
+            input,
+        );
         self.add_binary_gate(
-            0.into(),
-            0.into(),
-            0.into(),
-            1.into(),
-            0.into(),
+            Scalar::from_const(0),
+            Scalar::from_const(0),
+            Scalar::from_const(0),
+            Scalar::from_const(1),
+            Scalar::from_const(0),
             lhs.into(),
             input,
         );
@@ -570,22 +642,22 @@ impl CircuitBuilder {
 
     pub fn add_not_gate(&mut self, input: Option<Wire>) -> Wire {
         self.add_unary_gate(
-            -Scalar::from(1),
-            0.into(),
-            -Scalar::from(1),
-            0.into(),
-            1.into(),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
+            Scalar::from_const(1),
             input,
         )
     }
 
     pub fn add_and_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
         self.add_binary_gate(
-            0.into(),
-            0.into(),
-            -Scalar::from(1),
-            1.into(),
-            0.into(),
+            Scalar::from_const(0),
+            Scalar::from_const(0),
+            -Scalar::from_const(1),
+            Scalar::from_const(1),
+            Scalar::from_const(0),
             lhs,
             rhs,
         )
@@ -593,11 +665,11 @@ impl CircuitBuilder {
 
     pub fn add_or_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
         self.add_binary_gate(
-            1.into(),
-            1.into(),
-            -Scalar::from(1),
-            -Scalar::from(1),
-            0.into(),
+            Scalar::from_const(1),
+            Scalar::from_const(1),
+            -Scalar::from_const(1),
+            -Scalar::from_const(1),
+            Scalar::from_const(0),
             lhs,
             rhs,
         )
@@ -605,14 +677,20 @@ impl CircuitBuilder {
 
     pub fn add_xor_gate(&mut self, lhs: Option<Wire>, rhs: Option<Wire>) -> Wire {
         self.add_binary_gate(
-            1.into(),
-            1.into(),
-            -Scalar::from(1),
-            -Scalar::from(2),
-            0.into(),
+            Scalar::from_const(1),
+            Scalar::from_const(1),
+            -Scalar::from_const(1),
+            -Scalar::from_const(2),
+            Scalar::from_const(0),
             lhs,
             rhs,
         )
+    }
+
+    fn add_blinding_gates(&mut self) {
+        self.add_nop_gate();
+        self.add_nop_gate();
+        self.add_nop_gate();
     }
 
     pub fn declare_public_inputs<I: IntoIterator<Item = Wire>>(&mut self, wires: I) {
@@ -623,9 +701,9 @@ impl CircuitBuilder {
         let n = padded_size(self.gates.len());
         let mut x = vec![Scalar::ZERO; n * 3];
         if n > 0 {
-            x[0] = 1.into();
-            x[n] = k1();
-            x[n * 2] = k2();
+            x[0] = Scalar::ONE;
+            x[n] = K1;
+            x[n * 2] = K2;
         }
         let omega = Polynomial::domain_element2(1, n);
         for i in 1..n {
@@ -648,7 +726,8 @@ impl CircuitBuilder {
         )
     }
 
-    pub fn build(self) -> Circuit {
+    pub fn build(mut self) -> Circuit {
+        self.add_blinding_gates();
         let n = padded_size(self.gates.len());
         let pad = n - self.gates.len();
         let ql = Polynomial::encode2(
@@ -709,7 +788,7 @@ impl CircuitBuilder {
 
     pub fn check_witness(&self, witness: &Witness) -> Result<()> {
         let size = self.gates.len();
-        if witness.size() != size {
+        if witness.size() != size + NUM_BLINDING_ROWS {
             return Err(anyhow!(
                 "incorrect witness size (got {}, want {})",
                 witness.size(),
@@ -723,7 +802,7 @@ impl CircuitBuilder {
             let (ql, qr, qo, qm, qc) = match self.gates[i] {
                 GateConstraint { ql, qr, qo, qm, qc } => (ql, qr, qo, qm, qc),
             };
-            if ql * lhs + qr * rhs + qo * out + qm * lhs * rhs + qc != 0.into() {
+            if ql * lhs + qr * rhs + qo * out + qm * lhs * rhs + qc != Scalar::ZERO {
                 return Err(anyhow!("gate constraint {} violated", i));
             }
         }
@@ -778,6 +857,10 @@ impl Circuit {
         self.size
     }
 
+    pub fn make_witness(&self) -> Witness {
+        Witness::new(self.size)
+    }
+
     /// Builds the two polynomials used in the permutation argument. The components of the returned
     /// tuple are, respectively: the coordinate pair accumulator, the fixpoint constraint, and the
     /// recurrence constraint.
@@ -791,8 +874,6 @@ impl Circuit {
         gamma: Scalar,
     ) -> Result<(Polynomial, Polynomial, Polynomial)> {
         let n = padded_size(self.size);
-        let k1 = k1();
-        let k2 = k2();
 
         let sl = self.sl_values.as_slice();
         let sr = self.sr_values.as_slice();
@@ -800,13 +881,13 @@ impl Circuit {
 
         let mut accumulator = vec![Scalar::ZERO; n + 1];
 
-        accumulator[0] = 1.into();
+        accumulator[0] = Scalar::ONE;
         for i in 0..n {
             let x = Polynomial::domain_element2(i, n);
             accumulator[i + 1] = accumulator[i]
                 * (witness.left[i] + beta * x + gamma)
-                * (witness.right[i] + beta * k1 * x + gamma)
-                * (witness.out[i] + beta * k2 * x + gamma)
+                * (witness.right[i] + beta * K1 * x + gamma)
+                * (witness.out[i] + beta * K2 * x + gamma)
                 * ((witness.left[i] + beta * sl[i] + gamma)
                     * (witness.right[i] + beta * sr[i] + gamma)
                     * (witness.out[i] + beta * so[i] + gamma))
@@ -815,7 +896,7 @@ impl Circuit {
                     .context("division by zero in permutation accumulator")?;
         }
 
-        if accumulator.pop().unwrap() != 1.into() {
+        if accumulator.pop().unwrap() != Scalar::ONE {
             return Err(anyhow!("permutation accumulator wraparound check failed"));
         }
 
@@ -840,8 +921,8 @@ impl Circuit {
         ]) - Polynomial::multiply_many([
             accumulator.clone(),
             left.clone() + Polynomial::with_coefficients(vec![gamma, beta]),
-            right.clone() + Polynomial::with_coefficients(vec![gamma, beta * k1]),
-            out.clone() + Polynomial::with_coefficients(vec![gamma, beta * k2]),
+            right.clone() + Polynomial::with_coefficients(vec![gamma, beta * K1]),
+            out.clone() + Polynomial::with_coefficients(vec![gamma, beta * K2]),
         ]);
 
         let fixpoint_constraint =
@@ -850,7 +931,8 @@ impl Circuit {
         Ok((accumulator, fixpoint_constraint, recurrence_constraint))
     }
 
-    pub fn prove<H: Hash>(&self, witness: Witness, blowup_exp: u32) -> Result<Proof<H>> {
+    pub fn prove<H: Hash>(&self, mut witness: Witness, blowup_exp: u32) -> Result<Proof<H>> {
+        witness.blind();
         if witness.size() != self.size {
             return Err(anyhow!(
                 "incorrect witness size (got {}, want {})",
@@ -868,9 +950,9 @@ impl Circuit {
             H::hash_many(witness.out.as_slice()),
         ]);
 
-        let alpha = H::hash(xi, 1.into());
-        let beta = H::hash(xi, 2.into());
-        let gamma = H::hash(xi, 3.into());
+        let alpha = H::hash(xi, Scalar::from_const(1));
+        let beta = H::hash(xi, Scalar::from_const(2));
+        let gamma = H::hash(xi, Scalar::from_const(3));
 
         let left = Polynomial::encode2(witness.left.clone());
         let right = Polynomial::encode2(witness.right.clone());
@@ -1003,9 +1085,9 @@ impl Circuit {
 
         inner_proof.verify(&proof.commitment)?;
 
-        let alpha = H::hash(xi, 1.into());
-        let beta = H::hash(xi, 2.into());
-        let gamma = H::hash(xi, 3.into());
+        let alpha = H::hash(xi, Scalar::from_const(1));
+        let beta = H::hash(xi, Scalar::from_const(2));
+        let gamma = H::hash(xi, Scalar::from_const(3));
 
         let left = *inner_proof.y(0);
         let right = *inner_proof.y(1);
@@ -1022,8 +1104,8 @@ impl Circuit {
             + self.qc.evaluate(xi);
 
         let permutation_numerator = (left + beta * xi + gamma)
-            * (right + beta * k1() * xi + gamma)
-            * (out + beta * k2() * xi + gamma);
+            * (right + beta * K1 * xi + gamma)
+            * (out + beta * K2 * xi + gamma);
         let permutation_denominator = {
             (left + beta * self.sl.evaluate(xi) + gamma)
                 * (right + beta * self.sr.evaluate(xi) + gamma)
@@ -1033,7 +1115,7 @@ impl Circuit {
             * permutation_denominator
             - permutation_accumulator * permutation_numerator;
         let permutation_fixpoint_constraint =
-            (permutation_accumulator - Scalar::from(1)) * Self::lagrange0(xi, n);
+            (permutation_accumulator - Scalar::from_const(1)) * Self::lagrange0(xi, n);
 
         let full_constraint = gate_constraint
             + alpha * permutation_fixpoint_constraint
@@ -1661,12 +1743,18 @@ mod tests {
         let original_size = left.len();
         assert_eq!(original_size, right.len());
         assert_eq!(original_size, out.len());
-        let padded_size = padded_size(original_size);
+        let blinded_size = original_size + NUM_BLINDING_ROWS;
+        let padded_size = padded_size(blinded_size);
         left.resize(padded_size, Scalar::ZERO);
         right.resize(padded_size, Scalar::ZERO);
         out.resize(padded_size, Scalar::ZERO);
+        for i in 0..NUM_BLINDING_ROWS {
+            left[original_size + i] = utils::get_random_scalar();
+            right[original_size + i] = utils::get_random_scalar();
+            out[original_size + i] = utils::get_random_scalar();
+        }
         Witness {
-            size: original_size,
+            size: blinded_size,
             gate_counter: 0,
             left,
             right,
