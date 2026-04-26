@@ -1029,6 +1029,7 @@ impl Circuit {
         }
 
         let n = padded_size(self.size);
+        let pcs_degree_bound = n * 4;
 
         let public_inputs = self
             .public_inputs
@@ -1049,11 +1050,14 @@ impl Circuit {
         let right = Polynomial::encode2(witness.right.clone());
         let out = Polynomial::encode2(witness.out.clone());
 
-        let xi = get_challenge::<H>(
-            pcs::merkle_root::<H>(left.clone().lde2(n << blowup_exp).as_slice()),
-            pcs::merkle_root::<H>(right.clone().lde2(n << blowup_exp).as_slice()),
-            pcs::merkle_root::<H>(out.clone().lde2(n << blowup_exp).as_slice()),
-        );
+        let xi = {
+            let m = pcs_degree_bound << blowup_exp;
+            get_challenge::<H>(
+                pcs::merkle_root::<H>(left.clone().lde2(m).as_slice()),
+                pcs::merkle_root::<H>(right.clone().lde2(m).as_slice()),
+                pcs::merkle_root::<H>(out.clone().lde2(m).as_slice()),
+            )
+        };
 
         let alpha = H::hash(xi, Scalar::from_const(1));
         let beta = H::hash(xi, Scalar::from_const(2));
@@ -1095,6 +1099,7 @@ impl Circuit {
                 [xi, xi * omega].into(),
                 [xi].into(),
             ],
+            pcs_degree_bound,
         );
 
         let commitment = prover.commit();

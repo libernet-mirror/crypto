@@ -236,23 +236,26 @@ pub struct Prover<H: Hash> {
 impl<H: Hash> Prover<H> {
     /// Constructs a batch prover from polynomials in the coefficient domain.
     ///
-    /// `z[j]` is the evaluation point for `polynomials[j]`; they must have the same length. All
-    /// polynomials are zero-padded to the same degree bound (next power of two of the longest).
+    /// `z[j]` is the set of evaluation points for `polynomials[j]`; `z` and `polynomials` must have
+    /// the same length.
+    ///
+    /// `blowup_exp` is the base-2 logarithm of the blowup factor. In other words, if the desired
+    /// blowup factor is 2^k you must specify k as the `blowup_exp`.
+    ///
+    /// `degree_bound` is the shared degree bound for all polynomials: it is rounded up to the next
+    /// power of two, and the LDE domain has size `degree_bound.next_power_of_two() << blowup_exp`.
+    /// It must be at least as large as the coefficient count of every committed polynomial.
     pub fn new(
         polynomials: Vec<Polynomial<Scalar>>,
         blowup_exp: u32,
         z: Vec<BTreeSet<Scalar>>,
+        degree_bound: usize,
     ) -> Self {
         assert!(blowup_exp > 0);
         assert!(!polynomials.is_empty());
         assert_eq!(polynomials.len(), z.len());
 
-        let n = polynomials
-            .iter()
-            .map(|p| p.len())
-            .max()
-            .unwrap()
-            .next_power_of_two();
+        let n = degree_bound.next_power_of_two();
         let m = n << blowup_exp;
         let k = polynomials.len();
 
@@ -303,11 +306,12 @@ impl<H: Hash> Prover<H> {
         blowup_exp: u32,
         z: Vec<BTreeSet<Scalar>>,
     ) -> Self {
+        let degree_bound = values.iter().map(|values| values.len()).max().unwrap();
         let polynomials = values
             .into_iter()
             .map(Polynomial::<Scalar>::encode2)
             .collect();
-        Self::new(polynomials, blowup_exp, z)
+        Self::new(polynomials, blowup_exp, z, degree_bound)
     }
 
     /// Returns the batch PCS commitment.
@@ -439,7 +443,7 @@ mod tests {
     #[test]
     fn test_pcs_degree_check() {
         let polynomial = Polynomial::<Scalar>::encode2(make_values(4));
-        let prover = Prover::<Sha3Hash>::new(vec![polynomial.clone()], 2, make_z_values(1));
+        let prover = Prover::<Sha3Hash>::new(vec![polynomial.clone()], 2, make_z_values(1), 4);
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert!(
