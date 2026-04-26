@@ -6,6 +6,7 @@ use crate::utils;
 use anyhow::{Context, Result, anyhow};
 use ff::Field;
 use std::collections::{BTreeMap, BTreeSet, btree_map};
+use std::sync::LazyLock;
 
 /// Re-export the available hash backends.
 pub use pcs::{Hash, Poseidon2Hash, Sha3Hash};
@@ -28,6 +29,17 @@ const K2: Scalar = Scalar::from_const(104);
 
 fn padded_size(n: usize) -> usize {
     std::cmp::max(2, n.next_power_of_two())
+}
+
+/// Returns the challenge point of the PLONK scheme, referred to as `xi` throughout the rest of the
+/// codebase.
+///
+/// The three arguments are the Merkle root hashes of the three witness columns, from which the
+/// challenge point is derived as per Fiat-Shamir.
+fn get_challenge<H: Hash>(lhs_root: Scalar, rhs_root: Scalar, out_root: Scalar) -> Scalar {
+    static DST: LazyLock<Scalar> =
+        LazyLock::new(|| utils::hash_to_scalar(b"libernet/plonk/challenge"));
+    H::hash_many(&[*DST, lhs_root, rhs_root, out_root])
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -940,6 +952,72 @@ impl Circuit {
         Ok((accumulator, fixpoint_constraint, recurrence_constraint))
     }
 
+    pub fn get_lhs_query_points(&self, xi: Scalar, n: usize) -> BTreeSet<Scalar> {
+        BTreeSet::from_iter(
+            std::iter::once(xi).chain(
+                self.public_inputs
+                    .iter()
+                    .filter(|&wire| match wire {
+                        Wire::LeftIn(_) => true,
+                        _ => false,
+                    })
+                    .map(|&wire| {
+                        Polynomial::domain_element2(
+                            match wire {
+                                Wire::LeftIn(index) => index,
+                                _ => unreachable!(),
+                            } as usize,
+                            n,
+                        )
+                    }),
+            ),
+        )
+    }
+
+    pub fn get_rhs_query_points(&self, xi: Scalar, n: usize) -> BTreeSet<Scalar> {
+        BTreeSet::from_iter(
+            std::iter::once(xi).chain(
+                self.public_inputs
+                    .iter()
+                    .filter(|&wire| match wire {
+                        Wire::RightIn(_) => true,
+                        _ => false,
+                    })
+                    .map(|&wire| {
+                        Polynomial::domain_element2(
+                            match wire {
+                                Wire::RightIn(index) => index,
+                                _ => unreachable!(),
+                            } as usize,
+                            n,
+                        )
+                    }),
+            ),
+        )
+    }
+
+    pub fn get_out_query_points(&self, xi: Scalar, n: usize) -> BTreeSet<Scalar> {
+        BTreeSet::from_iter(
+            std::iter::once(xi).chain(
+                self.public_inputs
+                    .iter()
+                    .filter(|&wire| match wire {
+                        Wire::Out(_) => true,
+                        _ => false,
+                    })
+                    .map(|&wire| {
+                        Polynomial::domain_element2(
+                            match wire {
+                                Wire::Out(index) => index,
+                                _ => unreachable!(),
+                            } as usize,
+                            n,
+                        )
+                    }),
+            ),
+        )
+    }
+
     pub fn prove<H: Hash>(&self, mut witness: Witness, blowup_exp: u32) -> Result<Proof<H>> {
         witness.blind();
         if witness.size() != self.size {
@@ -952,20 +1030,34 @@ impl Circuit {
 
         let n = padded_size(self.size);
 
-        let xi = H::hash_many(&[
-            utils::hash_to_scalar(b"libernet/plonk/challenge"),
-            H::hash_many(witness.left.as_slice()),
-            H::hash_many(witness.right.as_slice()),
-            H::hash_many(witness.out.as_slice()),
-        ]);
-
-        let alpha = H::hash(xi, Scalar::from_const(1));
-        let beta = H::hash(xi, Scalar::from_const(2));
-        let gamma = H::hash(xi, Scalar::from_const(3));
+        let public_inputs = self
+            .public_inputs
+            .iter()
+            .map(|&wire| {
+                (
+                    wire,
+                    match wire {
+                        Wire::LeftIn(gate) => witness.left[gate as usize],
+                        Wire::RightIn(gate) => witness.right[gate as usize],
+                        Wire::Out(gate) => witness.out[gate as usize],
+                    },
+                )
+            })
+            .collect();
 
         let left = Polynomial::encode2(witness.left.clone());
         let right = Polynomial::encode2(witness.right.clone());
         let out = Polynomial::encode2(witness.out.clone());
+
+        let xi = get_challenge::<H>(
+            pcs::merkle_root::<H>(left.clone().lde2(n << blowup_exp).as_slice()),
+            pcs::merkle_root::<H>(right.clone().lde2(n << blowup_exp).as_slice()),
+            pcs::merkle_root::<H>(out.clone().lde2(n << blowup_exp).as_slice()),
+        );
+
+        let alpha = H::hash(xi, Scalar::from_const(1));
+        let beta = H::hash(xi, Scalar::from_const(2));
+        let gamma = H::hash(xi, Scalar::from_const(3));
 
         let (
             permutation_accumulator,
@@ -988,55 +1080,28 @@ impl Circuit {
         let omega = Polynomial::domain_element2(1, n);
 
         let prover = pcs::Prover::<H>::new(
-            [
+            vec![
                 left.clone(),
                 right.clone(),
                 out.clone(),
-                permutation_accumulator.clone(),
                 permutation_accumulator,
                 quotient,
-            ]
-            .into_iter()
-            .chain(self.public_inputs.iter().map(|&wire| match wire {
-                Wire::LeftIn(_) => left.clone(),
-                Wire::RightIn(_) => right.clone(),
-                Wire::Out(_) => out.clone(),
-            }))
-            .collect(),
+            ],
             blowup_exp,
-            [xi, xi, xi, xi, xi * omega, xi]
-                .into_iter()
-                .chain(self.public_inputs.iter().map(|&wire| {
-                    Polynomial::domain_element2(
-                        match wire {
-                            Wire::LeftIn(gate) => gate,
-                            Wire::RightIn(gate) => gate,
-                            Wire::Out(gate) => gate,
-                        } as usize,
-                        n,
-                    )
-                }))
-                .collect(),
+            vec![
+                self.get_lhs_query_points(xi, n),
+                self.get_rhs_query_points(xi, n),
+                self.get_out_query_points(xi, n),
+                [xi, xi * omega].into(),
+                [xi].into(),
+            ],
         );
 
         let commitment = prover.commit();
         let inner_proof = prover.prove(&commitment);
 
         Ok(Proof {
-            public_inputs: self
-                .public_inputs
-                .iter()
-                .map(|&wire| {
-                    (
-                        wire,
-                        match wire {
-                            Wire::LeftIn(gate) => witness.left[gate as usize],
-                            Wire::RightIn(gate) => witness.right[gate as usize],
-                            Wire::Out(gate) => witness.out[gate as usize],
-                        },
-                    )
-                })
-                .collect(),
+            public_inputs,
             commitment,
             inner_proof,
         })
@@ -1052,44 +1117,29 @@ impl Circuit {
 
     pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
         let inner_proof = &proof.inner_proof;
-
-        if inner_proof.len() != 6 + self.public_inputs.len() {
+        if inner_proof.len() != 5 {
             return Err(anyhow!("incorrect number of openings"));
         }
 
         let n = padded_size(self.size);
 
-        // TODO: recompute xi via Fiat-Shamir rather than taking it from the proof, otherwise the
-        // prover can forge it.
-        let xi = *inner_proof.z(0);
-
-        for i in (1..6).skip(4) {
-            if *inner_proof.z(i) != xi {
-                return Err(anyhow!("invalid opening"));
+        let xi = {
+            let sources = proof.commitment.sources();
+            get_challenge::<H>(sources[0].root(), sources[1].root(), sources[2].root())
+        };
+        for i in 0..5 {
+            if !inner_proof.points(i).contains_key(&xi) {
+                return Err(anyhow!(
+                    "invalid proof: missing required opening on Fiat-Shamir challenge point"
+                ));
             }
         }
 
         let omega = Polynomial::domain_element2(1, n);
-        if *inner_proof.z(4) != xi * omega {
-            return Err(anyhow!("invalid opening"));
-        }
-
-        // TODO: this algorithm is insecure because even though it checks that the opened
-        // coordinates match the expected ones it doesn't check that the polynomial being opened is
-        // the correct one (L, R, or O).
-        for (i, &wire) in self.public_inputs.iter().enumerate() {
-            let x = Polynomial::domain_element2(
-                match wire {
-                    Wire::LeftIn(gate) => gate,
-                    Wire::RightIn(gate) => gate,
-                    Wire::Out(gate) => gate,
-                } as usize,
-                n,
-            );
-            let z = *inner_proof.z(i + 6);
-            if z != x {
-                return Err(anyhow!("unexpected opening at {}", utils::format_scalar(z)));
-            }
+        if !inner_proof.points(3).contains_key(&(xi * omega)) {
+            return Err(anyhow!(
+                "invalid proof: missing required opening for the shifted permutation accumulator"
+            ));
         }
 
         inner_proof.verify(&proof.commitment)?;
@@ -1098,12 +1148,17 @@ impl Circuit {
         let beta = H::hash(xi, Scalar::from_const(2));
         let gamma = H::hash(xi, Scalar::from_const(3));
 
-        let left = *inner_proof.y(0);
-        let right = *inner_proof.y(1);
-        let out = *inner_proof.y(2);
-        let permutation_accumulator = *inner_proof.y(3);
-        let shifted_permutation_accumulator = *inner_proof.y(4);
-        let quotient = *inner_proof.y(5);
+        let left = inner_proof.points(0).get(&xi).cloned().unwrap();
+        let right = inner_proof.points(1).get(&xi).cloned().unwrap();
+        let out = inner_proof.points(2).get(&xi).cloned().unwrap();
+        let (permutation_accumulator, shifted_permutation_accumulator) = {
+            let points = inner_proof.points(3);
+            (
+                points.get(&xi).cloned().unwrap(),
+                points.get(&(xi * omega)).cloned().unwrap(),
+            )
+        };
+        let quotient = inner_proof.points(4).get(&xi).cloned().unwrap();
         let zero = xi.pow([n as u64, 0, 0, 0]) - Scalar::ONE;
 
         let gate_constraint = self.ql.evaluate(xi) * left
@@ -1133,12 +1188,25 @@ impl Circuit {
             return Err(anyhow!("constraint violation"));
         }
 
-        Ok(self
-            .public_inputs
-            .iter()
-            .enumerate()
-            .map(|(i, &wire)| (wire, *inner_proof.y(i + 6)))
-            .collect())
+        Ok(BTreeMap::from_iter(self.public_inputs.iter().map(
+            |&wire| {
+                (
+                    wire,
+                    *match wire {
+                        Wire::LeftIn(index) => inner_proof
+                            .points(0)
+                            .get(&Polynomial::domain_element2(index as usize, n)),
+                        Wire::RightIn(index) => inner_proof
+                            .points(1)
+                            .get(&Polynomial::domain_element2(index as usize, n)),
+                        Wire::Out(index) => inner_proof
+                            .points(2)
+                            .get(&Polynomial::domain_element2(index as usize, n)),
+                    }
+                    .unwrap(),
+                )
+            },
+        )))
     }
 }
 

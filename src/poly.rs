@@ -459,19 +459,20 @@ impl<F: PrimeField + Ord> Polynomial<F> {
     /// `2^(F::S)`.
     ///
     /// Running time: O(M*log(M)).
-    pub fn lde2(mut self, m: usize) -> Vec<F> {
+    pub fn lde2(self, m: usize) -> Vec<F> {
         assert!(m.is_power_of_two());
         assert!(m.trailing_zeros() <= F::S);
         assert!(self.coefficients.len() <= m);
-        self.coefficients.resize(m, F::ZERO);
+        let mut data = self.coefficients;
+        data.resize(m, F::ZERO);
         let mut shift_pow = F::ONE;
-        for c in self.coefficients.iter_mut() {
+        for c in data.iter_mut() {
             *c *= shift_pow;
             shift_pow *= F::MULTIPLICATIVE_GENERATOR;
         }
         let omega = Self::two_adic_root_of_unity(m);
-        Self::fft2(&mut self.coefficients, omega);
-        self.coefficients
+        Self::fft2(&mut data, omega);
+        data
     }
 }
 
@@ -629,14 +630,15 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
     /// than `3^(F::T)`.
     ///
     /// Running time: O(M*log(M)).
-    pub fn lde3(mut self, m: usize) -> Vec<F> {
+    pub fn lde3(self, m: usize) -> Vec<F> {
         assert!(xits::is_power_of_three(m));
         assert!(xits::ilog3(m) as u32 <= F::T);
         assert!(self.coefficients.len() <= m);
-        self.coefficients.resize(m, F::ZERO);
+        let mut data = self.coefficients;
+        data.resize(m, F::ZERO);
         let omega = Self::three_adic_root_of_unity(m);
-        Self::fft3(&mut self.coefficients, omega);
-        self.coefficients
+        Self::fft3(&mut data, omega);
+        data
     }
 
     /// Multiplies two polynomials defined on the value domain, assuming the provided evaluations

@@ -42,6 +42,28 @@ fn merklify(values: &mut [Scalar], mut n: usize) {
     }
 }
 
+/// Calculates the Merkle root of the given slice of values.
+///
+/// The returned value is compatible with `merklify` and calling `merkle_root(values)` is
+/// effectively equivalent to calling `merklify` and reading the root at index `(n - 1) * 2`.
+/// However, `merkle_root` is more efficient than `merklify` because it doesn't need the extra space
+/// allocation.
+///
+/// Running time: O(N).
+pub fn merkle_root(values: &[Scalar]) -> Scalar {
+    let n = values.len();
+    assert!(xits::is_power_of_three(n));
+    if n > 1 {
+        poseidon::hash_t4(&[
+            merkle_root(&values[0..(n / 3)]),
+            merkle_root(&values[(n / 3)..(n * 2 / 3)]),
+            merkle_root(&values[(n * 2 / 3)..n]),
+        ])
+    } else {
+        values[0]
+    }
+}
+
 /// Stores the Merkle root hashes of a FRI commitment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
@@ -476,6 +498,37 @@ mod tests {
                 parse_scalar("0x0f9332ff17f975d1fd450166f45d971017a9ab2f4287ac98568204b9b3350546"),
                 parse_scalar("0x2c4e52ae8124220a5df522f37ccb8f6be7506ade1251e462a769db6c876ae321"),
             ]
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_one() {
+        assert_eq!(merkle_root(&[12.into()]), 12.into());
+    }
+
+    #[test]
+    fn test_merkle_root_three() {
+        assert_eq!(
+            merkle_root(&[34.into(), 56.into(), 78.into()]),
+            parse_scalar("0x64607a4e12aa794615a7329a8a862574b207057fc159da8a660276dea158b151")
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_nine() {
+        assert_eq!(
+            merkle_root(&[
+                12.into(),
+                34.into(),
+                56.into(),
+                78.into(),
+                90.into(),
+                78.into(),
+                56.into(),
+                34.into(),
+                12.into(),
+            ]),
+            parse_scalar("0x2c4e52ae8124220a5df522f37ccb8f6be7506ade1251e462a769db6c876ae321")
         );
     }
 

@@ -4,10 +4,11 @@ use crate::poly::Polynomial;
 use crate::utils;
 use anyhow::{Context, Result, anyhow};
 use ff::Field;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
 /// Re-export the available hash backends.
-pub use fri2::{Hash, Poseidon2Hash, Sha3Hash};
+pub use fri2::{Hash, Poseidon2Hash, Sha3Hash, merkle_root};
 
 /// Target security level in bits.
 pub const LAMBDA: u32 = 128;
@@ -56,6 +57,16 @@ impl Commitment {
         }
     }
 
+    /// Returns the list of underlying FRI commitments, one for each committed polynomial.
+    pub fn sources(&self) -> &[fri2::Commitment] {
+        self.sources.as_slice()
+    }
+
+    /// Returns the FRI commitment for the combined quotient.
+    pub fn quotient(&self) -> &fri2::Commitment {
+        &self.quotient
+    }
+
     /// Returns the degree bound: `max(deg(f_j)) < degree_bound`.
     pub fn degree_bound(&self) -> usize {
         self.degree_bound
@@ -93,18 +104,17 @@ impl Commitment {
 
 /// A batch opening proof for the DEEP-FRI evaluation claims `f_j(z_j) = y_j` for all j.
 ///
-/// Each polynomial may have its own evaluation point `z_j`, so this covers both the single
-/// shared-point case (all `z_j` equal) and the multi-point case (distinct `z_j`).
+/// Each polynomial has its own evaluation points, so this covers both the single shared-point case
+/// (same set of points for all polynomials) and the multi-point case (distinct points).
 #[derive(Debug, Clone)]
 pub struct Proof<H: Hash> {
-    /// Per-polynomial off-domain evaluation points `z_j`.
-    z: Vec<Scalar>,
-    /// Claimed evaluations `f_j(z_j)`.
-    y: Vec<Scalar>,
     /// FRI opening proofs for each source LDE at each query index.
     ///
     /// `source_proofs[j][i]` is the proof for polynomial `j` at query `i`.
     source_proofs: Vec<Vec<fri2::Proof<H>>>,
+    /// Per-polynomial off-domain evaluation points. Each entry of the map is the coordinate pair of
+    /// a point: keys are X-coordinates and values are evaluations.
+    points: Vec<BTreeMap<Scalar, Scalar>>,
     /// FRI opening proofs for the combined quotient LDE at each query index.
     quotient_proofs: Vec<fri2::Proof<H>>,
 }
@@ -115,14 +125,12 @@ impl<H: Hash> Proof<H> {
         self.source_proofs.len()
     }
 
-    /// Returns the evaluation point `z_j` for the j-th polynomial, with j = `index`.
-    pub fn z(&self, index: usize) -> &Scalar {
-        &self.z[index]
-    }
-
-    /// Returns the claimed evaluation `y_j = f_j(z_j)` for the j-th polynomial, with j = `index`.
-    pub fn y(&self, index: usize) -> &Scalar {
-        &self.y[index]
+    /// Returns the evaluation points for the j-th polynomial.
+    ///
+    /// Each entry of the returned map is a point: map keys are X-coordinates and map values are
+    /// polynomial evaluations.
+    pub fn points(&self, index: usize) -> &BTreeMap<Scalar, Scalar> {
+        &self.points[index]
     }
 
     /// Verifies this batch DEEP-FRI proof against the given commitment.
@@ -136,7 +144,7 @@ impl<H: Hash> Proof<H> {
     pub fn verify(&self, commitment: &Commitment) -> Result<()> {
         let k = commitment.sources.len();
         if k != self.len() {
-            return Err(anyhow!("expected {k} evaluations, got {}", self.y.len()));
+            return Err(anyhow!("expected {k} evaluations, got {}", self.len()));
         }
 
         let indices = commitment.get_query_indices::<H>();
@@ -145,7 +153,7 @@ impl<H: Hash> Proof<H> {
         for j in 0..k {
             if self.source_proofs[j].len() != num_queries {
                 return Err(anyhow!(
-                    "expected {num_queries} source queries for polynomial {j}, got {}",
+                    "expected {num_queries} queries for polynomial {j}, got {}",
                     self.source_proofs[j].len()
                 ));
             }
@@ -164,10 +172,10 @@ impl<H: Hash> Proof<H> {
                 .map(|commitment| commitment.root()),
         );
 
-        for (i, &expected_index) in indices.iter().enumerate() {
+        for (i, &index) in indices.iter().enumerate() {
             for (j, source_proof_vec) in self.source_proofs.iter().enumerate() {
                 let source_proof = &source_proof_vec[i];
-                if source_proof.index() != expected_index {
+                if source_proof.index() != index {
                     return Err(anyhow!(
                         "source proof index mismatch at query {i}, polynomial {j}"
                     ));
@@ -176,28 +184,26 @@ impl<H: Hash> Proof<H> {
             }
 
             let quotient_proof = &self.quotient_proofs[i];
-            if quotient_proof.index() != expected_index {
+            if quotient_proof.index() != index {
                 return Err(anyhow!("quotient proof index mismatch at query {i}"));
             }
             quotient_proof.verify(&commitment.quotient)?;
 
-            let x = Polynomial::<Scalar>::coset_element2(
-                expected_index,
-                commitment.extended_degree_bound(),
-            );
+            let x = Polynomial::<Scalar>::coset_element2(index, commitment.extended_degree_bound());
 
             let mut quotient = Scalar::ZERO;
             let mut pow = Scalar::ONE;
-            for ((source_proof_vec, y_j), z_j) in
-                self.source_proofs.iter().zip(&self.y).zip(&self.z)
-            {
-                let inv = (x - z_j)
-                    .invert()
-                    .into_option()
-                    .context("query point equals evaluation point")?;
-                quotient += pow * (*source_proof_vec[i].value() - y_j) * inv;
-                pow *= challenge;
+            for (source_proofs, points) in self.source_proofs.iter().zip(self.points.iter()) {
+                for (&z, &y) in points {
+                    let inv = (x - z)
+                        .invert()
+                        .into_option()
+                        .context("query point equals evaluation point")?;
+                    quotient += pow * (*source_proofs[i].value() - y) * inv;
+                    pow *= challenge;
+                }
             }
+
             if *quotient_proof.value() != quotient {
                 return Err(anyhow!("DEEP-FRI consistency check failed at query {i}"));
             }
@@ -219,12 +225,10 @@ pub struct Prover<H: Hash> {
     n: usize,
     /// Log2 of the blowup factor.
     blowup_exp: u32,
-    /// Per-polynomial off-domain evaluation points `z_j`.
-    z: Vec<Scalar>,
-    /// Evaluations `f_j(z_j)`.
-    y: Vec<Scalar>,
     /// FRI provers for each source LDE.
     source_fris: Vec<fri2::Prover<H>>,
+    /// Per-polynomial off-domain evaluation points.
+    points: Vec<BTreeMap<Scalar, Scalar>>,
     /// FRI prover for the combined quotient LDE `q(x) = Sum(r^j * (f_j(x) - y_j) / (x - z_j))`.
     quotient_fri: fri2::Prover<H>,
 }
@@ -234,7 +238,11 @@ impl<H: Hash> Prover<H> {
     ///
     /// `z[j]` is the evaluation point for `polynomials[j]`; they must have the same length. All
     /// polynomials are zero-padded to the same degree bound (next power of two of the longest).
-    pub fn new(polynomials: Vec<Polynomial<Scalar>>, blowup_exp: u32, z: Vec<Scalar>) -> Self {
+    pub fn new(
+        polynomials: Vec<Polynomial<Scalar>>,
+        blowup_exp: u32,
+        z: Vec<BTreeSet<Scalar>>,
+    ) -> Self {
         assert!(blowup_exp > 0);
         assert!(!polynomials.is_empty());
         assert_eq!(polynomials.len(), z.len());
@@ -248,19 +256,20 @@ impl<H: Hash> Prover<H> {
         let m = n << blowup_exp;
         let k = polynomials.len();
 
-        let (source_fris, quotients, y) = {
-            let mut provers = Vec::with_capacity(k);
-            let mut quotients = Vec::with_capacity(k);
-            let mut values = Vec::with_capacity(k);
-            for (polynomial, &z) in polynomials.into_iter().zip(z.as_slice()) {
+        let mut source_fris = Vec::with_capacity(k);
+        let mut quotients = Vec::with_capacity(k);
+        let mut points = Vec::with_capacity(k);
+        for (polynomial, z) in polynomials.into_iter().zip(z.as_slice()) {
+            let mut point_set = BTreeMap::default();
+            for &z in z {
                 let (quotient, value) = polynomial.horner(z);
-                let prover = fri2::Prover::new(polynomial.lde2(m));
-                provers.push(prover);
                 quotients.push(quotient);
-                values.push(value);
+                point_set.insert(z, value);
             }
-            (provers, quotients, values)
-        };
+            let prover = fri2::Prover::new(polynomial.lde2(m));
+            source_fris.push(prover);
+            points.push(point_set);
+        }
 
         let challenge = rlc_challenge::<H>(source_fris.iter().map(|prover| prover.root_hash()));
 
@@ -279,9 +288,8 @@ impl<H: Hash> Prover<H> {
         Prover {
             n,
             blowup_exp,
-            z,
-            y,
             source_fris,
+            points,
             quotient_fri,
         }
     }
@@ -290,7 +298,11 @@ impl<H: Hash> Prover<H> {
     ///
     /// Each polynomial in `values` is converted to the coefficient domain via IFFT and zero-padded
     /// to the next power of two if needed. `z[j]` is the evaluation point for `values[j]`.
-    pub fn from_values(values: Vec<Vec<Scalar>>, blowup_exp: u32, z: Vec<Scalar>) -> Self {
+    pub fn from_values(
+        values: Vec<Vec<Scalar>>,
+        blowup_exp: u32,
+        z: Vec<BTreeSet<Scalar>>,
+    ) -> Self {
         let polynomials = values
             .into_iter()
             .map(Polynomial::<Scalar>::encode2)
@@ -324,9 +336,8 @@ impl<H: Hash> Prover<H> {
             .map(|&i| self.quotient_fri.open_at(i))
             .collect();
         Proof {
-            z: self.z.clone(),
-            y: self.y.clone(),
             source_proofs,
+            points: self.points.clone(),
             quotient_proofs,
         }
     }
@@ -341,13 +352,15 @@ mod tests {
         (1..=(n as u64)).map(Scalar::from).collect()
     }
 
+    fn make_z_values(k: usize) -> Vec<BTreeSet<Scalar>> {
+        (0..k)
+            .map(|_| BTreeSet::from([utils::get_random_scalar()]))
+            .collect()
+    }
+
     #[test]
     fn test_pcs_roundtrip_sha3() {
-        let prover = Prover::<Sha3Hash>::from_values(
-            vec![make_values(8)],
-            2,
-            vec![utils::get_random_scalar()],
-        );
+        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(8)], 2, make_z_values(1));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert_eq!(commitment.degree_bound(), 8);
@@ -356,11 +369,8 @@ mod tests {
 
     #[test]
     fn test_pcs_roundtrip_poseidon2() {
-        let prover = Prover::<Poseidon2Hash>::from_values(
-            vec![make_values(8)],
-            2,
-            vec![utils::get_random_scalar()],
-        );
+        let prover =
+            Prover::<Poseidon2Hash>::from_values(vec![make_values(8)], 2, make_z_values(1));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         proof.verify(&commitment).unwrap();
@@ -368,11 +378,7 @@ mod tests {
 
     #[test]
     fn test_pcs_arbitrary_length_padded() {
-        let prover = Prover::<Sha3Hash>::from_values(
-            vec![make_values(5)],
-            2,
-            vec![utils::get_random_scalar()],
-        );
+        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(5)], 2, make_z_values(1));
         let commitment = prover.commit();
         assert_eq!(commitment.degree_bound(), 8);
         let proof = prover.prove(&commitment);
@@ -381,11 +387,7 @@ mod tests {
 
     #[test]
     fn test_pcs_blowup_exp1() {
-        let prover = Prover::<Sha3Hash>::from_values(
-            vec![make_values(4)],
-            1,
-            vec![utils::get_random_scalar()],
-        );
+        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(4)], 1, make_z_values(1));
         let commitment = prover.commit();
         assert_eq!(commitment.extended_degree_bound(), 8);
         prover.prove(&commitment).verify(&commitment).unwrap();
@@ -393,11 +395,7 @@ mod tests {
 
     #[test]
     fn test_pcs_blowup_exp3() {
-        let prover = Prover::<Sha3Hash>::from_values(
-            vec![make_values(4)],
-            3,
-            vec![utils::get_random_scalar()],
-        );
+        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(4)], 3, make_z_values(1));
         let commitment = prover.commit();
         assert_eq!(commitment.extended_degree_bound(), 32);
         prover.prove(&commitment).verify(&commitment).unwrap();
@@ -405,60 +403,51 @@ mod tests {
 
     #[test]
     fn test_pcs_single_value() {
-        let prover = Prover::<Sha3Hash>::from_values(
-            vec![vec![42.into()]],
-            2,
-            vec![utils::get_random_scalar()],
-        );
+        let prover = Prover::<Sha3Hash>::from_values(vec![vec![42.into()]], 2, make_z_values(1));
         let commitment = prover.commit();
         prover.prove(&commitment).verify(&commitment).unwrap();
     }
 
     #[test]
     fn test_pcs_tampered_y_fails() {
-        let prover = Prover::<Sha3Hash>::from_values(
-            vec![make_values(8)],
-            2,
-            vec![utils::get_random_scalar()],
-        );
+        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(8)], 2, make_z_values(1));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
-        proof.y[0] = proof.y[0] + Scalar::ONE;
+        proof.points[0] =
+            BTreeMap::from_iter(proof.points[0].iter().map(|(&z, &y)| (z, y + Scalar::ONE)));
         assert!(proof.verify(&commitment).is_err());
     }
 
     #[test]
     fn test_pcs_tampered_z_fails() {
-        let prover = Prover::<Sha3Hash>::from_values(
-            vec![make_values(8)],
-            2,
-            vec![utils::get_random_scalar()],
-        );
+        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(8)], 2, make_z_values(1));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
-        proof.z[0] = proof.z[0] + Scalar::ONE;
+        proof.points[0] =
+            BTreeMap::from_iter(proof.points[0].iter().map(|(&z, &y)| (z + Scalar::ONE, y)));
         assert!(proof.verify(&commitment).is_err());
     }
 
     #[test]
     fn test_pcs_constant_poly() {
-        let prover = Prover::<Sha3Hash>::from_values(
-            vec![vec![5.into(), 5.into()]],
-            2,
-            vec![utils::get_random_scalar()],
-        );
+        let prover =
+            Prover::<Sha3Hash>::from_values(vec![vec![5.into(), 5.into()]], 2, make_z_values(1));
         let commitment = prover.commit();
         prover.prove(&commitment).verify(&commitment).unwrap();
     }
 
     #[test]
     fn test_pcs_degree_check() {
-        let z = utils::get_random_scalar();
         let polynomial = Polynomial::<Scalar>::encode2(make_values(4));
-        let prover = Prover::<Sha3Hash>::new(vec![polynomial.clone()], 2, vec![z]);
+        let prover = Prover::<Sha3Hash>::new(vec![polynomial.clone()], 2, make_z_values(1));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
-        assert_eq!(polynomial.evaluate(proof.z[0]), proof.y[0]);
+        assert!(
+            proof
+                .points(0)
+                .iter()
+                .all(|(&z, &y)| polynomial.evaluate(z) == y)
+        );
         proof.verify(&commitment).unwrap();
     }
 
@@ -472,14 +461,9 @@ mod tests {
             .collect()
     }
 
-    fn make_z_values(k: usize) -> Vec<Scalar> {
-        (0..k).map(|_| utils::get_random_scalar()).collect()
-    }
-
     #[test]
     fn test_batch_pcs_roundtrip_sha3() {
-        let z = utils::get_random_scalar();
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(3, 4), 2, vec![z; 3]);
+        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(3, 4), 2, make_z_values(3));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert_eq!(proof.len(), 3);
@@ -488,8 +472,8 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_roundtrip_poseidon2() {
-        let z = utils::get_random_scalar();
-        let prover = Prover::<Poseidon2Hash>::from_values(make_batch_values(3, 4), 2, vec![z; 3]);
+        let prover =
+            Prover::<Poseidon2Hash>::from_values(make_batch_values(3, 4), 2, make_z_values(3));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert_eq!(proof.len(), 3);
@@ -498,8 +482,7 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_single_poly() {
-        let z = utils::get_random_scalar();
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(1, 4), 2, vec![z]);
+        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(1, 4), 2, make_z_values(1));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert_eq!(proof.len(), 1);
@@ -508,8 +491,7 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_degree_bound() {
-        let z = utils::get_random_scalar();
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 5), 2, vec![z; 2]);
+        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 5), 2, make_z_values(2));
         let commitment = prover.commit();
         assert_eq!(commitment.degree_bound(), 8);
         prover.prove(&commitment).verify(&commitment).unwrap();
@@ -517,36 +499,35 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_evaluations_correct() {
-        let z = utils::get_random_scalar();
         let values = make_batch_values(2, 4);
-        let poly0 = Polynomial::<Scalar>::encode2(values[0].clone());
-        let poly1 = Polynomial::<Scalar>::encode2(values[1].clone());
-        let prover = Prover::<Sha3Hash>::from_values(values, 2, vec![z; 2]);
+        let p0 = Polynomial::<Scalar>::encode2(values[0].clone());
+        let p1 = Polynomial::<Scalar>::encode2(values[1].clone());
+        let prover = Prover::<Sha3Hash>::from_values(values, 2, make_z_values(2));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert_eq!(proof.len(), 2);
-        assert_eq!(*proof.y(0), poly0.evaluate(z));
-        assert_eq!(*proof.y(1), poly1.evaluate(z));
+        assert!(proof.points[0].iter().all(|(&z, &y)| p0.evaluate(z) == y));
+        assert!(proof.points[1].iter().all(|(&z, &y)| p1.evaluate(z) == y));
         proof.verify(&commitment).unwrap();
     }
 
     #[test]
     fn test_batch_pcs_tampered_y_fails() {
-        let z = utils::get_random_scalar();
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 4), 2, vec![z; 2]);
+        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
-        proof.y[0] = proof.y[0] + Scalar::ONE;
+        proof.points[0] =
+            BTreeMap::from_iter(proof.points[0].iter().map(|(&z, &y)| (z, y + Scalar::ONE)));
         assert!(proof.verify(&commitment).is_err());
     }
 
     #[test]
     fn test_batch_pcs_tampered_z_fails() {
-        let z = utils::get_random_scalar();
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 4), 2, vec![z; 2]);
+        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
-        proof.z[0] = proof.z[0] + Scalar::ONE;
+        proof.points[0] =
+            BTreeMap::from_iter(proof.points[0].iter().map(|(&z, &y)| (z + Scalar::ONE, y)));
         assert!(proof.verify(&commitment).is_err());
     }
 
@@ -569,26 +550,27 @@ mod tests {
         proof.verify(&commitment).unwrap();
     }
 
-    #[test]
-    fn test_batch_pcs_multipoint_evaluations_correct() {
-        let z_values = make_z_values(2);
-        let values = make_batch_values(2, 4);
-        let poly0 = Polynomial::<Scalar>::encode2(values[0].clone());
-        let poly1 = Polynomial::<Scalar>::encode2(values[1].clone());
-        let prover = Prover::<Sha3Hash>::from_values(values, 2, z_values.clone());
-        let commitment = prover.commit();
-        let proof = prover.prove(&commitment);
-        assert_eq!(*proof.y(0), poly0.evaluate(z_values[0]));
-        assert_eq!(*proof.y(1), poly1.evaluate(z_values[1]));
-        proof.verify(&commitment).unwrap();
-    }
+    // #[test]
+    // fn test_batch_pcs_multipoint_evaluations_correct() {
+    //     let z_values = make_z_values(2);
+    //     let values = make_batch_values(2, 4);
+    //     let poly0 = Polynomial::<Scalar>::encode2(values[0].clone());
+    //     let poly1 = Polynomial::<Scalar>::encode2(values[1].clone());
+    //     let prover = Prover::<Sha3Hash>::from_values(values, 2, z_values.clone());
+    //     let commitment = prover.commit();
+    //     let proof = prover.prove(&commitment);
+    //     assert_eq!(*proof.y(0), poly0.evaluate(z_values[0]));
+    //     assert_eq!(*proof.y(1), poly1.evaluate(z_values[1]));
+    //     proof.verify(&commitment).unwrap();
+    // }
 
     #[test]
     fn test_batch_pcs_multipoint_tampered_y_fails() {
         let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
-        proof.y[0] = proof.y[0] + Scalar::ONE;
+        proof.points[0] =
+            BTreeMap::from_iter(proof.points[0].iter().map(|(&z, &y)| (z, y + Scalar::ONE)));
         assert!(proof.verify(&commitment).is_err());
     }
 
@@ -597,7 +579,8 @@ mod tests {
         let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
-        proof.z[1] = proof.z[1] + Scalar::ONE;
+        proof.points[1] =
+            BTreeMap::from_iter(proof.points[1].iter().map(|(&z, &y)| (z + Scalar::ONE, y)));
         assert!(proof.verify(&commitment).is_err());
     }
 }

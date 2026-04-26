@@ -94,6 +94,27 @@ fn merklify<H: Hash>(values: &mut [Scalar], mut n: usize) {
     }
 }
 
+/// Calculates the Merkle root of the given slice of values.
+///
+/// The returned value is compatible with `merklify` and calling `merkle_root::<H>(values)` is
+/// effectively equivalent to calling `merklify` with the same hash backend `H` and reading the root
+/// at index `(n - 1) * 2`. However, `merkle_root` is more efficient than `merklify` because it
+/// doesn't need the extra space allocation.
+///
+/// Running time: O(N).
+pub fn merkle_root<H: Hash>(values: &[Scalar]) -> Scalar {
+    let n = values.len();
+    assert!(n.is_power_of_two());
+    if n > 1 {
+        H::hash(
+            merkle_root::<H>(&values[0..(n / 2)]),
+            merkle_root::<H>(&values[(n / 2)..n]),
+        )
+    } else {
+        values[0]
+    }
+}
+
 /// Stores the Merkle root hashes of a FRI commitment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
@@ -531,6 +552,54 @@ mod tests {
                 parse_scalar("0x165e74be18ef4be6de5e232cd3480dcc38176807ac918b904576964612c5b6de"),
                 parse_scalar("0x1b207cff4c6c97c46c0b950b7524dae299cf3b48d766f0e5990a63fc378cba29"),
             ]
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_one_sha3() {
+        let mut values = vec![12.into()];
+        assert_eq!(merkle_root::<Sha3Hash>(&mut values), 12.into());
+    }
+
+    #[test]
+    fn test_merkle_root_one_poseidon2() {
+        let mut values = vec![12.into()];
+        assert_eq!(merkle_root::<Poseidon2Hash>(&mut values), 12.into());
+    }
+
+    #[test]
+    fn test_merkle_root_two_sha3() {
+        let mut values = vec![34.into(), 56.into()];
+        assert_eq!(
+            merkle_root::<Sha3Hash>(&mut values),
+            parse_scalar("0x135f326e8836f9108bb8c29d9eaec2f0f40bdf2b70a09b04aa071a6e6c8f841c")
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_two_poseidon2() {
+        let mut values = vec![34.into(), 56.into()];
+        assert_eq!(
+            merkle_root::<Poseidon2Hash>(&mut values),
+            parse_scalar("0x5ec03322128c00fc47cb817c548a0dd60d1f10817b4cefe8ad1de3ea4504a552")
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_four_sha3() {
+        let mut values = vec![78.into(), 90.into(), 12.into(), 34.into()];
+        assert_eq!(
+            merkle_root::<Sha3Hash>(&mut values),
+            parse_scalar("0x06bac262b252ce31a07e771e46f50e0bb8b08b7b2323b1667bfa44eb8389eedc")
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_four_poseidon2() {
+        let mut values = vec![78.into(), 90.into(), 12.into(), 34.into()];
+        assert_eq!(
+            merkle_root::<Poseidon2Hash>(&mut values),
+            parse_scalar("0x1b207cff4c6c97c46c0b950b7524dae299cf3b48d766f0e5990a63fc378cba29")
         );
     }
 
