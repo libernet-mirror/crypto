@@ -953,6 +953,60 @@ mod tests {
     }
 
     #[test]
+    fn test_low_degree() {
+        let p = Polynomial::<Scalar>::with_coefficients(vec![
+            12.into(),
+            34.into(),
+            56.into(),
+            0.into(),
+            0.into(),
+        ]);
+        assert_eq!(p.len(), 5);
+        assert_eq!(p.degree_bound(), 3);
+    }
+
+    #[test]
+    fn test_skip_degree() {
+        let p = Polynomial::<Scalar>::with_coefficients(vec![
+            0.into(),
+            0.into(),
+            12.into(),
+            34.into(),
+            56.into(),
+        ]);
+        assert_eq!(p.len(), 5);
+        assert_eq!(p.degree_bound(), 5);
+    }
+
+    #[test]
+    fn test_trim_degree() {
+        let mut p = Polynomial::<Scalar>::with_coefficients(vec![
+            12.into(),
+            34.into(),
+            56.into(),
+            0.into(),
+            0.into(),
+        ]);
+        p.trim();
+        assert_eq!(p.len(), 3);
+        assert_eq!(p.degree_bound(), 3);
+    }
+
+    #[test]
+    fn test_no_trim() {
+        let mut p = Polynomial::<Scalar>::with_coefficients(vec![
+            0.into(),
+            0.into(),
+            12.into(),
+            34.into(),
+            56.into(),
+        ]);
+        p.trim();
+        assert_eq!(p.len(), 5);
+        assert_eq!(p.degree_bound(), 5);
+    }
+
+    #[test]
     fn test_no_roots() {
         let p = from_roots(&[]);
         assert_eq!(p.len(), 1);
