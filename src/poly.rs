@@ -653,11 +653,27 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
         omega.pow_vartime([index as u64, 0, 0, 0])
     }
 
+    /// Returns the X coordinate of the i-th point in the coset LDE domain used by `lde3`.
+    ///
+    /// Equivalent to `F::MULTIPLICATIVE_GENERATOR * domain_element3(index, domain_size)`.
+    ///
+    /// Running time: O(1).
+    pub fn coset_element3(index: usize, domain_size: usize) -> F {
+        F::MULTIPLICATIVE_GENERATOR * Self::domain_element3(index, domain_size)
+    }
+
     /// Same as `evaluate(domain_element3(index, domain_size))`.
     ///
     /// Running time: O(N).
     pub fn evaluate_on_three_adic_domain(&self, index: usize, domain_size: usize) -> F {
         self.evaluate(Self::domain_element3(index, domain_size))
+    }
+
+    /// Same as `evaluate(coset_element3(index, domain_size))`.
+    ///
+    /// Running time: O(N).
+    pub fn evaluate_on_three_adic_coset(&self, index: usize, domain_size: usize) -> F {
+        self.evaluate(Self::coset_element3(index, domain_size))
     }
 
     /// Computes a low-degree extension of the polynomial by evaluating it at `m` locations, where
@@ -673,6 +689,11 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
         assert!(self.coefficients.len() <= m);
         let mut data = self.coefficients;
         data.resize(m, F::ZERO);
+        let mut shift_pow = F::ONE;
+        for c in data.iter_mut() {
+            *c *= shift_pow;
+            shift_pow *= F::MULTIPLICATIVE_GENERATOR;
+        }
         let omega = Self::three_adic_root_of_unity(m);
         Self::fft3(&mut data, omega);
         data
@@ -2008,7 +2029,15 @@ mod tests {
     fn test_lde3_same_size() {
         let values = vec![12.into(), 34.into(), 56.into()];
         let p = Polynomial::<Scalar>::encode3(values.clone());
-        assert_eq!(p.lde3(3), values);
+        let lde = p.clone().lde3(3);
+        assert_eq!(
+            lde,
+            vec![
+                p.evaluate_on_three_adic_coset(0, 3),
+                p.evaluate_on_three_adic_coset(1, 3),
+                p.evaluate_on_three_adic_coset(2, 3),
+            ]
+        );
     }
 
     #[test]
@@ -2019,15 +2048,15 @@ mod tests {
         assert_eq!(
             lde,
             vec![
-                p.evaluate_on_three_adic_domain(0, 9),
-                p.evaluate_on_three_adic_domain(1, 9),
-                p.evaluate_on_three_adic_domain(2, 9),
-                p.evaluate_on_three_adic_domain(3, 9),
-                p.evaluate_on_three_adic_domain(4, 9),
-                p.evaluate_on_three_adic_domain(5, 9),
-                p.evaluate_on_three_adic_domain(6, 9),
-                p.evaluate_on_three_adic_domain(7, 9),
-                p.evaluate_on_three_adic_domain(8, 9),
+                p.evaluate_on_three_adic_coset(0, 9),
+                p.evaluate_on_three_adic_coset(1, 9),
+                p.evaluate_on_three_adic_coset(2, 9),
+                p.evaluate_on_three_adic_coset(3, 9),
+                p.evaluate_on_three_adic_coset(4, 9),
+                p.evaluate_on_three_adic_coset(5, 9),
+                p.evaluate_on_three_adic_coset(6, 9),
+                p.evaluate_on_three_adic_coset(7, 9),
+                p.evaluate_on_three_adic_coset(8, 9),
             ]
         );
     }
@@ -2040,33 +2069,33 @@ mod tests {
         assert_eq!(
             lde,
             vec![
-                p.evaluate_on_three_adic_domain(0, 27),
-                p.evaluate_on_three_adic_domain(1, 27),
-                p.evaluate_on_three_adic_domain(2, 27),
-                p.evaluate_on_three_adic_domain(3, 27),
-                p.evaluate_on_three_adic_domain(4, 27),
-                p.evaluate_on_three_adic_domain(5, 27),
-                p.evaluate_on_three_adic_domain(6, 27),
-                p.evaluate_on_three_adic_domain(7, 27),
-                p.evaluate_on_three_adic_domain(8, 27),
-                p.evaluate_on_three_adic_domain(9, 27),
-                p.evaluate_on_three_adic_domain(10, 27),
-                p.evaluate_on_three_adic_domain(11, 27),
-                p.evaluate_on_three_adic_domain(12, 27),
-                p.evaluate_on_three_adic_domain(13, 27),
-                p.evaluate_on_three_adic_domain(14, 27),
-                p.evaluate_on_three_adic_domain(15, 27),
-                p.evaluate_on_three_adic_domain(16, 27),
-                p.evaluate_on_three_adic_domain(17, 27),
-                p.evaluate_on_three_adic_domain(18, 27),
-                p.evaluate_on_three_adic_domain(19, 27),
-                p.evaluate_on_three_adic_domain(20, 27),
-                p.evaluate_on_three_adic_domain(21, 27),
-                p.evaluate_on_three_adic_domain(22, 27),
-                p.evaluate_on_three_adic_domain(23, 27),
-                p.evaluate_on_three_adic_domain(24, 27),
-                p.evaluate_on_three_adic_domain(25, 27),
-                p.evaluate_on_three_adic_domain(26, 27),
+                p.evaluate_on_three_adic_coset(0, 27),
+                p.evaluate_on_three_adic_coset(1, 27),
+                p.evaluate_on_three_adic_coset(2, 27),
+                p.evaluate_on_three_adic_coset(3, 27),
+                p.evaluate_on_three_adic_coset(4, 27),
+                p.evaluate_on_three_adic_coset(5, 27),
+                p.evaluate_on_three_adic_coset(6, 27),
+                p.evaluate_on_three_adic_coset(7, 27),
+                p.evaluate_on_three_adic_coset(8, 27),
+                p.evaluate_on_three_adic_coset(9, 27),
+                p.evaluate_on_three_adic_coset(10, 27),
+                p.evaluate_on_three_adic_coset(11, 27),
+                p.evaluate_on_three_adic_coset(12, 27),
+                p.evaluate_on_three_adic_coset(13, 27),
+                p.evaluate_on_three_adic_coset(14, 27),
+                p.evaluate_on_three_adic_coset(15, 27),
+                p.evaluate_on_three_adic_coset(16, 27),
+                p.evaluate_on_three_adic_coset(17, 27),
+                p.evaluate_on_three_adic_coset(18, 27),
+                p.evaluate_on_three_adic_coset(19, 27),
+                p.evaluate_on_three_adic_coset(20, 27),
+                p.evaluate_on_three_adic_coset(21, 27),
+                p.evaluate_on_three_adic_coset(22, 27),
+                p.evaluate_on_three_adic_coset(23, 27),
+                p.evaluate_on_three_adic_coset(24, 27),
+                p.evaluate_on_three_adic_coset(25, 27),
+                p.evaluate_on_three_adic_coset(26, 27),
             ]
         );
     }
@@ -2079,33 +2108,33 @@ mod tests {
         assert_eq!(
             lde,
             vec![
-                p.evaluate_on_three_adic_domain(0, 27),
-                p.evaluate_on_three_adic_domain(1, 27),
-                p.evaluate_on_three_adic_domain(2, 27),
-                p.evaluate_on_three_adic_domain(3, 27),
-                p.evaluate_on_three_adic_domain(4, 27),
-                p.evaluate_on_three_adic_domain(5, 27),
-                p.evaluate_on_three_adic_domain(6, 27),
-                p.evaluate_on_three_adic_domain(7, 27),
-                p.evaluate_on_three_adic_domain(8, 27),
-                p.evaluate_on_three_adic_domain(9, 27),
-                p.evaluate_on_three_adic_domain(10, 27),
-                p.evaluate_on_three_adic_domain(11, 27),
-                p.evaluate_on_three_adic_domain(12, 27),
-                p.evaluate_on_three_adic_domain(13, 27),
-                p.evaluate_on_three_adic_domain(14, 27),
-                p.evaluate_on_three_adic_domain(15, 27),
-                p.evaluate_on_three_adic_domain(16, 27),
-                p.evaluate_on_three_adic_domain(17, 27),
-                p.evaluate_on_three_adic_domain(18, 27),
-                p.evaluate_on_three_adic_domain(19, 27),
-                p.evaluate_on_three_adic_domain(20, 27),
-                p.evaluate_on_three_adic_domain(21, 27),
-                p.evaluate_on_three_adic_domain(22, 27),
-                p.evaluate_on_three_adic_domain(23, 27),
-                p.evaluate_on_three_adic_domain(24, 27),
-                p.evaluate_on_three_adic_domain(25, 27),
-                p.evaluate_on_three_adic_domain(26, 27),
+                p.evaluate_on_three_adic_coset(0, 27),
+                p.evaluate_on_three_adic_coset(1, 27),
+                p.evaluate_on_three_adic_coset(2, 27),
+                p.evaluate_on_three_adic_coset(3, 27),
+                p.evaluate_on_three_adic_coset(4, 27),
+                p.evaluate_on_three_adic_coset(5, 27),
+                p.evaluate_on_three_adic_coset(6, 27),
+                p.evaluate_on_three_adic_coset(7, 27),
+                p.evaluate_on_three_adic_coset(8, 27),
+                p.evaluate_on_three_adic_coset(9, 27),
+                p.evaluate_on_three_adic_coset(10, 27),
+                p.evaluate_on_three_adic_coset(11, 27),
+                p.evaluate_on_three_adic_coset(12, 27),
+                p.evaluate_on_three_adic_coset(13, 27),
+                p.evaluate_on_three_adic_coset(14, 27),
+                p.evaluate_on_three_adic_coset(15, 27),
+                p.evaluate_on_three_adic_coset(16, 27),
+                p.evaluate_on_three_adic_coset(17, 27),
+                p.evaluate_on_three_adic_coset(18, 27),
+                p.evaluate_on_three_adic_coset(19, 27),
+                p.evaluate_on_three_adic_coset(20, 27),
+                p.evaluate_on_three_adic_coset(21, 27),
+                p.evaluate_on_three_adic_coset(22, 27),
+                p.evaluate_on_three_adic_coset(23, 27),
+                p.evaluate_on_three_adic_coset(24, 27),
+                p.evaluate_on_three_adic_coset(25, 27),
+                p.evaluate_on_three_adic_coset(26, 27),
             ]
         );
     }

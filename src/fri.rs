@@ -367,17 +367,18 @@ impl<H: Hash> Prover<H> {
         let k = n.trailing_zeros();
         let omega_inv = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
 
+        let offset = n * 2 - 1;
         let m = n / 2;
         let mut omega_inv_i = Scalar::ONE;
         for i in 0..m {
             let f_pos = values[i];
             let f_neg = values[i + m];
-            values[2 * n + i] =
+            values[offset + i] =
                 (f_pos + f_neg + alpha * omega_inv_i * (f_pos - f_neg)) * Scalar::TWO_INV;
             omega_inv_i *= omega_inv;
         }
 
-        merklify::<H>(&mut values[(2 * n)..(3 * n)], m);
+        merklify::<H>(&mut values[(n * 2 - 1)..], m);
     }
 
     /// Runs all folding passes by calling `fold` iteratively until the polynomial is folded into a
@@ -396,6 +397,8 @@ impl<H: Hash> Prover<H> {
 
     /// Constructs a new FRI prover that commits to a polynomial.
     ///
+    /// REQUIRES: the polynomial must be trimmed (as in `Polynomial::trim()`).
+    ///
     /// The provided polynomial is automatically converted to its low-degree extension using the
     /// `lde2` function, which inflates the evaluation domain and moves the polynomial to a coset of
     /// it.
@@ -404,6 +407,7 @@ impl<H: Hash> Prover<H> {
     /// then enable low-degree testing queries that prove the original degree of the polynomial with
     /// exponentially increasing probability.
     pub fn new(polynomial: Polynomial, blowup_exp: usize) -> Self {
+        debug_assert_eq!(polynomial.len(), polynomial.degree_bound());
         let degree_bound = polynomial.len().next_power_of_two();
         let mut values = polynomial.lde2(degree_bound << blowup_exp);
         let n = values.len();
@@ -471,29 +475,36 @@ impl<H: Hash> Prover<H> {
     /// Builds a FRI `Query` for the value at the specified index of the evaluation domain.
     pub fn query(&self, mut index: usize) -> Query<H> {
         let n = self.size();
+        assert!(n.is_power_of_two());
+        assert!(index < n);
+        let d = self.degree_bound;
+        assert!(d.is_power_of_two());
+        let k = d.trailing_zeros();
         let mut values = self.values.as_slice();
         let mut m = n;
         let mut folds = vec![];
-        loop {
+        for _ in 0..=k {
             folds.push((
                 LeafProof::<H>::new(values, m, index),
-                LeafProof::<H>::new(values, m, m - index),
+                LeafProof::<H>::new(values, m, (index + m / 2) % m),
             ));
-            let proofs = folds.last().unwrap();
-            if proofs.0.is_constant() {
-                debug_assert!(proofs.1.is_constant());
-                return Query {
-                    n,
-                    index,
-                    value: self.values[index],
-                    folds,
-                    _data: Default::default(),
-                };
-            }
-            debug_assert!(!proofs.1.is_constant());
             values = &values[(m * 2 - 1)..];
             m /= 2;
             index %= m;
+        }
+        match folds.last() {
+            Some((proof1, proof2)) => {
+                assert!(proof1.is_constant());
+                assert!(proof2.is_constant());
+            }
+            None => {}
+        }
+        Query {
+            n,
+            index,
+            value: self.values[index],
+            folds,
+            _data: Default::default(),
         }
     }
 }
@@ -928,6 +939,35 @@ mod tests {
             3,
             parse_scalar("0x5b9c68639a38936dbdbb393f46bf1d0371f14bf004aa6541ea5ef966faaa273e"),
         );
+    }
+
+    fn test_query_one_element_impl<H: Hash>(values: Vec<Scalar>, blowup_exp: usize) {
+        let polynomial = Polynomial::encode2(values);
+        let prover = Prover::<H>::new(polynomial, blowup_exp);
+        let commitment = prover.commit();
+        let query = prover.query(0);
+        query.verify(&commitment).unwrap();
+        assert!(query.verify(&commitment).is_ok());
+    }
+
+    #[test]
+    fn test_query_one_element1() {
+        test_query_one_element_impl::<Sha2Hash>(vec![42.into()], 1);
+        test_query_one_element_impl::<Poseidon2Hash>(vec![42.into()], 1);
+        test_query_one_element_impl::<Sha2Hash>(vec![42.into()], 2);
+        test_query_one_element_impl::<Poseidon2Hash>(vec![42.into()], 2);
+        test_query_one_element_impl::<Sha2Hash>(vec![42.into()], 3);
+        test_query_one_element_impl::<Poseidon2Hash>(vec![42.into()], 3);
+    }
+
+    #[test]
+    fn test_query_one_element2() {
+        test_query_one_element_impl::<Sha2Hash>(vec![43.into()], 1);
+        test_query_one_element_impl::<Poseidon2Hash>(vec![43.into()], 1);
+        test_query_one_element_impl::<Sha2Hash>(vec![43.into()], 2);
+        test_query_one_element_impl::<Poseidon2Hash>(vec![43.into()], 2);
+        test_query_one_element_impl::<Sha2Hash>(vec![43.into()], 3);
+        test_query_one_element_impl::<Poseidon2Hash>(vec![43.into()], 3);
     }
 
     // TODO
