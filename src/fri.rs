@@ -385,7 +385,7 @@ impl<H: Hash> Prover<H> {
         let mut m = n;
         while m > 1 {
             Self::fold(&mut values[offset..], m);
-            offset += 2 * m;
+            offset += m * 2 - 1;
             m /= 2;
         }
     }
@@ -443,7 +443,10 @@ impl<H: Hash> Prover<H> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::poly;
     use crate::utils::parse_scalar;
+
+    type Polynomial = poly::Polynomial<Scalar>;
 
     #[test]
     fn test_merklify_one_sha2() {
@@ -769,6 +772,14 @@ mod tests {
         test_leaf_proof_four_almost_equal_elements_impl::<Poseidon2Hash>(12.into(), 34.into());
         test_leaf_proof_four_almost_equal_elements_impl::<Sha2Hash>(78.into(), 56.into());
         test_leaf_proof_four_almost_equal_elements_impl::<Poseidon2Hash>(78.into(), 56.into());
+    }
+
+    #[test]
+    fn test_prover() {
+        let polynomial =
+            Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let prover = Prover::<Sha2Hash>::new(polynomial.lde2(16));
+        // TODO
     }
 
     // TODO

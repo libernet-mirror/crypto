@@ -448,12 +448,10 @@ impl<F: PrimeField + Ord> Polynomial<F> {
     /// coset `shift * <omega_m>`, where `omega_m` is a primitive `m`-th root of unity. The
     /// evaluation points are `shift * omega_m^i` for `i = 0..m`.
     ///
-    /// Use `F::MULTIPLICATIVE_GENERATOR` as `shift` to evaluate on a coset that is disjoint from
-    /// the subgroup `<omega_m>`, ensuring that LDE evaluations do not coincide with the original
-    /// evaluation domain and preserving secrecy of the committed polynomial.
-    ///
-    /// The coset shift is applied by multiplying each coefficient `a_k` by `shift^k` before the
-    /// FFT, which is equivalent to substituting `X -> shift * X` in the polynomial.
+    /// The algorithm implicitly shifts the evaluation domain so that the resulting values can be
+    /// used in (DEEP-)FRI without revealing any of the original values. The coset shift is applied
+    /// by multiplying each coefficient `a_k` by `F::MULTIPLICATIVE_GENERATOR^k` before the FFT,
+    /// which is equivalent to substituting `X -> shift * X` in the polynomial.
     ///
     /// REQUIRES: `m` must be a power of two at least as large as `self.len()`, and no larger than
     /// `2^(F::S)`.
