@@ -453,14 +453,16 @@ impl<H: Hash> Prover<H> {
 
     /// Creates the FRI commitment for the vector.
     pub fn commit(&self) -> Commitment {
-        let mut n = self.degree_bound;
+        let mut n = self.size();
         assert!(n.is_power_of_two());
-        let k = (n.trailing_zeros() + 1) as usize;
+        let d = self.degree_bound;
+        assert!(d.is_power_of_two());
+        let k = d.trailing_zeros() as usize + 1;
         let mut roots = vec![Scalar::ZERO; k];
         let mut offset = 0usize;
         for i in 0..k {
             roots[i] = self.values[offset + (n - 1) * 2];
-            offset += n * 2;
+            offset += n * 2 - 1;
             n /= 2;
         }
         Commitment { roots }
@@ -837,6 +839,11 @@ mod tests {
         assert_eq!(prover.degree_bound(), degree_bound);
         assert_eq!(prover.size(), degree_bound << blowup_exp);
         assert_eq!(prover.root_hash(), expected_root_hash);
+        let commitment = prover.commit();
+        assert_eq!(commitment.len(), degree_bound.trailing_zeros() as usize + 1);
+        assert_eq!(commitment.roots().len(), commitment.len());
+        assert_eq!(commitment.root(), expected_root_hash);
+        assert_eq!(commitment.roots()[0], expected_root_hash);
     }
 
     #[test]
