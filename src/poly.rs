@@ -191,12 +191,11 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         values.resize(n, F::ZERO);
         let omega = Self::two_adic_root_of_unity(values.len());
         Self::ifft2(values.as_mut_slice(), omega);
-        if let Some(i) = values.iter().rposition(|value| *value != F::ZERO) {
-            values.truncate(i + 1);
-        }
-        Polynomial {
+        let mut polynomial = Polynomial {
             coefficients: values,
-        }
+        };
+        polynomial.trim();
+        polynomial
     }
 
     /// Recovers the ordered list of values encoded by `encode2`.
@@ -224,6 +223,41 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         self.coefficients.len()
     }
 
+    fn degree_bound_of(coefficients: &[F]) -> usize {
+        for (i, &coefficient) in coefficients.iter().enumerate().rev() {
+            if coefficient != F::ZERO {
+                return i + 1;
+            }
+        }
+        0
+    }
+
+    /// Returns the degree bound of the polynomial, ie. the smallest number `d` such that the degree
+    /// is strcitly less than `d`.
+    ///
+    /// Equivalently: this function returns the degree plus one.
+    ///
+    /// Running time: O(N) due to the possibility that some of the trailing coefficients are zero.
+    pub fn degree_bound(&self) -> usize {
+        Self::degree_bound_of(&self.coefficients.as_slice())
+    }
+
+    /// Removes any trailing null coefficients.
+    ///
+    /// After this call, `len()` is guaranteed to reflect the actual degree bound of the polynomial:
+    ///
+    ///   poly.trim();
+    ///   assert_eq!(poly.len(), poly.degree_bound());
+    pub fn trim(&mut self) {
+        if let Some(i) = self
+            .coefficients
+            .iter()
+            .rposition(|value| *value != F::ZERO)
+        {
+            self.coefficients.truncate(i + 1);
+        }
+    }
+
     /// Extracts the array of coefficients from this polynomial.
     ///
     /// NOTE: the coefficients are in ascending degree order, i.e. the first returned element is the
@@ -234,40 +268,43 @@ impl<F: PrimeField + Ord> Polynomial<F> {
 
     /// Multiplies two polynomials. Panics if the FFT capacity is exceeded -- that is, if the degree
     /// of the product is greater than or equal to 2^(F::S).
-    pub fn multiply(self, other: Self) -> Self {
-        let mut a = self.coefficients;
-        let mut b = other.coefficients;
+    pub fn multiply(mut self, mut other: Self) -> Self {
+        self.trim();
+        other.trim();
 
-        if a.is_empty() || b.is_empty() {
+        let mut lhs = self.coefficients;
+        let mut rhs = other.coefficients;
+
+        if lhs.is_empty() || rhs.is_empty() {
             return Polynomial {
                 coefficients: vec![],
             };
         }
-        if a.len() == 1 {
-            return Polynomial { coefficients: b } * a[0];
+        if lhs.len() == 1 {
+            return Polynomial { coefficients: rhs } * lhs[0];
         }
-        if b.len() == 1 {
-            return Polynomial { coefficients: a } * b[0];
+        if rhs.len() == 1 {
+            return Polynomial { coefficients: lhs } * rhs[0];
         }
 
-        let n = (a.len() + b.len() - 1).next_power_of_two();
+        let n = (lhs.len() + rhs.len() - 1).next_power_of_two();
 
-        a.resize(n, 0.into());
-        b.resize(n, 0.into());
+        lhs.resize(n, F::ZERO);
+        rhs.resize(n, F::ZERO);
 
         let omega = Self::two_adic_root_of_unity(n);
-        Self::fft2(a.as_mut_slice(), omega);
-        Self::fft2(b.as_mut_slice(), omega);
+        Self::fft2(lhs.as_mut_slice(), omega);
+        Self::fft2(rhs.as_mut_slice(), omega);
 
         for i in 0..n {
-            a[i] *= b[i];
+            lhs[i] *= rhs[i];
         }
 
-        Self::ifft2(a.as_mut_slice(), omega);
-        if let Some(i) = a.iter().rposition(|value| *value != F::ZERO) {
-            a.truncate(i + 1);
-        }
-        Polynomial { coefficients: a }
+        Self::ifft2(lhs.as_mut_slice(), omega);
+
+        let mut result = Polynomial { coefficients: lhs };
+        result.trim();
+        result
     }
 
     /// Internal implementation of `multiply_many`.
@@ -317,13 +354,15 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         let omega = Self::two_adic_root_of_unity(n);
         Self::ifft2(&mut lhs, omega);
         Self::ifft2(&mut rhs, omega);
-        let n2 = n * 2;
-        lhs.resize(n2, F::ZERO);
-        rhs.resize(n2, F::ZERO);
-        let omega = Self::two_adic_root_of_unity(n2);
+        let lhs_len = Self::degree_bound_of(lhs.as_slice());
+        let rhs_len = Self::degree_bound_of(rhs.as_slice());
+        let m = (lhs_len + rhs_len - 1).next_power_of_two();
+        lhs.resize(m, F::ZERO);
+        rhs.resize(m, F::ZERO);
+        let omega = Self::two_adic_root_of_unity(m);
         Self::fft2(&mut lhs, omega);
         Self::fft2(&mut rhs, omega);
-        for i in 0..n2 {
+        for i in 0..m {
             lhs[i] *= rhs[i];
         }
         lhs
@@ -655,13 +694,15 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
         let omega = Self::three_adic_root_of_unity(n);
         Self::ifft3(&mut lhs, omega);
         Self::ifft3(&mut rhs, omega);
-        let n3 = n * 3;
-        lhs.resize(n3, F::ZERO);
-        rhs.resize(n3, F::ZERO);
-        let omega = Self::three_adic_root_of_unity(n3);
+        let lhs_len = Self::degree_bound_of(lhs.as_slice());
+        let rhs_len = Self::degree_bound_of(rhs.as_slice());
+        let m = xits::next_power_of_three(lhs_len + rhs_len - 1);
+        lhs.resize(m, F::ZERO);
+        rhs.resize(m, F::ZERO);
+        let omega = Self::three_adic_root_of_unity(m);
         Self::fft3(&mut lhs, omega);
         Self::fft3(&mut rhs, omega);
-        for i in 0..n3 {
+        for i in 0..m {
             lhs[i] *= rhs[i];
         }
         lhs
@@ -899,6 +940,7 @@ mod tests {
         let p = Polynomial::<Scalar>::with_coefficients(vec![]);
         assert_eq!(p, Polynomial::default());
         assert_eq!(p.len(), 0);
+        assert_eq!(p.degree_bound(), 0);
         assert_eq!(p.evaluate(42.into()), 0.into());
     }
 
@@ -906,6 +948,7 @@ mod tests {
     fn test_with_coefficients() {
         let p = Polynomial::<Scalar>::with_coefficients(vec![12.into(), 34.into(), 56.into()]);
         assert_eq!(p.len(), 3);
+        assert_eq!(p.degree_bound(), 3);
         assert_eq!(p.take(), vec![12.into(), 34.into(), 56.into()]);
     }
 
@@ -913,6 +956,7 @@ mod tests {
     fn test_no_roots() {
         let p = from_roots(&[]);
         assert_eq!(p.len(), 1);
+        assert_eq!(p.degree_bound(), 1);
         assert_ne!(p.evaluate(12.into()), 0.into());
         assert_ne!(p.evaluate(34.into()), 0.into());
         assert_ne!(p.evaluate(56.into()), 0.into());
@@ -929,6 +973,7 @@ mod tests {
     fn test_one_root() {
         let p = from_roots(&[12.into()]);
         assert_eq!(p.len(), 2);
+        assert_eq!(p.degree_bound(), 2);
         assert_eq!(p.evaluate(12.into()), 0.into());
         assert_ne!(p.evaluate(34.into()), 0.into());
         assert_ne!(p.evaluate(56.into()), 0.into());
@@ -941,9 +986,11 @@ mod tests {
         assert_ne!(p.evaluate(80.into()), 0.into());
         let (q, v) = p.horner(12.into());
         assert_eq!(q.len(), 1);
+        assert_eq!(q.degree_bound(), 1);
         assert_eq!(v, 0.into());
         let (q, v) = p.horner(34.into());
         assert_eq!(q.len(), 1);
+        assert_eq!(q.degree_bound(), 1);
         assert_ne!(v, 0.into());
     }
 
@@ -951,6 +998,7 @@ mod tests {
     fn test_three_roots() {
         let p = from_roots(&[12.into(), 34.into(), 56.into()]);
         assert_eq!(p.len(), 4);
+        assert_eq!(p.degree_bound(), 4);
         assert_eq!(p.evaluate(12.into()), 0.into());
         assert_eq!(p.evaluate(34.into()), 0.into());
         assert_eq!(p.evaluate(56.into()), 0.into());
@@ -963,18 +1011,23 @@ mod tests {
         assert_ne!(p.evaluate(80.into()), 0.into());
         let (q, v) = p.horner(12.into());
         assert_eq!(q.len(), 3);
+        assert_eq!(q.degree_bound(), 3);
         assert_eq!(v, 0.into());
         let (q, v) = q.horner(34.into());
         assert_eq!(q.len(), 2);
+        assert_eq!(q.degree_bound(), 2);
         assert_eq!(v, 0.into());
         let (q, v) = q.horner(56.into());
         assert_eq!(q.len(), 1);
+        assert_eq!(q.degree_bound(), 1);
         assert_eq!(v, 0.into());
         let (q, v) = p.horner(78.into());
         assert_eq!(q.len(), 3);
+        assert_eq!(q.degree_bound(), 3);
         assert_ne!(v, 0.into());
         let (q, v) = p.horner(90.into());
         assert_eq!(q.len(), 3);
+        assert_eq!(q.degree_bound(), 3);
         assert_ne!(v, 0.into());
     }
 
@@ -982,6 +1035,7 @@ mod tests {
     fn test_three_roots_reverse_order() {
         let p = from_roots(&[56.into(), 34.into(), 12.into()]);
         assert_eq!(p.len(), 4);
+        assert_eq!(p.degree_bound(), 4);
         assert_eq!(p.evaluate(12.into()), 0.into());
         assert_eq!(p.evaluate(34.into()), 0.into());
         assert_eq!(p.evaluate(56.into()), 0.into());
@@ -994,18 +1048,23 @@ mod tests {
         assert_ne!(p.evaluate(80.into()), 0.into());
         let (q, v) = p.horner(12.into());
         assert_eq!(q.len(), 3);
+        assert_eq!(q.degree_bound(), 3);
         assert_eq!(v, 0.into());
         let (q, v) = q.horner(34.into());
         assert_eq!(q.len(), 2);
+        assert_eq!(q.degree_bound(), 2);
         assert_eq!(v, 0.into());
         let (q, v) = q.horner(56.into());
         assert_eq!(q.len(), 1);
+        assert_eq!(q.degree_bound(), 1);
         assert_eq!(v, 0.into());
         let (q, v) = p.horner(78.into());
         assert_eq!(q.len(), 3);
+        assert_eq!(q.degree_bound(), 3);
         assert_ne!(v, 0.into());
         let (q, v) = p.horner(90.into());
         assert_eq!(q.len(), 3);
+        assert_eq!(q.degree_bound(), 3);
         assert_ne!(v, 0.into());
     }
 
@@ -1021,6 +1080,7 @@ mod tests {
             57.into(),
         ]);
         assert_eq!(p.len(), 8);
+        assert_eq!(p.degree_bound(), 8);
         assert_eq!(p.evaluate(12.into()), 0.into());
         assert_eq!(p.evaluate(34.into()), 0.into());
         assert_eq!(p.evaluate(56.into()), 0.into());
@@ -1045,6 +1105,7 @@ mod tests {
             12.into(),
         ]);
         assert_eq!(p.len(), 8);
+        assert_eq!(p.degree_bound(), 8);
         assert_eq!(p.evaluate(12.into()), 0.into());
         assert_eq!(p.evaluate(34.into()), 0.into());
         assert_eq!(p.evaluate(56.into()), 0.into());
@@ -1086,6 +1147,7 @@ mod tests {
     fn test_interpolate_one_point1() {
         let p = Polynomial::<Scalar>::interpolate(&[(12.into(), 34.into())]).unwrap();
         assert_eq!(p.len(), 1);
+        assert_eq!(p.degree_bound(), 1);
         assert_eq!(p.evaluate(12.into()), 34.into());
     }
 
@@ -1093,6 +1155,7 @@ mod tests {
     fn test_interpolate_one_point2() {
         let p = Polynomial::<Scalar>::interpolate(&[(34.into(), 56.into())]).unwrap();
         assert_eq!(p.len(), 1);
+        assert_eq!(p.degree_bound(), 1);
         assert_eq!(p.evaluate(34.into()), 56.into());
     }
 
@@ -1102,6 +1165,7 @@ mod tests {
             Polynomial::<Scalar>::interpolate(&[(12.into(), 34.into()), (56.into(), 78.into())])
                 .unwrap();
         assert_eq!(p.len(), 2);
+        assert_eq!(p.degree_bound(), 2);
         assert_eq!(p.evaluate(12.into()), 34.into());
         assert_eq!(p.evaluate(56.into()), 78.into());
     }
@@ -1112,6 +1176,7 @@ mod tests {
             Polynomial::<Scalar>::interpolate(&[(34.into(), 12.into()), (78.into(), 56.into())])
                 .unwrap();
         assert_eq!(p.len(), 2);
+        assert_eq!(p.degree_bound(), 2);
         assert_eq!(p.evaluate(34.into()), 12.into());
         assert_eq!(p.evaluate(78.into()), 56.into());
     }
@@ -1125,6 +1190,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(p.len(), 3);
+        assert_eq!(p.degree_bound(), 3);
         assert_eq!(p.evaluate(12.into()), 34.into());
         assert_eq!(p.evaluate(56.into()), 78.into());
         assert_eq!(p.evaluate(90.into()), 12.into());
@@ -1139,6 +1205,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(p.len(), 3);
+        assert_eq!(p.degree_bound(), 3);
         assert_eq!(p.evaluate(34.into()), 12.into());
         assert_eq!(p.evaluate(78.into()), 56.into());
         assert_eq!(p.evaluate(12.into()), 90.into());
@@ -1162,7 +1229,9 @@ mod tests {
         let p2 = Polynomial::<Scalar>::encode2(vec![42.into()]);
         assert_eq!(p1, p2);
         assert_eq!(p1.len(), 1);
+        assert_eq!(p1.degree_bound(), 1);
         assert_eq!(p2.len(), 1);
+        assert_eq!(p2.degree_bound(), 1);
         assert_eq!(p1.evaluate(Polynomial::domain_element2(0, 1)), 42.into());
         assert_eq!(p1.evaluate_on_two_adic_domain(0, 1), 42.into());
         assert_eq!(p2.evaluate(Polynomial::domain_element2(0, 1)), 42.into());
@@ -1174,6 +1243,7 @@ mod tests {
         let p1 = Polynomial::<Scalar>::encode2(vec![42.into()]);
         let p2 = Polynomial::<Scalar>::encode2(vec![123.into()]);
         assert_eq!(p2.len(), 1);
+        assert_eq!(p2.degree_bound(), 1);
         assert_ne!(p1, p2);
         assert_eq!(p2.evaluate(Polynomial::domain_element2(0, 1)), 123.into());
         assert_eq!(p2.evaluate_on_two_adic_domain(0, 1), 123.into());
@@ -1185,7 +1255,9 @@ mod tests {
         let p2 = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into()]);
         assert_eq!(p1, p2);
         assert_eq!(p1.len(), 2);
+        assert_eq!(p1.degree_bound(), 2);
         assert_eq!(p2.len(), 2);
+        assert_eq!(p2.degree_bound(), 2);
         assert_eq!(p1.evaluate(Polynomial::domain_element2(0, 2)), 12.into());
         assert_eq!(p1.evaluate_on_two_adic_domain(0, 2), 12.into());
         assert_eq!(p1.evaluate(Polynomial::domain_element2(1, 2)), 34.into());
@@ -1201,7 +1273,9 @@ mod tests {
         let p1 = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into()]);
         let p2 = Polynomial::<Scalar>::encode2(vec![78.into(), 56.into()]);
         assert_eq!(p1.len(), 2);
+        assert_eq!(p1.degree_bound(), 2);
         assert_eq!(p2.len(), 2);
+        assert_eq!(p2.degree_bound(), 2);
         assert_ne!(p1, p2);
         assert_eq!(p2.evaluate(Polynomial::domain_element2(0, 2)), 78.into());
         assert_eq!(p2.evaluate_on_two_adic_domain(0, 2), 78.into());
@@ -1215,7 +1289,9 @@ mod tests {
         let p2 = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into(), 56.into()]);
         assert_eq!(p1, p2);
         assert_eq!(p1.len(), 4);
+        assert_eq!(p1.degree_bound(), 4);
         assert_eq!(p2.len(), 4);
+        assert_eq!(p2.degree_bound(), 4);
         assert_eq!(p1.evaluate(Polynomial::domain_element2(0, 3)), 12.into());
         assert_eq!(p1.evaluate_on_two_adic_domain(0, 3), 12.into());
         assert_eq!(p1.evaluate(Polynomial::domain_element2(0, 4)), 12.into());
@@ -1251,7 +1327,9 @@ mod tests {
         let p1 = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into(), 56.into()]);
         let p2 = Polynomial::<Scalar>::encode2(vec![90.into(), 78.into(), 34.into()]);
         assert_eq!(p1.len(), 4);
+        assert_eq!(p1.degree_bound(), 4);
         assert_eq!(p2.len(), 4);
+        assert_eq!(p2.degree_bound(), 4);
         assert_ne!(p1, p2);
         assert_eq!(p2.evaluate(Polynomial::domain_element2(0, 3)), 90.into());
         assert_eq!(p2.evaluate_on_two_adic_domain(0, 3), 90.into());
@@ -1273,6 +1351,7 @@ mod tests {
     fn test_encode2_four_values() {
         let p = Polynomial::<Scalar>::encode2(vec![12.into(), 34.into(), 56.into(), 78.into()]);
         assert_eq!(p.len(), 4);
+        assert_eq!(p.degree_bound(), 4);
         assert_eq!(p.evaluate(Polynomial::domain_element2(0, 4)), 12.into());
         assert_eq!(p.evaluate_on_two_adic_domain(0, 4), 12.into());
         assert_eq!(p.evaluate(Polynomial::domain_element2(1, 4)), 34.into());
@@ -1319,7 +1398,9 @@ mod tests {
         let p2 = Polynomial::<Scalar>::encode3(vec![42.into()]);
         assert_eq!(p1, p2);
         assert_eq!(p1.len(), 1);
+        assert_eq!(p1.degree_bound(), 1);
         assert_eq!(p2.len(), 1);
+        assert_eq!(p2.degree_bound(), 1);
         assert_eq!(p1.evaluate(Polynomial::domain_element3(0, 1)), 42.into());
         assert_eq!(p1.evaluate_on_three_adic_domain(0, 1), 42.into());
         assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 1)), 42.into());
@@ -1331,6 +1412,7 @@ mod tests {
         let p1 = Polynomial::<Scalar>::encode3(vec![42.into()]);
         let p2 = Polynomial::<Scalar>::encode3(vec![123.into()]);
         assert_eq!(p2.len(), 1);
+        assert_eq!(p2.degree_bound(), 1);
         assert_ne!(p1, p2);
         assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 1)), 123.into());
         assert_eq!(p2.evaluate_on_three_adic_domain(0, 1), 123.into());
@@ -1342,7 +1424,9 @@ mod tests {
         let p2 = Polynomial::<Scalar>::encode3(vec![12.into(), 34.into()]);
         assert_eq!(p1, p2);
         assert_eq!(p1.len(), 3);
+        assert_eq!(p1.degree_bound(), 3);
         assert_eq!(p2.len(), 3);
+        assert_eq!(p2.degree_bound(), 3);
         assert_eq!(p1.evaluate(Polynomial::domain_element3(0, 2)), 12.into());
         assert_eq!(p1.evaluate_on_three_adic_domain(0, 2), 12.into());
         assert_eq!(p1.evaluate(Polynomial::domain_element3(0, 3)), 12.into());
@@ -1370,7 +1454,9 @@ mod tests {
         let p1 = Polynomial::<Scalar>::encode3(vec![12.into(), 34.into()]);
         let p2 = Polynomial::<Scalar>::encode3(vec![78.into(), 56.into()]);
         assert_eq!(p1.len(), 3);
+        assert_eq!(p1.degree_bound(), 3);
         assert_eq!(p2.len(), 3);
+        assert_eq!(p2.degree_bound(), 3);
         assert_ne!(p1, p2);
         assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 2)), 78.into());
         assert_eq!(p2.evaluate_on_three_adic_domain(0, 2), 78.into());
@@ -1386,7 +1472,9 @@ mod tests {
         let p2 = Polynomial::<Scalar>::encode3(vec![12.into(), 34.into(), 56.into()]);
         assert_eq!(p1, p2);
         assert_eq!(p1.len(), 3);
+        assert_eq!(p1.degree_bound(), 3);
         assert_eq!(p2.len(), 3);
+        assert_eq!(p2.degree_bound(), 3);
         assert_eq!(p1.evaluate(Polynomial::domain_element3(0, 3)), 12.into());
         assert_eq!(p1.evaluate_on_three_adic_domain(0, 3), 12.into());
         assert_eq!(p1.evaluate(Polynomial::domain_element3(1, 3)), 34.into());
@@ -1406,7 +1494,9 @@ mod tests {
         let p1 = Polynomial::<Scalar>::encode3(vec![12.into(), 34.into(), 56.into()]);
         let p2 = Polynomial::<Scalar>::encode3(vec![90.into(), 78.into(), 34.into()]);
         assert_eq!(p1.len(), 3);
+        assert_eq!(p1.degree_bound(), 3);
         assert_eq!(p2.len(), 3);
+        assert_eq!(p2.degree_bound(), 3);
         assert_ne!(p1, p2);
         assert_eq!(p2.evaluate(Polynomial::domain_element3(0, 3)), 90.into());
         assert_eq!(p2.evaluate_on_three_adic_domain(0, 3), 90.into());
@@ -1430,6 +1520,7 @@ mod tests {
             44.into(),
         ]);
         assert_eq!(p.len(), 9);
+        assert_eq!(p.degree_bound(), 9);
         assert_eq!(p.evaluate(Polynomial::domain_element3(0, 9)), 12.into());
         assert_eq!(p.evaluate_on_three_adic_domain(0, 9), 12.into());
         assert_eq!(p.evaluate(Polynomial::domain_element3(1, 9)), 34.into());
@@ -1757,6 +1848,7 @@ mod tests {
         let p = ql.multiply(l) + qr.multiply(r) + qo.multiply(o) + qm.multiply(lr) + qc;
         let q = p.divide_by_zero(4).unwrap();
         assert_eq!(q.len(), 6);
+        assert_eq!(q.degree_bound(), 6);
     }
 
     #[test]
@@ -1773,6 +1865,7 @@ mod tests {
         let p = ql.multiply(l) + qr.multiply(r) + qo.multiply(o) + qm.multiply(lr) + qc;
         let q = p.divide_by_zero(4).unwrap();
         assert_eq!(q.len(), 6);
+        assert_eq!(q.degree_bound(), 6);
     }
 
     #[test]
@@ -1844,6 +1937,7 @@ mod tests {
         let values = vec![42.into(), 42.into()];
         let p = Polynomial::<Scalar>::encode2(values);
         assert_eq!(p.len(), 1);
+        assert_eq!(p.degree_bound(), 1);
         let lde = p.clone().lde2(4);
         assert_eq!(
             lde,
@@ -1967,6 +2061,7 @@ mod tests {
         let values = vec![7.into(), 7.into(), 7.into()];
         let p = Polynomial::<Scalar>::encode3(values);
         assert_eq!(p.len(), 1);
+        assert_eq!(p.degree_bound(), 1);
         let lde = p.clone().lde3(9);
         assert_eq!(
             lde,
@@ -1989,10 +2084,7 @@ mod tests {
         let lhs = vec![42.into(), 42.into()];
         let rhs = vec![42.into(), 42.into()];
         let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
-        assert_eq!(
-            result,
-            vec![1764.into(), 1764.into(), 1764.into(), 1764.into()]
-        );
+        assert_eq!(result, vec![1764.into()]);
     }
 
     #[test]
@@ -2000,7 +2092,7 @@ mod tests {
         let lhs = vec![3.into(), 3.into()];
         let rhs = vec![7.into(), 7.into()];
         let result = Polynomial::<Scalar>::multiply_values2(lhs, rhs);
-        assert_eq!(result, vec![21.into(), 21.into(), 21.into(), 21.into()]);
+        assert_eq!(result, vec![21.into()]);
     }
 
     #[test]
@@ -2085,20 +2177,7 @@ mod tests {
         let lhs = vec![42.into(), 42.into(), 42.into()];
         let rhs = vec![42.into(), 42.into(), 42.into()];
         let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
-        assert_eq!(
-            result,
-            vec![
-                1764.into(),
-                1764.into(),
-                1764.into(),
-                1764.into(),
-                1764.into(),
-                1764.into(),
-                1764.into(),
-                1764.into(),
-                1764.into(),
-            ]
-        );
+        assert_eq!(result, vec![1764.into()]);
     }
 
     #[test]
@@ -2106,20 +2185,7 @@ mod tests {
         let lhs = vec![3.into(), 3.into(), 3.into()];
         let rhs = vec![7.into(), 7.into(), 7.into()];
         let result = Polynomial::<Scalar>::multiply_values3(lhs, rhs);
-        assert_eq!(
-            result,
-            vec![
-                21.into(),
-                21.into(),
-                21.into(),
-                21.into(),
-                21.into(),
-                21.into(),
-                21.into(),
-                21.into(),
-                21.into(),
-            ]
-        );
+        assert_eq!(result, vec![21.into()]);
     }
 
     #[test]
@@ -2141,15 +2207,9 @@ mod tests {
         assert_eq!(
             result,
             vec![
-                product.evaluate_on_three_adic_domain(0, 9),
-                product.evaluate_on_three_adic_domain(1, 9),
-                product.evaluate_on_three_adic_domain(2, 9),
-                product.evaluate_on_three_adic_domain(3, 9),
-                product.evaluate_on_three_adic_domain(4, 9),
-                product.evaluate_on_three_adic_domain(5, 9),
-                product.evaluate_on_three_adic_domain(6, 9),
-                product.evaluate_on_three_adic_domain(7, 9),
-                product.evaluate_on_three_adic_domain(8, 9),
+                product.evaluate_on_three_adic_domain(0, 3),
+                product.evaluate_on_three_adic_domain(1, 3),
+                product.evaluate_on_three_adic_domain(2, 3),
             ]
         );
     }

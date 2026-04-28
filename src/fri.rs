@@ -1,4 +1,5 @@
 use crate::bluesky::Scalar;
+use crate::poly;
 use crate::poseidon;
 use crate::utils;
 use anyhow::{Result, anyhow};
@@ -7,6 +8,8 @@ use primitive_types::U256;
 use sha2::{self, Digest};
 use std::marker::PhantomData;
 use std::sync::LazyLock;
+
+type Polynomial = poly::Polynomial<Scalar>;
 
 /// Domain separator tag for Fiat-Shamir challenges.
 static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/fri/challenge"));
@@ -339,6 +342,7 @@ impl<H: Hash> Query<H> {
 /// The total size of the `values` array is `4n-3`.
 #[derive(Debug)]
 pub struct Prover<H: Hash> {
+    degree_bound: usize,
     values: Vec<Scalar>,
     _data: PhantomData<H>,
 }
@@ -390,23 +394,51 @@ impl<H: Hash> Prover<H> {
         }
     }
 
-    /// Constructs a new FRI prover that commits to the provided list of `values`.
+    /// Constructs a new FRI prover that commits to a polynomial.
     ///
-    /// The underlying algorithms require that the number of committed values is a power of two, so
-    /// if that's not the case this function will automatically pad them with zeros.
-    pub fn new(mut values: Vec<Scalar>) -> Self {
-        let n = values.len().next_power_of_two();
+    /// The provided polynomial is automatically converted to its low-degree extension using the
+    /// `lde2` function, which inflates the evaluation domain and moves the polynomial to a coset of
+    /// it.
+    ///
+    /// The evaluation domain is inflated by a blowup factor of `2^blowup_exp`. The FRI prover will
+    /// then enable low-degree testing queries that prove the original degree of the polynomial with
+    /// exponentially increasing probability.
+    pub fn new(polynomial: Polynomial, blowup_exp: usize) -> Self {
+        let degree_bound = polynomial.len().next_power_of_two();
+        let mut values = polynomial.lde2(degree_bound << blowup_exp);
+        let n = values.len();
+        assert!(n.is_power_of_two());
         assert!(n.trailing_zeros() <= Scalar::S);
         values.resize(n * 4 - 3, Scalar::ZERO);
         merklify::<H>(&mut values[0..(n * 2 - 1)], n);
         Self::fold_all(&mut values, n);
         Self {
+            degree_bound,
             values,
             _data: Default::default(),
         }
     }
 
-    /// Returns the size of the original committed vector (always a power of 2).
+    /// Returns the degree bound of the committed polynomial (always a power of 2).
+    ///
+    /// NOTE: the actual degree of the original polynomial is often even lower than this value
+    /// because the latter was rounded up to the next power of 2 in order to run the FFT and FRI
+    /// algorithms.
+    pub fn degree_bound(&self) -> usize {
+        self.degree_bound
+    }
+
+    /// Returns the size of the committed vector (always a power of 2).
+    ///
+    /// NOTE: this is NOT the degree bound of the original polynomial, which was converted to a
+    /// *larger* domain when switching to the value domain as per the low-degree extension (`lde2`)
+    /// algorithm. The original degree bound is returned by `degree_bound()` and differs from the
+    /// `size()` by the blowup factor:
+    ///
+    ///   assert_eq!(prover.size(), prover.degree_bound() * blowup);
+    ///
+    /// where `blowup` is `2^blowup_exp` and `blowup_exp` is the argument specified to the `new`
+    /// constructor.
     pub fn size(&self) -> usize {
         (self.values.len() + 3) / 4
     }
@@ -421,7 +453,8 @@ impl<H: Hash> Prover<H> {
 
     /// Creates the FRI commitment for the vector.
     pub fn commit(&self) -> Commitment {
-        let mut n = self.size();
+        let mut n = self.degree_bound;
+        assert!(n.is_power_of_two());
         let k = (n.trailing_zeros() + 1) as usize;
         let mut roots = vec![Scalar::ZERO; k];
         let mut offset = 0usize;
@@ -434,19 +467,39 @@ impl<H: Hash> Prover<H> {
     }
 
     /// Builds a FRI `Query` for the value at the specified index of the evaluation domain.
-    pub fn query(&self, index: usize) -> Query<H> {
-        // TODO
-        todo!()
+    pub fn query(&self, mut index: usize) -> Query<H> {
+        let n = self.size();
+        let mut values = self.values.as_slice();
+        let mut m = n;
+        let mut folds = vec![];
+        loop {
+            folds.push((
+                LeafProof::<H>::new(values, m, index),
+                LeafProof::<H>::new(values, m, m - index),
+            ));
+            let proofs = folds.last().unwrap();
+            if proofs.0.is_constant() {
+                debug_assert!(proofs.1.is_constant());
+                return Query {
+                    n,
+                    index,
+                    value: self.values[index],
+                    folds,
+                    _data: Default::default(),
+                };
+            }
+            debug_assert!(!proofs.1.is_constant());
+            values = &values[(m * 2 - 1)..];
+            m /= 2;
+            index %= m;
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::poly;
     use crate::utils::parse_scalar;
-
-    type Polynomial = poly::Polynomial<Scalar>;
 
     #[test]
     fn test_merklify_one_sha2() {
@@ -774,12 +827,100 @@ mod tests {
         test_leaf_proof_four_almost_equal_elements_impl::<Poseidon2Hash>(78.into(), 56.into());
     }
 
+    fn test_prover_state_impl<H: Hash>(
+        polynomial: Polynomial,
+        blowup_exp: usize,
+        expected_root_hash: Scalar,
+    ) {
+        let degree_bound = polynomial.degree_bound().next_power_of_two();
+        let prover = Prover::<H>::new(polynomial, blowup_exp);
+        assert_eq!(prover.degree_bound(), degree_bound);
+        assert_eq!(prover.size(), degree_bound << blowup_exp);
+        assert_eq!(prover.root_hash(), expected_root_hash);
+    }
+
     #[test]
-    fn test_prover() {
+    fn test_prover_state1() {
         let polynomial =
             Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]);
-        let prover = Prover::<Sha2Hash>::new(polynomial.lde2(16));
-        // TODO
+        test_prover_state_impl::<Sha2Hash>(
+            polynomial.clone(),
+            1,
+            parse_scalar("0x506e69e39f8186736e16d0dec37c6366490f9baed6cbdd408073d590a3987718"),
+        );
+        test_prover_state_impl::<Poseidon2Hash>(
+            polynomial.clone(),
+            1,
+            parse_scalar("0x3314864329ded251ed611c1c3c24805e217c72f346ea0b9c79647ea903670502"),
+        );
+    }
+
+    #[test]
+    fn test_prover_state2() {
+        let polynomial =
+            Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        test_prover_state_impl::<Sha2Hash>(
+            polynomial.clone(),
+            2,
+            parse_scalar("0x227c20fdf8aae5f4bd271909861d37610304031bcae23ccf7f85cb9d1ed3c08e"),
+        );
+        test_prover_state_impl::<Poseidon2Hash>(
+            polynomial.clone(),
+            2,
+            parse_scalar("0x1ad9796cdfd764d2a810b65c7ae4a7b45bdd3061a449a0a21077b71b0bcce2f3"),
+        );
+    }
+
+    #[test]
+    fn test_prover_state3() {
+        let polynomial =
+            Polynomial::with_coefficients(vec![90.into(), 78.into(), 56.into(), 34.into()]);
+        test_prover_state_impl::<Sha2Hash>(
+            polynomial.clone(),
+            2,
+            parse_scalar("0x5c7fabd0aa929d21664bfc533f3ef483f3be2fd1322e8c595e3c2c41efe6fbab"),
+        );
+        test_prover_state_impl::<Poseidon2Hash>(
+            polynomial.clone(),
+            2,
+            parse_scalar("0x15cedd66d68c15e990d62df5f1115d83bc3efdc821b9aa0e9faea15de805ee69"),
+        );
+    }
+
+    #[test]
+    fn test_prover_state4() {
+        let polynomial = Polynomial::with_coefficients(vec![
+            12.into(),
+            34.into(),
+            56.into(),
+            78.into(),
+            90.into(),
+        ]);
+        test_prover_state_impl::<Sha2Hash>(
+            polynomial.clone(),
+            2,
+            parse_scalar("0x4a0980b6c26fae465936f66502a318d35fa45abe50460363e38998083eb66d80"),
+        );
+        test_prover_state_impl::<Poseidon2Hash>(
+            polynomial.clone(),
+            2,
+            parse_scalar("0x50faca52d2f8a77ccd07a765284958308955501b10955be7b655584a2bf0fb45"),
+        );
+    }
+
+    #[test]
+    fn test_prover_state5() {
+        let polynomial = Polynomial::with_coefficients(vec![56.into(), 78.into(), 90.into()]);
+        test_prover_state_impl::<Sha2Hash>(
+            polynomial.clone(),
+            3,
+            parse_scalar("0x5d41101d2569bb0a5c6cf689197a23aba70d894c4f17d122b50e1520ce71bf5f"),
+        );
+        test_prover_state_impl::<Poseidon2Hash>(
+            polynomial.clone(),
+            3,
+            parse_scalar("0x5b9c68639a38936dbdbb393f46bf1d0371f14bf004aa6541ea5ef966faaa273e"),
+        );
     }
 
     // TODO
