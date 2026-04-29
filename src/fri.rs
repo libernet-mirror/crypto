@@ -322,8 +322,6 @@ impl<H: Hash> Query<H> {
             return Err(anyhow!("wrong number of folding rounds"));
         }
 
-        let alpha = H::hash(*DST, commitment.root());
-
         let mut m = self.n;
         let mut index = self.index;
         let mut value = self.value;
@@ -332,6 +330,7 @@ impl<H: Hash> Query<H> {
         for r in 0..h {
             let (left, right) = &folds[r];
             let root_hash = commitment.roots()[r];
+            let alpha = H::hash(*DST, root_hash);
 
             if 1usize << left.len() != m {
                 return Err(anyhow!(
@@ -1019,11 +1018,17 @@ mod tests {
         test_query_one_element::<Sha2Hash>(42.into(), 2, 0);
         test_query_one_element::<Poseidon2Hash>(42.into(), 2, 0);
         test_query_one_element::<Sha2Hash>(42.into(), 2, 1);
+        test_query_one_element::<Poseidon2Hash>(42.into(), 2, 1);
         test_query_one_element::<Sha2Hash>(42.into(), 2, 2);
+        test_query_one_element::<Poseidon2Hash>(42.into(), 2, 2);
         test_query_one_element::<Sha2Hash>(42.into(), 2, 3);
+        test_query_one_element::<Poseidon2Hash>(42.into(), 2, 3);
         test_query_one_element::<Sha2Hash>(42.into(), 3, 0);
+        test_query_one_element::<Poseidon2Hash>(42.into(), 3, 0);
         test_query_one_element::<Sha2Hash>(42.into(), 3, 1);
+        test_query_one_element::<Poseidon2Hash>(42.into(), 3, 1);
         test_query_one_element::<Sha2Hash>(42.into(), 3, 2);
+        test_query_one_element::<Poseidon2Hash>(42.into(), 3, 2);
         test_query_one_element::<Sha2Hash>(42.into(), 3, 3);
         test_query_one_element::<Sha2Hash>(42.into(), 3, 4);
         test_query_one_element::<Sha2Hash>(42.into(), 3, 5);
@@ -1040,11 +1045,17 @@ mod tests {
         test_query_one_element::<Sha2Hash>(43.into(), 2, 0);
         test_query_one_element::<Poseidon2Hash>(43.into(), 2, 0);
         test_query_one_element::<Sha2Hash>(43.into(), 2, 1);
+        test_query_one_element::<Poseidon2Hash>(43.into(), 2, 1);
         test_query_one_element::<Sha2Hash>(43.into(), 2, 2);
+        test_query_one_element::<Poseidon2Hash>(43.into(), 2, 2);
         test_query_one_element::<Sha2Hash>(43.into(), 2, 3);
+        test_query_one_element::<Poseidon2Hash>(43.into(), 2, 3);
         test_query_one_element::<Sha2Hash>(43.into(), 3, 0);
+        test_query_one_element::<Poseidon2Hash>(43.into(), 3, 0);
         test_query_one_element::<Sha2Hash>(43.into(), 3, 1);
+        test_query_one_element::<Poseidon2Hash>(43.into(), 3, 1);
         test_query_one_element::<Sha2Hash>(43.into(), 3, 2);
+        test_query_one_element::<Poseidon2Hash>(43.into(), 3, 2);
         test_query_one_element::<Sha2Hash>(43.into(), 3, 3);
         test_query_one_element::<Sha2Hash>(43.into(), 3, 4);
         test_query_one_element::<Sha2Hash>(43.into(), 3, 5);
@@ -1077,10 +1088,15 @@ mod tests {
         test_query_two_elements_impl::<Sha2Hash>(value1, value2, 1, 1);
         test_query_two_elements_impl::<Poseidon2Hash>(value1, value2, 1, 1);
         test_query_two_elements_impl::<Sha2Hash>(value1, value2, 1, 2);
+        test_query_two_elements_impl::<Poseidon2Hash>(value1, value2, 1, 2);
         test_query_two_elements_impl::<Sha2Hash>(value1, value2, 1, 3);
+        test_query_two_elements_impl::<Poseidon2Hash>(value1, value2, 1, 3);
         test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 0);
+        test_query_two_elements_impl::<Poseidon2Hash>(value1, value2, 2, 0);
         test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 1);
+        test_query_two_elements_impl::<Poseidon2Hash>(value1, value2, 2, 1);
         test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 2);
+        test_query_two_elements_impl::<Poseidon2Hash>(value1, value2, 2, 2);
         test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 3);
         test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 4);
         test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 5);
@@ -1114,5 +1130,82 @@ mod tests {
         test_query_two_elements(78.into(), 56.into());
     }
 
-    // TODO
+    fn test_query_four_elements_impl<H: Hash>(
+        values: [Scalar; 4],
+        blowup_exp: usize,
+        index: usize,
+    ) {
+        let polynomial = Polynomial::encode2(values.to_vec());
+        let prover = Prover::<H>::new(polynomial, blowup_exp);
+        let commitment = prover.commit();
+        assert_eq!(commitment.len(), 3);
+        assert_eq!(commitment.root(), prover.root_hash());
+        let query = prover.query(index);
+        assert_eq!(query.len(), 3);
+        assert_eq!(query.index(), index);
+        assert_ne!(*query.value(), values[0]);
+        assert_ne!(*query.value(), values[1]);
+        assert_ne!(*query.value(), values[2]);
+        assert_ne!(*query.value(), values[3]);
+        query.verify(&commitment).unwrap();
+        assert!(query.verify(&commitment).is_ok());
+    }
+
+    fn test_query_four_elements_with_blowup_two_impl(values: [Scalar; 4]) {
+        test_query_four_elements_impl::<Sha2Hash>(values, 1, 0);
+        test_query_four_elements_impl::<Poseidon2Hash>(values, 1, 0);
+        test_query_four_elements_impl::<Sha2Hash>(values, 1, 1);
+        test_query_four_elements_impl::<Poseidon2Hash>(values, 1, 1);
+        test_query_four_elements_impl::<Sha2Hash>(values, 1, 2);
+        test_query_four_elements_impl::<Poseidon2Hash>(values, 1, 2);
+        test_query_four_elements_impl::<Sha2Hash>(values, 1, 3);
+        test_query_four_elements_impl::<Sha2Hash>(values, 1, 4);
+        test_query_four_elements_impl::<Sha2Hash>(values, 1, 5);
+        test_query_four_elements_impl::<Sha2Hash>(values, 1, 6);
+        test_query_four_elements_impl::<Sha2Hash>(values, 1, 7);
+    }
+
+    #[test]
+    fn test_query_four_elements_with_blowup_two() {
+        test_query_four_elements_with_blowup_two_impl([12.into(), 34.into(), 56.into(), 78.into()]);
+        test_query_four_elements_with_blowup_two_impl([90.into(), 78.into(), 56.into(), 34.into()]);
+    }
+
+    fn test_query_four_elements_with_blowup_four_impl(values: [Scalar; 4]) {
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 0);
+        test_query_four_elements_impl::<Poseidon2Hash>(values, 2, 0);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 1);
+        test_query_four_elements_impl::<Poseidon2Hash>(values, 2, 1);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 2);
+        test_query_four_elements_impl::<Poseidon2Hash>(values, 2, 2);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 3);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 4);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 5);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 6);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 7);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 8);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 9);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 10);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 11);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 12);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 13);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 14);
+        test_query_four_elements_impl::<Sha2Hash>(values, 2, 15);
+    }
+
+    #[test]
+    fn test_query_four_elements_with_blowup_four() {
+        test_query_four_elements_with_blowup_four_impl([
+            12.into(),
+            34.into(),
+            56.into(),
+            78.into(),
+        ]);
+        test_query_four_elements_with_blowup_four_impl([
+            90.into(),
+            78.into(),
+            56.into(),
+            34.into(),
+        ]);
+    }
 }
