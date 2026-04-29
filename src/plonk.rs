@@ -1,5 +1,5 @@
 use crate::bluesky::Scalar;
-use crate::fri2;
+use crate::fri;
 use crate::pcs;
 use crate::poly;
 use crate::utils;
@@ -1218,14 +1218,14 @@ impl Circuit {
 #[derive(Debug, Clone)]
 pub struct CompressedCircuit {
     original_size: usize,
-    ql: fri2::Commitment,
-    qr: fri2::Commitment,
-    qo: fri2::Commitment,
-    qm: fri2::Commitment,
-    qc: fri2::Commitment,
-    sl: fri2::Commitment,
-    sr: fri2::Commitment,
-    so: fri2::Commitment,
+    ql: fri::Commitment,
+    qr: fri::Commitment,
+    qo: fri::Commitment,
+    qm: fri::Commitment,
+    qc: fri::Commitment,
+    sl: fri::Commitment,
+    sr: fri::Commitment,
+    so: fri::Commitment,
 }
 
 impl CompressedCircuit {

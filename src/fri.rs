@@ -178,7 +178,7 @@ impl<H: Hash> LeafProof<H> {
     /// REQUIRES: values.len() >= n * 2 - 1
     /// REQUIRES: index < n
     fn new(values: &[Scalar], mut n: usize, mut index: usize) -> Self {
-        debug_assert!(n.is_power_of_two());
+        assert!(n.is_power_of_two());
         assert!(index < n);
         let value = values[index];
         let mut path = Vec::with_capacity(n.trailing_zeros() as usize);
@@ -407,7 +407,7 @@ impl<H: Hash> Prover<H> {
     /// then enable low-degree testing queries that prove the original degree of the polynomial with
     /// exponentially increasing probability.
     pub fn new(polynomial: Polynomial, blowup_exp: usize) -> Self {
-        debug_assert_eq!(polynomial.len(), polynomial.degree_bound());
+        assert_eq!(polynomial.len(), polynomial.degree_bound());
         let degree_bound = polynomial.len().next_power_of_two();
         let mut values = polynomial.lde2(degree_bound << blowup_exp);
         let n = values.len();
@@ -473,6 +473,9 @@ impl<H: Hash> Prover<H> {
     }
 
     /// Builds a FRI `Query` for the value at the specified index of the evaluation domain.
+    ///
+    /// NOTE: `index` is relative to the *inflated* evaluation domain, so for example if you
+    /// committed to 4 evaluations with a blowup factor of 8 the range for `index` is [0, 31).
     pub fn query(&self, index: usize) -> Query<H> {
         let n = self.size();
         assert!(n.is_power_of_two());
@@ -942,76 +945,121 @@ mod tests {
         );
     }
 
-    fn test_query_one_element_impl<H: Hash>(value: Scalar, blowup_exp: usize) {
+    fn test_query_one_element<H: Hash>(value: Scalar, blowup_exp: usize, index: usize) {
         let polynomial = Polynomial::encode2(vec![value]);
         let prover = Prover::<H>::new(polynomial, blowup_exp);
         let commitment = prover.commit();
         assert_eq!(commitment.len(), 1);
-        let query = prover.query(0);
+        assert_eq!(commitment.root(), prover.root_hash());
+        let query = prover.query(index);
         assert_eq!(query.len(), 1);
-        assert_eq!(query.index(), 0);
+        assert_eq!(query.index(), index);
         assert_eq!(*query.value(), value);
         assert!(query.verify(&commitment).is_ok());
     }
 
     #[test]
     fn test_query_one_element1() {
-        test_query_one_element_impl::<Sha2Hash>(42.into(), 1);
-        test_query_one_element_impl::<Poseidon2Hash>(42.into(), 1);
-        test_query_one_element_impl::<Sha2Hash>(42.into(), 2);
-        test_query_one_element_impl::<Poseidon2Hash>(42.into(), 2);
-        test_query_one_element_impl::<Sha2Hash>(42.into(), 3);
-        test_query_one_element_impl::<Poseidon2Hash>(42.into(), 3);
+        test_query_one_element::<Sha2Hash>(42.into(), 1, 0);
+        test_query_one_element::<Poseidon2Hash>(42.into(), 1, 0);
+        test_query_one_element::<Sha2Hash>(42.into(), 1, 1);
+        test_query_one_element::<Poseidon2Hash>(42.into(), 1, 1);
+        test_query_one_element::<Sha2Hash>(42.into(), 2, 0);
+        test_query_one_element::<Poseidon2Hash>(42.into(), 2, 0);
+        test_query_one_element::<Sha2Hash>(42.into(), 2, 1);
+        test_query_one_element::<Sha2Hash>(42.into(), 2, 2);
+        test_query_one_element::<Sha2Hash>(42.into(), 2, 3);
+        test_query_one_element::<Sha2Hash>(42.into(), 3, 0);
+        test_query_one_element::<Sha2Hash>(42.into(), 3, 1);
+        test_query_one_element::<Sha2Hash>(42.into(), 3, 2);
+        test_query_one_element::<Sha2Hash>(42.into(), 3, 3);
+        test_query_one_element::<Sha2Hash>(42.into(), 3, 4);
+        test_query_one_element::<Sha2Hash>(42.into(), 3, 5);
+        test_query_one_element::<Sha2Hash>(42.into(), 3, 6);
+        test_query_one_element::<Sha2Hash>(42.into(), 3, 7);
     }
 
     #[test]
     fn test_query_one_element2() {
-        test_query_one_element_impl::<Sha2Hash>(43.into(), 1);
-        test_query_one_element_impl::<Poseidon2Hash>(43.into(), 1);
-        test_query_one_element_impl::<Sha2Hash>(43.into(), 2);
-        test_query_one_element_impl::<Poseidon2Hash>(43.into(), 2);
-        test_query_one_element_impl::<Sha2Hash>(43.into(), 3);
-        test_query_one_element_impl::<Poseidon2Hash>(43.into(), 3);
+        test_query_one_element::<Sha2Hash>(43.into(), 1, 0);
+        test_query_one_element::<Poseidon2Hash>(43.into(), 1, 0);
+        test_query_one_element::<Sha2Hash>(43.into(), 1, 1);
+        test_query_one_element::<Poseidon2Hash>(43.into(), 1, 1);
+        test_query_one_element::<Sha2Hash>(43.into(), 2, 0);
+        test_query_one_element::<Poseidon2Hash>(43.into(), 2, 0);
+        test_query_one_element::<Sha2Hash>(43.into(), 2, 1);
+        test_query_one_element::<Sha2Hash>(43.into(), 2, 2);
+        test_query_one_element::<Sha2Hash>(43.into(), 2, 3);
+        test_query_one_element::<Sha2Hash>(43.into(), 3, 0);
+        test_query_one_element::<Sha2Hash>(43.into(), 3, 1);
+        test_query_one_element::<Sha2Hash>(43.into(), 3, 2);
+        test_query_one_element::<Sha2Hash>(43.into(), 3, 3);
+        test_query_one_element::<Sha2Hash>(43.into(), 3, 4);
+        test_query_one_element::<Sha2Hash>(43.into(), 3, 5);
+        test_query_one_element::<Sha2Hash>(43.into(), 3, 6);
+        test_query_one_element::<Sha2Hash>(43.into(), 3, 7);
     }
 
-    fn test_query_two_elements_impl<H: Hash>(values: Vec<Scalar>, blowup_exp: usize) {
-        let polynomial = Polynomial::encode2(values.clone());
+    fn test_query_two_elements_impl<H: Hash>(
+        value1: Scalar,
+        value2: Scalar,
+        blowup_exp: usize,
+        index: usize,
+    ) {
+        let polynomial = Polynomial::encode2(vec![value1, value2]);
         let prover = Prover::<H>::new(polynomial, blowup_exp);
         let commitment = prover.commit();
         assert_eq!(commitment.len(), 2);
-        let query1 = prover.query(0);
-        let query2 = prover.query(1);
-        assert_eq!(query1.len(), 2);
-        assert_eq!(query1.index(), 0);
-        assert_ne!(*query1.value(), values[0]);
-        assert_ne!(*query1.value(), values[1]);
-        assert!(query1.verify(&commitment).is_ok());
-        assert_eq!(query2.len(), 2);
-        assert_eq!(query2.index(), 1);
-        assert_ne!(*query2.value(), values[0]);
-        assert_ne!(*query2.value(), values[1]);
-        assert!(query2.verify(&commitment).is_ok());
-        assert_ne!(query1.value(), query2.value());
+        assert_eq!(commitment.root(), prover.root_hash());
+        let query = prover.query(index);
+        assert_eq!(query.len(), 2);
+        assert_eq!(query.index(), index);
+        assert_ne!(*query.value(), value1);
+        assert_ne!(*query.value(), value2);
+        assert!(query.verify(&commitment).is_ok());
+    }
+
+    fn test_query_two_elements(value1: Scalar, value2: Scalar) {
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 1, 0);
+        test_query_two_elements_impl::<Poseidon2Hash>(value1, value2, 1, 0);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 1, 1);
+        test_query_two_elements_impl::<Poseidon2Hash>(value1, value2, 1, 1);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 1, 2);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 1, 3);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 0);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 1);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 2);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 3);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 4);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 5);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 6);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 2, 7);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 0);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 1);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 2);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 3);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 4);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 5);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 6);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 7);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 8);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 9);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 10);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 11);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 12);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 13);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 14);
+        test_query_two_elements_impl::<Sha2Hash>(value1, value2, 3, 15);
     }
 
     #[test]
     fn test_query_two_elements1() {
-        test_query_two_elements_impl::<Sha2Hash>(vec![12.into(), 34.into()], 1);
-        test_query_two_elements_impl::<Poseidon2Hash>(vec![12.into(), 34.into()], 1);
-        test_query_two_elements_impl::<Sha2Hash>(vec![12.into(), 34.into()], 2);
-        test_query_two_elements_impl::<Poseidon2Hash>(vec![12.into(), 34.into()], 2);
-        test_query_two_elements_impl::<Sha2Hash>(vec![12.into(), 34.into()], 3);
-        test_query_two_elements_impl::<Poseidon2Hash>(vec![12.into(), 34.into()], 3);
+        test_query_two_elements(12.into(), 34.into());
     }
 
     #[test]
     fn test_query_two_elements2() {
-        test_query_two_elements_impl::<Sha2Hash>(vec![56.into(), 34.into()], 1);
-        test_query_two_elements_impl::<Poseidon2Hash>(vec![56.into(), 34.into()], 1);
-        test_query_two_elements_impl::<Sha2Hash>(vec![56.into(), 34.into()], 2);
-        test_query_two_elements_impl::<Poseidon2Hash>(vec![56.into(), 34.into()], 2);
-        test_query_two_elements_impl::<Sha2Hash>(vec![56.into(), 34.into()], 3);
-        test_query_two_elements_impl::<Poseidon2Hash>(vec![56.into(), 34.into()], 3);
+        test_query_two_elements(78.into(), 56.into());
     }
 
     // TODO
