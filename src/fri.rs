@@ -327,9 +327,7 @@ impl<H: Hash> Query<H> {
         let mut m = self.n;
         let mut index = self.index;
         let mut value = self.value;
-
-        let omega_inv = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
-        let mut omega_inv_i = Scalar::ONE;
+        let mut step = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
 
         for r in 0..h {
             let (left, right) = &folds[r];
@@ -355,10 +353,11 @@ impl<H: Hash> Query<H> {
             left.verify(index, f_pos, root_hash)?;
             right.verify((index + m / 2) % m, f_neg, root_hash)?;
 
+            let omega_inv_i = step.pow_vartime([index as u64, 0, 0, 0]);
             m /= 2;
             index %= m;
             value = (f_pos + f_neg + alpha * omega_inv_i * (f_pos - f_neg)) * Scalar::TWO_INV;
-            omega_inv_i *= omega_inv;
+            step = step.square();
         }
 
         Ok(())
