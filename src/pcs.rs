@@ -1,5 +1,5 @@
 use crate::bluesky::Scalar;
-use crate::fri2;
+use crate::fri;
 use crate::poly::Polynomial;
 use crate::utils;
 use anyhow::{Context, Result, anyhow};
@@ -8,10 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
 /// Re-export the available hash backends.
-pub use fri2::{Hash, Poseidon2Hash, Sha3Hash, merkle_root};
+pub use fri::{Hash, Poseidon2Hash, Sha2Hash, merkle_root};
 
 /// Target security level in bits.
-pub const LAMBDA: u32 = 128;
+pub const LAMBDA: usize = 128;
 
 fn rlc_challenge<'a, H: Hash>(roots: impl IntoIterator<Item = Scalar>) -> Scalar {
     static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/pcs/rlc"));
@@ -27,16 +27,16 @@ fn rlc_challenge<'a, H: Hash>(roots: impl IntoIterator<Item = Scalar>) -> Scalar
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
     /// FRI commitments of each source polynomial's LDE.
-    sources: Vec<fri2::Commitment>,
+    sources: Vec<fri::Commitment>,
     /// FRI commitment of the combined DEEP-FRI quotient polynomial's LDE.
     ///
     /// The combined quotient is `q(x) = Sum(r^j * (f_j(x) - y_j) / (x - z_j))`, where each
     /// polynomial `f_j` has its own evaluation point `z_j`.
-    quotient: fri2::Commitment,
+    quotient: fri::Commitment,
     /// Degree bound: `max(deg(f_j)) < degree_bound`. Equal to the padded polynomial length.
     degree_bound: usize,
     /// Log2 of the blowup factor. The LDE domain has size `degree_bound * 2^blowup_exp`.
-    blowup_exp: u32,
+    blowup_exp: usize,
 }
 
 impl Commitment {
@@ -44,10 +44,10 @@ impl Commitment {
     /// FRI commitment for the combined quotient polynomial, a degree bound parameter for the source
     /// polynomials, and a blowup factor expressed in base-2 logarithm form.
     pub fn new(
-        sources: Vec<fri2::Commitment>,
-        quotient: fri2::Commitment,
+        sources: Vec<fri::Commitment>,
+        quotient: fri::Commitment,
         degree_bound: usize,
-        blowup_exp: u32,
+        blowup_exp: usize,
     ) -> Self {
         Self {
             sources,
@@ -58,12 +58,12 @@ impl Commitment {
     }
 
     /// Returns the list of underlying FRI commitments, one for each committed polynomial.
-    pub fn sources(&self) -> &[fri2::Commitment] {
+    pub fn sources(&self) -> &[fri::Commitment] {
         self.sources.as_slice()
     }
 
     /// Returns the FRI commitment for the combined quotient.
-    pub fn quotient(&self) -> &fri2::Commitment {
+    pub fn quotient(&self) -> &fri::Commitment {
         &self.quotient
     }
 
@@ -79,7 +79,7 @@ impl Commitment {
 
     /// Returns the number of query positions needed to achieve `LAMBDA` bits of soundness.
     pub fn num_queries(&self) -> usize {
-        LAMBDA.div_ceil(self.blowup_exp) as usize
+        LAMBDA.div_ceil(self.blowup_exp)
     }
 
     /// Derives the random query indices for this commitment via Fiat-Shamir.
@@ -110,19 +110,19 @@ impl Commitment {
 pub struct Proof<H: Hash> {
     /// FRI opening proofs for each source LDE at each query index.
     ///
-    /// `source_proofs[j][i]` is the proof for polynomial `j` at query `i`.
-    source_proofs: Vec<Vec<fri2::Proof<H>>>,
+    /// `source_queries[j][i]` is the proof for polynomial `j` at query `i`.
+    source_queries: Vec<Vec<fri::Query<H>>>,
     /// Per-polynomial off-domain evaluation points. Each entry of the map is the coordinate pair of
     /// a point: keys are X-coordinates and values are evaluations.
     points: Vec<BTreeMap<Scalar, Scalar>>,
     /// FRI opening proofs for the combined quotient LDE at each query index.
-    quotient_proofs: Vec<fri2::Proof<H>>,
+    quotient_proofs: Vec<fri::Query<H>>,
 }
 
 impl<H: Hash> Proof<H> {
     /// Returns the number of opened polynomials.
     pub fn len(&self) -> usize {
-        self.source_proofs.len()
+        self.source_queries.len()
     }
 
     /// Returns the evaluation points for the j-th polynomial.
@@ -151,10 +151,10 @@ impl<H: Hash> Proof<H> {
         let num_queries = indices.len();
 
         for j in 0..k {
-            if self.source_proofs[j].len() != num_queries {
+            if self.source_queries[j].len() != num_queries {
                 return Err(anyhow!(
                     "expected {num_queries} queries for polynomial {j}, got {}",
-                    self.source_proofs[j].len()
+                    self.source_queries[j].len()
                 ));
             }
         }
@@ -173,7 +173,7 @@ impl<H: Hash> Proof<H> {
         );
 
         for (i, &index) in indices.iter().enumerate() {
-            for (j, source_proof_vec) in self.source_proofs.iter().enumerate() {
+            for (j, source_proof_vec) in self.source_queries.iter().enumerate() {
                 let source_proof = &source_proof_vec[i];
                 if source_proof.index() != index {
                     return Err(anyhow!(
@@ -193,13 +193,13 @@ impl<H: Hash> Proof<H> {
 
             let mut quotient = Scalar::ZERO;
             let mut pow = Scalar::ONE;
-            for (source_proofs, points) in self.source_proofs.iter().zip(self.points.iter()) {
+            for (source_queries, points) in self.source_queries.iter().zip(self.points.iter()) {
                 for (&z, &y) in points {
                     let inv = (x - z)
                         .invert()
                         .into_option()
                         .context("query point equals evaluation point")?;
-                    quotient += pow * (*source_proofs[i].value() - y) * inv;
+                    quotient += pow * (*source_queries[i].value() - y) * inv;
                     pow *= challenge;
                 }
             }
@@ -224,13 +224,13 @@ pub struct Prover<H: Hash> {
     /// Padded polynomial length (power of 2). Degree bound for all committed polynomials.
     n: usize,
     /// Log2 of the blowup factor.
-    blowup_exp: u32,
+    blowup_exp: usize,
     /// FRI provers for each source LDE.
-    source_fris: Vec<fri2::Prover<H>>,
+    source_fris: Vec<fri::Prover<H>>,
     /// Per-polynomial off-domain evaluation points.
     points: Vec<BTreeMap<Scalar, Scalar>>,
     /// FRI prover for the combined quotient LDE `q(x) = Sum(r^j * (f_j(x) - y_j) / (x - z_j))`.
-    quotient_fri: fri2::Prover<H>,
+    quotient_fri: fri::Prover<H>,
 }
 
 impl<H: Hash> Prover<H> {
@@ -247,7 +247,7 @@ impl<H: Hash> Prover<H> {
     /// It must be at least as large as the coefficient count of every committed polynomial.
     pub fn new(
         polynomials: Vec<Polynomial<Scalar>>,
-        blowup_exp: u32,
+        blowup_exp: usize,
         z: Vec<BTreeSet<Scalar>>,
         degree_bound: usize,
     ) -> Self {
@@ -256,7 +256,6 @@ impl<H: Hash> Prover<H> {
         assert_eq!(polynomials.len(), z.len());
 
         let n = degree_bound.next_power_of_two();
-        let m = n << blowup_exp;
         let k = polynomials.len();
 
         let mut source_fris = Vec::with_capacity(k);
@@ -269,7 +268,7 @@ impl<H: Hash> Prover<H> {
                 quotients.push(quotient);
                 point_set.insert(z, value);
             }
-            let prover = fri2::Prover::new(polynomial.lde2(m));
+            let prover = fri::Prover::new(polynomial, blowup_exp);
             source_fris.push(prover);
             points.push(point_set);
         }
@@ -286,7 +285,7 @@ impl<H: Hash> Prover<H> {
             combined_quotient
         };
 
-        let quotient_fri = fri2::Prover::new(combined_quotient.lde2(m));
+        let quotient_fri = fri::Prover::new(combined_quotient, blowup_exp);
 
         Prover {
             n,
@@ -303,7 +302,7 @@ impl<H: Hash> Prover<H> {
     /// to the next power of two if needed. `z[j]` is the evaluation point for `values[j]`.
     pub fn from_values(
         values: Vec<Vec<Scalar>>,
-        blowup_exp: u32,
+        blowup_exp: usize,
         z: Vec<BTreeSet<Scalar>>,
     ) -> Self {
         let degree_bound = values.iter().map(|values| values.len()).max().unwrap();
@@ -330,17 +329,17 @@ impl<H: Hash> Prover<H> {
     /// be the one produced by `self.commit()`.
     pub fn prove(&self, commitment: &Commitment) -> Proof<H> {
         let indices = commitment.get_query_indices::<H>();
-        let source_proofs = self
+        let source_queries = self
             .source_fris
             .iter()
-            .map(|fri| indices.iter().map(|&i| fri.open_at(i)).collect())
+            .map(|fri| indices.iter().map(|&i| fri.query(i)).collect())
             .collect();
         let quotient_proofs = indices
             .iter()
-            .map(|&i| self.quotient_fri.open_at(i))
+            .map(|&i| self.quotient_fri.query(i))
             .collect();
         Proof {
-            source_proofs,
+            source_queries,
             points: self.points.clone(),
             quotient_proofs,
         }
@@ -364,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_pcs_roundtrip_sha3() {
-        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(8)], 2, make_z_values(1));
+        let prover = Prover::<Sha2Hash>::from_values(vec![make_values(8)], 2, make_z_values(1));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert_eq!(commitment.degree_bound(), 8);
@@ -382,7 +381,7 @@ mod tests {
 
     #[test]
     fn test_pcs_arbitrary_length_padded() {
-        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(5)], 2, make_z_values(1));
+        let prover = Prover::<Sha2Hash>::from_values(vec![make_values(5)], 2, make_z_values(1));
         let commitment = prover.commit();
         assert_eq!(commitment.degree_bound(), 8);
         let proof = prover.prove(&commitment);
@@ -391,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_pcs_blowup_exp1() {
-        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(4)], 1, make_z_values(1));
+        let prover = Prover::<Sha2Hash>::from_values(vec![make_values(4)], 1, make_z_values(1));
         let commitment = prover.commit();
         assert_eq!(commitment.extended_degree_bound(), 8);
         prover.prove(&commitment).verify(&commitment).unwrap();
@@ -399,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_pcs_blowup_exp3() {
-        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(4)], 3, make_z_values(1));
+        let prover = Prover::<Sha2Hash>::from_values(vec![make_values(4)], 3, make_z_values(1));
         let commitment = prover.commit();
         assert_eq!(commitment.extended_degree_bound(), 32);
         prover.prove(&commitment).verify(&commitment).unwrap();
@@ -407,14 +406,14 @@ mod tests {
 
     #[test]
     fn test_pcs_single_value() {
-        let prover = Prover::<Sha3Hash>::from_values(vec![vec![42.into()]], 2, make_z_values(1));
+        let prover = Prover::<Sha2Hash>::from_values(vec![vec![42.into()]], 2, make_z_values(1));
         let commitment = prover.commit();
         prover.prove(&commitment).verify(&commitment).unwrap();
     }
 
     #[test]
     fn test_pcs_tampered_y_fails() {
-        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(8)], 2, make_z_values(1));
+        let prover = Prover::<Sha2Hash>::from_values(vec![make_values(8)], 2, make_z_values(1));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
         proof.points[0] =
@@ -424,7 +423,7 @@ mod tests {
 
     #[test]
     fn test_pcs_tampered_z_fails() {
-        let prover = Prover::<Sha3Hash>::from_values(vec![make_values(8)], 2, make_z_values(1));
+        let prover = Prover::<Sha2Hash>::from_values(vec![make_values(8)], 2, make_z_values(1));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
         proof.points[0] =
@@ -435,7 +434,7 @@ mod tests {
     #[test]
     fn test_pcs_constant_poly() {
         let prover =
-            Prover::<Sha3Hash>::from_values(vec![vec![5.into(), 5.into()]], 2, make_z_values(1));
+            Prover::<Sha2Hash>::from_values(vec![vec![5.into(), 5.into()]], 2, make_z_values(1));
         let commitment = prover.commit();
         prover.prove(&commitment).verify(&commitment).unwrap();
     }
@@ -443,7 +442,7 @@ mod tests {
     #[test]
     fn test_pcs_degree_check() {
         let polynomial = Polynomial::<Scalar>::encode2(make_values(4));
-        let prover = Prover::<Sha3Hash>::new(vec![polynomial.clone()], 2, make_z_values(1), 4);
+        let prover = Prover::<Sha2Hash>::new(vec![polynomial.clone()], 2, make_z_values(1), 4);
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert!(
@@ -467,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_roundtrip_sha3() {
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(3, 4), 2, make_z_values(3));
+        let prover = Prover::<Sha2Hash>::from_values(make_batch_values(3, 4), 2, make_z_values(3));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert_eq!(proof.len(), 3);
@@ -486,7 +485,7 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_single_poly() {
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(1, 4), 2, make_z_values(1));
+        let prover = Prover::<Sha2Hash>::from_values(make_batch_values(1, 4), 2, make_z_values(1));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert_eq!(proof.len(), 1);
@@ -495,7 +494,7 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_degree_bound() {
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 5), 2, make_z_values(2));
+        let prover = Prover::<Sha2Hash>::from_values(make_batch_values(2, 5), 2, make_z_values(2));
         let commitment = prover.commit();
         assert_eq!(commitment.degree_bound(), 8);
         prover.prove(&commitment).verify(&commitment).unwrap();
@@ -506,7 +505,7 @@ mod tests {
         let values = make_batch_values(2, 4);
         let p0 = Polynomial::<Scalar>::encode2(values[0].clone());
         let p1 = Polynomial::<Scalar>::encode2(values[1].clone());
-        let prover = Prover::<Sha3Hash>::from_values(values, 2, make_z_values(2));
+        let prover = Prover::<Sha2Hash>::from_values(values, 2, make_z_values(2));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert_eq!(proof.len(), 2);
@@ -517,7 +516,7 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_tampered_y_fails() {
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
+        let prover = Prover::<Sha2Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
         proof.points[0] =
@@ -527,7 +526,7 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_tampered_z_fails() {
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
+        let prover = Prover::<Sha2Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
         proof.points[0] =
@@ -537,7 +536,7 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_multipoint_roundtrip_sha3() {
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(3, 4), 2, make_z_values(3));
+        let prover = Prover::<Sha2Hash>::from_values(make_batch_values(3, 4), 2, make_z_values(3));
         let commitment = prover.commit();
         let proof = prover.prove(&commitment);
         assert_eq!(proof.len(), 3);
@@ -560,7 +559,7 @@ mod tests {
     //     let values = make_batch_values(2, 4);
     //     let poly0 = Polynomial::<Scalar>::encode2(values[0].clone());
     //     let poly1 = Polynomial::<Scalar>::encode2(values[1].clone());
-    //     let prover = Prover::<Sha3Hash>::from_values(values, 2, z_values.clone());
+    //     let prover = Prover::<Sha2Hash>::from_values(values, 2, z_values.clone());
     //     let commitment = prover.commit();
     //     let proof = prover.prove(&commitment);
     //     assert_eq!(*proof.y(0), poly0.evaluate(z_values[0]));
@@ -570,7 +569,7 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_multipoint_tampered_y_fails() {
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
+        let prover = Prover::<Sha2Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
         proof.points[0] =
@@ -580,7 +579,7 @@ mod tests {
 
     #[test]
     fn test_batch_pcs_multipoint_tampered_z_fails() {
-        let prover = Prover::<Sha3Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
+        let prover = Prover::<Sha2Hash>::from_values(make_batch_values(2, 4), 2, make_z_values(2));
         let commitment = prover.commit();
         let mut proof = prover.prove(&commitment);
         proof.points[1] =

@@ -612,7 +612,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pcs::Sha3Hash;
+    use crate::pcs::Sha2Hash;
     use crate::plonk::{self, NUM_BLINDING_ROWS};
     use crate::utils::parse_scalar;
     use blstrs::Scalar as BlsScalar;
@@ -857,7 +857,7 @@ mod tests {
         );
     }
 
-    const BLOWUP_EXP: u32 = 2;
+    const BLOWUP_EXP: usize = 2;
 
     fn test_hash_chip<const T: usize, const I: usize>(
         inputs: [Scalar; I],
@@ -887,7 +887,7 @@ mod tests {
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
         assert_eq!(circuit.size(), expected_circuit_size);
-        let proof = circuit.prove::<Sha3Hash>(witness, BLOWUP_EXP).unwrap();
+        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_EXP).unwrap();
         assert_eq!(
             circuit.verify(&proof).unwrap(),
             BTreeMap::from_iter(
@@ -982,7 +982,7 @@ mod tests {
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
         assert_eq!(circuit.size(), expected_circuit_size);
-        let proof = circuit.prove::<Sha3Hash>(witness, BLOWUP_EXP).unwrap();
+        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_EXP).unwrap();
         assert_eq!(
             circuit.verify(&proof).unwrap(),
             BTreeMap::from([(result_wire, result)])

@@ -4,7 +4,6 @@ use crate::poseidon;
 use crate::utils;
 use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
-use primitive_types::U256;
 use sha2::{self, Digest};
 use std::marker::PhantomData;
 use std::sync::LazyLock;
@@ -23,6 +22,9 @@ static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet
 pub trait Hash {
     /// Hashes two input scalars.
     fn hash(input1: Scalar, input2: Scalar) -> Scalar;
+
+    /// Hashes many input scalars.
+    fn hash_many(inputs: &[Scalar]) -> Scalar;
 }
 
 /// Hashes two scalars using SHA-256.
@@ -40,20 +42,31 @@ pub trait Hash {
 ///   * the 512 bits are converted to a scalar with modular reduction.
 pub struct Sha2Hash {}
 
+impl Sha2Hash {
+    fn hash_internal(inputs: impl IntoIterator<Item = Scalar>) -> [u8; 32] {
+        let mut hasher = sha2::Sha256::default();
+        for input in inputs {
+            hasher.update(input.to_big_endian());
+        }
+        let mut bytes: [u8; 32] = hasher.finalize().into();
+        bytes.reverse();
+        bytes
+    }
+}
+
 impl Hash for Sha2Hash {
     fn hash(input1: Scalar, input2: Scalar) -> Scalar {
-        let mut hasher = sha2::Sha256::default();
-        hasher.update(&U256::from(0).to_big_endian());
-        hasher.update(&input1.to_big_endian());
-        hasher.update(&input2.to_big_endian());
-        let mut lo: [u8; 32] = hasher.finalize().into();
-        lo.reverse();
-        let mut hasher = sha2::Sha256::default();
-        hasher.update(&U256::from(1).to_big_endian());
-        hasher.update(&input1.to_big_endian());
-        hasher.update(&input2.to_big_endian());
-        let mut hi: [u8; 32] = hasher.finalize().into();
-        hi.reverse();
+        let lo = Self::hash_internal([Scalar::ZERO, input1, input2]);
+        let hi = Self::hash_internal([Scalar::ONE, input1, input2]);
+        let mut bytes = [0u8; 64];
+        bytes[0..32].copy_from_slice(&lo);
+        bytes[32..64].copy_from_slice(&hi);
+        Scalar::from_repr_wide(&bytes)
+    }
+
+    fn hash_many(inputs: &[Scalar]) -> Scalar {
+        let lo = Self::hash_internal(std::iter::once(Scalar::ZERO).chain(inputs.iter().cloned()));
+        let hi = Self::hash_internal(std::iter::once(Scalar::ONE).chain(inputs.iter().cloned()));
         let mut bytes = [0u8; 64];
         bytes[0..32].copy_from_slice(&lo);
         bytes[32..64].copy_from_slice(&hi);
@@ -67,6 +80,10 @@ pub struct Poseidon2Hash {}
 impl Hash for Poseidon2Hash {
     fn hash(input1: Scalar, input2: Scalar) -> Scalar {
         poseidon::hash_t3(&[input1, input2])
+    }
+
+    fn hash_many(inputs: &[Scalar]) -> Scalar {
+        poseidon::hash_t3(inputs)
     }
 }
 
@@ -268,7 +285,7 @@ impl<H: Hash> LeafProof<H> {
 /// then you need `ceil(128 / log2(N / d)) = ceil(128 / k)` independent queries.
 ///
 /// The space and verification time complexity of a single `Query` object is O(log2^2(N)).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Query<H: Hash> {
     /// The number of committed evaluations.
     n: usize,
@@ -383,7 +400,7 @@ impl<H: Hash> Query<H> {
 /// etc.
 ///
 /// The total size of the `values` array is `4n-3`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Prover<H: Hash> {
     degree_bound: usize,
     values: Vec<Scalar>,
@@ -1147,7 +1164,6 @@ mod tests {
         assert_ne!(*query.value(), values[1]);
         assert_ne!(*query.value(), values[2]);
         assert_ne!(*query.value(), values[3]);
-        query.verify(&commitment).unwrap();
         assert!(query.verify(&commitment).is_ok());
     }
 

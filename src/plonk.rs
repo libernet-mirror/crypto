@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, btree_map};
 use std::sync::LazyLock;
 
 /// Re-export the available hash backends.
-pub use pcs::{Hash, Poseidon2Hash, Sha3Hash};
+pub use pcs::{Hash, Poseidon2Hash, Sha2Hash};
 
 type Polynomial = poly::Polynomial<Scalar>;
 
@@ -1018,7 +1018,7 @@ impl Circuit {
         )
     }
 
-    pub fn prove<H: Hash>(&self, mut witness: Witness, blowup_exp: u32) -> Result<Proof<H>> {
+    pub fn prove<H: Hash>(&self, mut witness: Witness, blowup_exp: usize) -> Result<Proof<H>> {
         witness.blind();
         if witness.size() != self.size {
             return Err(anyhow!(
@@ -1839,7 +1839,7 @@ mod tests {
         }
     }
 
-    fn test_circuit1<H: Hash>(blowup_exp: u32) {
+    fn test_circuit1<H: Hash>(blowup_exp: usize) {
         let (circuit, gate) = build_test_circuit();
         let proof = circuit
             .prove::<H>(
@@ -1858,49 +1858,49 @@ mod tests {
 
     #[test]
     fn test_circuit1_blowup_2() {
-        test_circuit1::<Sha3Hash>(1);
+        test_circuit1::<Sha2Hash>(1);
         test_circuit1::<Poseidon2Hash>(1);
     }
 
     #[test]
     fn test_circuit1_blowup_4() {
-        test_circuit1::<Sha3Hash>(2);
+        test_circuit1::<Sha2Hash>(2);
         test_circuit1::<Poseidon2Hash>(2);
     }
 
     #[test]
     fn test_circuit1_blowup_8() {
-        test_circuit1::<Sha3Hash>(3);
+        test_circuit1::<Sha2Hash>(3);
         test_circuit1::<Poseidon2Hash>(3);
     }
 
     #[test]
     fn test_circuit1_blowup_16() {
-        test_circuit1::<Sha3Hash>(4);
+        test_circuit1::<Sha2Hash>(4);
         test_circuit1::<Poseidon2Hash>(4);
     }
 
     #[test]
     fn test_circuit1_blowup_32() {
-        test_circuit1::<Sha3Hash>(5);
+        test_circuit1::<Sha2Hash>(5);
         test_circuit1::<Poseidon2Hash>(5);
     }
 
     #[test]
     fn test_circuit1_blowup_64() {
-        test_circuit1::<Sha3Hash>(6);
+        test_circuit1::<Sha2Hash>(6);
         test_circuit1::<Poseidon2Hash>(6);
     }
 
     #[test]
     fn test_circuit1_blowup_128() {
-        test_circuit1::<Sha3Hash>(7);
+        test_circuit1::<Sha2Hash>(7);
         test_circuit1::<Poseidon2Hash>(7);
     }
 
     #[test]
     fn test_circuit1_blowup_256() {
-        test_circuit1::<Sha3Hash>(8);
+        test_circuit1::<Sha2Hash>(8);
         test_circuit1::<Poseidon2Hash>(8);
     }
 
@@ -1920,12 +1920,12 @@ mod tests {
         );
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let proof = circuit.prove::<Sha3Hash>(witness, 3).unwrap();
+        let proof = circuit.prove::<Sha2Hash>(witness, 3).unwrap();
         let public_inputs = circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&gate4).unwrap(), 35.into());
     }
 
-    fn test_circuit2<H: Hash>(blowup_exp: u32) {
+    fn test_circuit2<H: Hash>(blowup_exp: usize) {
         let (circuit, gate) = build_test_circuit();
         let proof = circuit
             .prove::<H>(
@@ -1944,49 +1944,49 @@ mod tests {
 
     #[test]
     fn test_circuit2_blowup_2() {
-        test_circuit2::<Sha3Hash>(1);
+        test_circuit2::<Sha2Hash>(1);
         test_circuit2::<Poseidon2Hash>(1);
     }
 
     #[test]
     fn test_circuit2_blowup_4() {
-        test_circuit2::<Sha3Hash>(2);
+        test_circuit2::<Sha2Hash>(2);
         test_circuit2::<Poseidon2Hash>(2);
     }
 
     #[test]
     fn test_circuit2_blowup_8() {
-        test_circuit2::<Sha3Hash>(3);
+        test_circuit2::<Sha2Hash>(3);
         test_circuit2::<Poseidon2Hash>(3);
     }
 
     #[test]
     fn test_circuit2_blowup_16() {
-        test_circuit2::<Sha3Hash>(4);
+        test_circuit2::<Sha2Hash>(4);
         test_circuit2::<Poseidon2Hash>(4);
     }
 
     #[test]
     fn test_circuit2_blowup_32() {
-        test_circuit2::<Sha3Hash>(5);
+        test_circuit2::<Sha2Hash>(5);
         test_circuit2::<Poseidon2Hash>(5);
     }
 
     #[test]
     fn test_circuit2_blowup_64() {
-        test_circuit2::<Sha3Hash>(6);
+        test_circuit2::<Sha2Hash>(6);
         test_circuit2::<Poseidon2Hash>(6);
     }
 
     #[test]
     fn test_circuit2_blowup_128() {
-        test_circuit2::<Sha3Hash>(7);
+        test_circuit2::<Sha2Hash>(7);
         test_circuit2::<Poseidon2Hash>(7);
     }
 
     #[test]
     fn test_circuit2_blowup_256() {
-        test_circuit2::<Sha3Hash>(8);
+        test_circuit2::<Sha2Hash>(8);
         test_circuit2::<Poseidon2Hash>(8);
     }
 
@@ -1995,7 +1995,7 @@ mod tests {
         let (circuit, _) = build_test_circuit();
         assert!(
             circuit
-                .prove::<Sha3Hash>(
+                .prove::<Sha2Hash>(
                     witness(
                         vec![4.into(), 16.into(), 4.into(), 68.into()],
                         vec![4.into(), 4.into(), 64.into(), 5.into()],

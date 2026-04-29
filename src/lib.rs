@@ -6,7 +6,6 @@ use wasm_bindgen::prelude::*;
 
 pub mod bluesky;
 pub mod fri;
-pub mod fri2;
 pub mod merkle;
 pub mod pcs;
 pub mod plonk;
