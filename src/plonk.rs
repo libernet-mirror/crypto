@@ -1095,7 +1095,6 @@ impl Circuit {
                 [xi, xi * omega].into(),
                 [xi].into(),
             ],
-            pcs_degree_bound,
         );
 
         let commitment = prover.commit();

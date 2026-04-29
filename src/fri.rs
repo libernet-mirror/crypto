@@ -305,6 +305,11 @@ impl<H: Hash> Query<H> {
         self.index
     }
 
+    /// Returns the opened domain element, that is the X-coordinate of the evaluation.
+    pub fn x(&self) -> Scalar {
+        Polynomial::domain_element2(self.index, self.n)
+    }
+
     /// Returns the opened value.
     pub fn value(&self) -> &Scalar {
         &self.value
@@ -1022,6 +1027,10 @@ mod tests {
         let query = prover.query(index);
         assert_eq!(query.len(), 1);
         assert_eq!(query.index(), index);
+        assert_eq!(
+            query.x(),
+            Polynomial::domain_element2(index, 1usize << blowup_exp)
+        );
         assert_eq!(*query.value(), value);
         assert!(query.verify(&commitment).is_ok());
     }
@@ -1094,6 +1103,10 @@ mod tests {
         let query = prover.query(index);
         assert_eq!(query.len(), 2);
         assert_eq!(query.index(), index);
+        assert_eq!(
+            query.x(),
+            Polynomial::domain_element2(index, 2usize << blowup_exp)
+        );
         assert_ne!(*query.value(), value1);
         assert_ne!(*query.value(), value2);
         assert!(query.verify(&commitment).is_ok());
@@ -1160,6 +1173,10 @@ mod tests {
         let query = prover.query(index);
         assert_eq!(query.len(), 3);
         assert_eq!(query.index(), index);
+        assert_eq!(
+            query.x(),
+            Polynomial::domain_element2(index, 4usize << blowup_exp)
+        );
         assert_ne!(*query.value(), values[0]);
         assert_ne!(*query.value(), values[1]);
         assert_ne!(*query.value(), values[2]);
