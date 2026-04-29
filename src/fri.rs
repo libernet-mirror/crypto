@@ -315,7 +315,7 @@ impl<H: Hash> Query<H> {
         let folds = self.folds.as_slice();
 
         let h = folds.len();
-        if h > self.n.trailing_zeros() as usize {
+        if h > k as usize + 1 {
             return Err(anyhow!("invalid proof size"));
         }
         if commitment.len() != h {
