@@ -54,13 +54,13 @@ struct GateConstraint {
 /// A "wire" is the left input, right input, or output termination of a gate.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Wire {
-    LeftIn(u32),
-    RightIn(u32),
-    Out(u32),
+    LeftIn(usize),
+    RightIn(usize),
+    Out(usize),
 }
 
 impl Wire {
-    pub fn gate(&self) -> u32 {
+    pub fn gate(&self) -> usize {
         match *self {
             Self::LeftIn(gate) => gate,
             Self::RightIn(gate) => gate,
@@ -168,7 +168,7 @@ impl WirePartitioning {
 #[derive(Debug, Clone)]
 pub struct Witness {
     size: usize,
-    gate_counter: u32,
+    gate_counter: usize,
     left: Vec<Scalar>,
     right: Vec<Scalar>,
     out: Vec<Scalar>,
@@ -187,7 +187,6 @@ impl Eq for Witness {}
 
 impl Witness {
     pub fn new(size: usize) -> Self {
-        assert!(size <= u32::MAX as usize);
         let padded_size = padded_size(size);
         Self {
             size,
@@ -227,7 +226,7 @@ impl Witness {
         value
     }
 
-    pub fn pop_gate(&mut self) -> u32 {
+    pub fn pop_gate(&mut self) -> usize {
         let gate = self.gate_counter;
         self.gate_counter += 1;
         gate
@@ -424,11 +423,9 @@ impl CircuitBuilder {
 
     /// Returns the number of gates added so far.
     ///
-    /// This is the same as casting `len()` to `u32`.
-    pub fn gate_count(&self) -> u32 {
-        let len = self.len();
-        assert!(len <= u32::MAX as usize);
-        len as u32
+    /// This is exactly the same as `len()`.
+    pub fn gate_count(&self) -> usize {
+        self.len()
     }
 
     pub fn add_raw_gate(
@@ -438,11 +435,10 @@ impl CircuitBuilder {
         qo: Scalar,
         qm: Scalar,
         qc: Scalar,
-    ) -> u32 {
+    ) -> usize {
         let index = self.gates.len();
-        assert!(index <= u32::MAX as usize);
         self.gates.push(GateConstraint { ql, qr, qo, qm, qc });
-        index as u32
+        index
     }
 
     pub fn connect(&mut self, wire1: Wire, wire2: Wire) {
@@ -1805,7 +1801,7 @@ mod tests {
     }
 
     /// Builds the circuit at https://vitalik.eth.limo/general/2019/09/22/plonk.html.
-    fn build_test_circuit() -> (Circuit, u32) {
+    fn build_test_circuit() -> (Circuit, usize) {
         let mut builder = CircuitBuilder::default();
         let gate1 = builder.add_raw_gate(0.into(), 0.into(), -Scalar::from(1), 1.into(), 0.into());
         builder.connect(Wire::LeftIn(gate1), Wire::RightIn(gate1));
@@ -1832,7 +1828,7 @@ mod tests {
         out.resize(padded_size, Scalar::ZERO);
         Witness {
             size: blinded_size,
-            gate_counter: original_size as u32,
+            gate_counter: original_size,
             left,
             right,
             out,
