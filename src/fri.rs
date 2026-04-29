@@ -210,7 +210,14 @@ impl<H: Hash> LeafProof<H> {
     }
 
     /// Verifies this Merkle proof against the given `root_hash` using the given `index`.
-    fn verify(&self, mut index: usize, root_hash: Scalar) -> Result<()> {
+    fn verify(&self, mut index: usize, value: Scalar, root_hash: Scalar) -> Result<()> {
+        if value != self.value {
+            return Err(anyhow!(
+                "value mismatch (got {}, want {})",
+                utils::format_scalar(self.value),
+                utils::format_scalar(value)
+            ));
+        }
         let mut hash = self.value;
         for sibling in &self.path {
             hash = if index & 1 != 0 {
@@ -303,18 +310,56 @@ impl<H: Hash> Query<H> {
     pub fn verify(&self, commitment: &Commitment) -> Result<()> {
         assert!(self.n.is_power_of_two());
         assert!(self.index < self.n);
+        let k = self.n.trailing_zeros();
 
         let folds = self.folds.as_slice();
 
-        let k = folds.len();
-        if k > self.n.trailing_zeros() as usize {
+        let h = folds.len();
+        if h > self.n.trailing_zeros() as usize {
             return Err(anyhow!("invalid proof size"));
         }
-        if commitment.len() != k {
+        if commitment.len() != h {
             return Err(anyhow!("wrong number of folding rounds"));
         }
 
-        // TODO: check the rest of the proof.
+        let alpha = H::hash(*DST, commitment.root());
+
+        let mut m = self.n;
+        let mut index = self.index;
+        let mut value = self.value;
+
+        let omega_inv = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
+        let mut omega_inv_i = Scalar::ONE;
+
+        for r in 0..h {
+            let (left, right) = &folds[r];
+            let root_hash = commitment.roots()[r];
+
+            if 1usize << left.len() != m {
+                return Err(anyhow!(
+                    "invalid left-hand side Merkle proof height (got {}, want {})",
+                    left.len(),
+                    m.trailing_zeros()
+                ));
+            }
+            if 1usize << right.len() != m {
+                return Err(anyhow!(
+                    "invalid right-hand side Merkle proof height (got {}, want {})",
+                    right.len(),
+                    m.trailing_zeros()
+                ));
+            }
+
+            let f_pos = value;
+            let f_neg = *right.value();
+            left.verify(index, f_pos, root_hash)?;
+            right.verify((index + m / 2) % m, f_neg, root_hash)?;
+
+            m /= 2;
+            index %= m;
+            value = (f_pos + f_neg + alpha * omega_inv_i * (f_pos - f_neg)) * Scalar::TWO_INV;
+            omega_inv_i *= omega_inv;
+        }
 
         Ok(())
     }
@@ -497,9 +542,9 @@ impl<H: Hash> Prover<H> {
             i %= m;
         }
         match folds.last() {
-            Some((proof1, proof2)) => {
-                assert!(proof1.is_constant());
-                assert!(proof2.is_constant());
+            Some((left, right)) => {
+                assert!(left.is_constant());
+                assert!(right.is_constant());
             }
             None => {}
         }
@@ -653,7 +698,7 @@ mod tests {
         let proof = LeafProof::<H>::new(values.as_slice(), 1, 0);
         assert_eq!(*proof.value(), value);
         assert_eq!(proof.len(), 0);
-        assert!(proof.verify(0, value).is_ok());
+        assert!(proof.verify(0, value, value).is_ok());
         assert!(proof.is_constant());
     }
 
@@ -672,14 +717,18 @@ mod tests {
         let proof0 = LeafProof::<H>::new(values.as_slice(), 2, 0);
         assert_eq!(*proof0.value(), value1);
         assert_eq!(proof0.len(), 1);
-        assert!(proof0.verify(0, root_hash).is_ok());
-        assert!(proof0.verify(1, root_hash).is_err());
+        assert!(proof0.verify(0, value1, root_hash).is_ok());
+        assert!(proof0.verify(0, value2, root_hash).is_err());
+        assert!(proof0.verify(1, value1, root_hash).is_err());
+        assert!(proof0.verify(1, value2, root_hash).is_err());
         assert!(!proof0.is_constant());
         let proof1 = LeafProof::<H>::new(values.as_slice(), 2, 1);
         assert_eq!(*proof1.value(), value2);
         assert_eq!(proof1.len(), 1);
-        assert!(proof1.verify(0, root_hash).is_err());
-        assert!(proof1.verify(1, root_hash).is_ok());
+        assert!(proof1.verify(0, value1, root_hash).is_err());
+        assert!(proof1.verify(0, value2, root_hash).is_err());
+        assert!(proof1.verify(1, value1, root_hash).is_err());
+        assert!(proof1.verify(1, value2, root_hash).is_ok());
         assert!(!proof1.is_constant());
     }
 
@@ -698,12 +747,12 @@ mod tests {
         let proof0 = LeafProof::<H>::new(values.as_slice(), 2, 0);
         assert_eq!(*proof0.value(), value);
         assert_eq!(proof0.len(), 1);
-        assert!(proof0.verify(0, root_hash).is_ok());
+        assert!(proof0.verify(0, value, root_hash).is_ok());
         assert!(proof0.is_constant());
         let proof1 = LeafProof::<H>::new(values.as_slice(), 2, 1);
         assert_eq!(*proof1.value(), value);
         assert_eq!(proof1.len(), 1);
-        assert!(proof1.verify(1, root_hash).is_ok());
+        assert!(proof1.verify(1, value, root_hash).is_ok());
         assert!(proof1.is_constant());
     }
 
@@ -727,34 +776,34 @@ mod tests {
         let proof0 = LeafProof::<H>::new(values.as_slice(), 4, 0);
         assert_eq!(*proof0.value(), value1);
         assert_eq!(proof0.len(), 2);
-        assert!(proof0.verify(0, root_hash).is_ok());
-        assert!(proof0.verify(1, root_hash).is_err());
-        assert!(proof0.verify(2, root_hash).is_err());
-        assert!(proof0.verify(3, root_hash).is_err());
+        assert!(proof0.verify(0, value1, root_hash).is_ok());
+        assert!(proof0.verify(1, value2, root_hash).is_err());
+        assert!(proof0.verify(2, value3, root_hash).is_err());
+        assert!(proof0.verify(3, value4, root_hash).is_err());
         assert!(!proof0.is_constant());
         let proof1 = LeafProof::<H>::new(values.as_slice(), 4, 1);
         assert_eq!(*proof1.value(), value2);
         assert_eq!(proof1.len(), 2);
-        assert!(proof1.verify(0, root_hash).is_err());
-        assert!(proof1.verify(1, root_hash).is_ok());
-        assert!(proof1.verify(2, root_hash).is_err());
-        assert!(proof1.verify(3, root_hash).is_err());
+        assert!(proof1.verify(0, value1, root_hash).is_err());
+        assert!(proof1.verify(1, value2, root_hash).is_ok());
+        assert!(proof1.verify(2, value3, root_hash).is_err());
+        assert!(proof1.verify(3, value4, root_hash).is_err());
         assert!(!proof1.is_constant());
         let proof2 = LeafProof::<H>::new(values.as_slice(), 4, 2);
         assert_eq!(*proof2.value(), value3);
         assert_eq!(proof2.len(), 2);
-        assert!(proof2.verify(0, root_hash).is_err());
-        assert!(proof2.verify(1, root_hash).is_err());
-        assert!(proof2.verify(2, root_hash).is_ok());
-        assert!(proof2.verify(3, root_hash).is_err());
+        assert!(proof2.verify(0, value1, root_hash).is_err());
+        assert!(proof2.verify(1, value2, root_hash).is_err());
+        assert!(proof2.verify(2, value3, root_hash).is_ok());
+        assert!(proof2.verify(3, value4, root_hash).is_err());
         assert!(!proof2.is_constant());
         let proof3 = LeafProof::<H>::new(values.as_slice(), 4, 3);
         assert_eq!(*proof3.value(), value4);
         assert_eq!(proof3.len(), 2);
-        assert!(proof3.verify(0, root_hash).is_err());
-        assert!(proof3.verify(1, root_hash).is_err());
-        assert!(proof3.verify(2, root_hash).is_err());
-        assert!(proof3.verify(3, root_hash).is_ok());
+        assert!(proof3.verify(0, value1, root_hash).is_err());
+        assert!(proof3.verify(1, value2, root_hash).is_err());
+        assert!(proof3.verify(2, value3, root_hash).is_err());
+        assert!(proof3.verify(3, value4, root_hash).is_ok());
         assert!(!proof3.is_constant());
     }
 
@@ -783,22 +832,22 @@ mod tests {
         let proof0 = LeafProof::<H>::new(values.as_slice(), 4, 0);
         assert_eq!(*proof0.value(), value);
         assert_eq!(proof0.len(), 2);
-        assert!(proof0.verify(0, root_hash).is_ok());
+        assert!(proof0.verify(0, value, root_hash).is_ok());
         assert!(proof0.is_constant());
         let proof1 = LeafProof::<H>::new(values.as_slice(), 4, 1);
         assert_eq!(*proof1.value(), value);
         assert_eq!(proof1.len(), 2);
-        assert!(proof1.verify(1, root_hash).is_ok());
+        assert!(proof1.verify(1, value, root_hash).is_ok());
         assert!(proof1.is_constant());
         let proof2 = LeafProof::<H>::new(values.as_slice(), 4, 2);
         assert_eq!(*proof2.value(), value);
         assert_eq!(proof2.len(), 2);
-        assert!(proof2.verify(2, root_hash).is_ok());
+        assert!(proof2.verify(2, value, root_hash).is_ok());
         assert!(proof2.is_constant());
         let proof3 = LeafProof::<H>::new(values.as_slice(), 4, 3);
         assert_eq!(*proof3.value(), value);
         assert_eq!(proof3.len(), 2);
-        assert!(proof3.verify(3, root_hash).is_ok());
+        assert!(proof3.verify(3, value, root_hash).is_ok());
         assert!(proof3.is_constant());
     }
 
@@ -817,22 +866,26 @@ mod tests {
         let proof0 = LeafProof::<H>::new(values.as_slice(), 4, 0);
         assert_eq!(*proof0.value(), value1);
         assert_eq!(proof0.len(), 2);
-        assert!(proof0.verify(0, root_hash).is_ok());
+        assert!(proof0.verify(0, value1, root_hash).is_ok());
+        assert!(proof0.verify(0, value2, root_hash).is_err());
         assert!(!proof0.is_constant());
         let proof1 = LeafProof::<H>::new(values.as_slice(), 4, 1);
         assert_eq!(*proof1.value(), value1);
         assert_eq!(proof1.len(), 2);
-        assert!(proof1.verify(1, root_hash).is_ok());
+        assert!(proof1.verify(1, value1, root_hash).is_ok());
+        assert!(proof1.verify(1, value2, root_hash).is_err());
         assert!(!proof1.is_constant());
         let proof2 = LeafProof::<H>::new(values.as_slice(), 4, 2);
         assert_eq!(*proof2.value(), value1);
         assert_eq!(proof2.len(), 2);
-        assert!(proof2.verify(2, root_hash).is_ok());
+        assert!(proof2.verify(2, value1, root_hash).is_ok());
+        assert!(proof2.verify(2, value2, root_hash).is_err());
         assert!(!proof2.is_constant());
         let proof3 = LeafProof::<H>::new(values.as_slice(), 4, 3);
         assert_eq!(*proof3.value(), value2);
         assert_eq!(proof3.len(), 2);
-        assert!(proof3.verify(3, root_hash).is_ok());
+        assert!(proof3.verify(3, value1, root_hash).is_err());
+        assert!(proof3.verify(3, value2, root_hash).is_ok());
         assert!(!proof3.is_constant());
     }
 
