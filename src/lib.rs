@@ -8,7 +8,6 @@ pub mod bluesky;
 pub mod fri;
 pub mod merkle;
 pub mod pcs;
-pub mod plonk;
 pub mod poly;
 pub mod poseidon;
 pub mod utils;
