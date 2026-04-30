@@ -226,32 +226,31 @@ impl<H: Hash> Tree<H> {
 /// A FRI `Query` uses several of these: two from the main Merkle tree and two for each folding
 /// round.
 ///
-/// NOTE: this object only stores the opened leaf values and the sister hashes of the Merkle path,
-/// but it doesn't store the lookup key or the root hash anywhere because those pieces of
-/// information are reconstructed separately during the verification of a whole `Query`. In
-/// particular, all root hashes are stored in the `Commitment`.
+/// NOTE: this object only stores the sister hashes of the Merkle path, it doesn't store the opened
+/// leaf values, the lookup key, or the root hash anywhere because those pieces of information are
+/// reconstructed separately during the verification of a whole `Query`. In particular, all root
+/// hashes are stored in the `Commitment`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LeafProof<H: Hash> {
-    leaf: Vec<Scalar>,
     path: Vec<Scalar>,
     _data: PhantomData<H>,
 }
 
 impl<H: Hash> LeafProof<H> {
-    /// Returns a reference to the leaf scalars.
-    pub fn leaf(&self) -> &[Scalar] {
-        self.leaf.as_slice()
-    }
-
     /// Returns the length of the Merkle path, corresponding to the height of the tree minus 1 (the
     /// root hash is not included in this count).
-    pub fn path_len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.path.len()
     }
 
     /// Verifies the proof against the given root hash.
-    pub fn verify(&self, mut index: usize, root_hash: Scalar) -> Result<()> {
-        let mut hash = hash_leaf::<H>(self.leaf.as_slice());
+    pub fn verify(
+        &self,
+        mut index: usize,
+        leaf_values: &[Scalar],
+        root_hash: Scalar,
+    ) -> Result<()> {
+        let mut hash = hash_leaf::<H>(leaf_values);
         for sibling in &self.path {
             hash = if index & 1 != 0 {
                 H::hash(*sibling, hash)
@@ -278,8 +277,8 @@ impl<H: Hash> LeafProof<H> {
     ///
     /// Note that some polynomials may collapse earlier than others, and this function returns false
     /// if one or more haven't collapsed yet. So it returns true if and only if all have collapsed.
-    pub fn is_constant(&self) -> bool {
-        let mut hash = hash_leaf::<H>(self.leaf.as_slice());
+    pub fn is_constant(&self, leaf_values: &[Scalar]) -> bool {
+        let mut hash = hash_leaf::<H>(leaf_values);
         for &sibling in &self.path {
             if sibling != hash {
                 return false;
@@ -296,27 +295,34 @@ pub struct Query<H: Hash> {
     n: usize,
     /// The index of the element we're opening (the partner index is inferred automatically).
     index: usize,
+    /// The pair of opened evaluations. The values in the first component correspond to the
+    /// evaluations at `index`, while the second component contains the partner values.
+    values: (Vec<Scalar>, Vec<Scalar>),
     /// Proves a pair of "partner" values at each folding round with one `LeafProof` pair for every
-    /// round. `folds[0].0` proves the opened values, ie. the evaluations of all committed
-    /// polynomials at `index`.
+    /// round. The pair at `folds[0]` proves the opened values (stored in `values`).
     folds: Vec<(LeafProof<H>, LeafProof<H>)>,
     _data: PhantomData<H>,
 }
 
 impl<H: Hash> Query<H> {
-    /// Returns the index of the opened value.
-    pub fn index(&self) -> usize {
-        self.index
+    /// Returns the two opened indices.
+    pub fn indices(&self) -> (usize, usize) {
+        (self.index, self.index + self.n / 2)
     }
 
     /// Returns the opened domain element, that is the X-coordinate of the evaluation.
+    ///
+    /// This is the element corresponding to the first value returned by `index()`, while the
+    /// partner element can be obtained by simply negating this one.
     pub fn x(&self) -> Scalar {
         Polynomial::domain_element2(self.index, self.n)
     }
 
     /// Returns the opened evaluations, one for each committed polynomial.
-    pub fn values(&self) -> &[Scalar] {
-        &self.folds[0].0.leaf()
+    ///
+    /// The first component of the returned tuple
+    pub fn values(&self) -> (&[Scalar], &[Scalar]) {
+        (self.values.0.as_slice(), self.values.1.as_slice())
     }
 
     // TODO
