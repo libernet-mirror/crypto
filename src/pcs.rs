@@ -184,7 +184,7 @@ impl<H: Hash> Prover<H> {
             .unwrap()
             .next_power_of_two();
         let rlc_challenge = rlc_challenge::<H>(polynomials.iter().map(|polynomial| {
-            let values = polynomial.clone().decode2();
+            let values = polynomial.clone().lde2(degree_bound << blowup_exp);
             merkle_root::<H>(values.as_slice())
         }));
         let combined = {

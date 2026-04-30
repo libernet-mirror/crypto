@@ -180,7 +180,7 @@ impl Commitment {
 /// reconstructed separately during the verification of a whole `Query`. In particular, all root
 /// hashes are stored in the `Commitment`.
 #[derive(Debug, Clone)]
-struct LeafProof<H: Hash> {
+pub struct LeafProof<H: Hash> {
     value: Scalar,
     path: Vec<Scalar>,
     _data: PhantomData<H>,
@@ -214,7 +214,7 @@ impl<H: Hash> LeafProof<H> {
     }
 
     /// Returns the proven value.
-    fn value(&self) -> &Scalar {
+    pub fn value(&self) -> &Scalar {
         &self.value
     }
 
@@ -222,12 +222,12 @@ impl<H: Hash> LeafProof<H> {
     ///
     /// Note that this is (the base 2 logarithm of) the degree bound of the committed polynomial,
     /// because any list of N values corresponds to a single degree<N polynomial.
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.path.len()
     }
 
     /// Verifies this Merkle proof against the given `root_hash` using the given `index`.
-    fn verify(&self, mut index: usize, value: Scalar, root_hash: Scalar) -> Result<()> {
+    pub fn verify(&self, mut index: usize, value: Scalar, root_hash: Scalar) -> Result<()> {
         if value != self.value {
             return Err(anyhow!(
                 "value mismatch (got {}, want {})",
@@ -261,7 +261,7 @@ impl<H: Hash> LeafProof<H> {
     ///
     /// This is used in low degree testing to check when the folding process collapses to a degree-0
     /// polynomial.
-    fn is_constant(&self) -> bool {
+    pub fn is_constant(&self) -> bool {
         let mut hash = self.value;
         for &sibling in &self.path {
             if sibling != hash {
@@ -379,6 +379,12 @@ impl<H: Hash> Query<H> {
             index %= m;
             value = (f_pos + f_neg + alpha * omega_inv_i * (f_pos - f_neg)) * Scalar::TWO_INV;
             step = step.square();
+        }
+
+        if let Some((left, right)) = folds.last() {
+            if !left.is_constant() || !right.is_constant() {
+                return Err(anyhow!("low-degree check failed"));
+            }
         }
 
         Ok(())
