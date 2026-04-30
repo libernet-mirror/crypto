@@ -157,7 +157,7 @@ impl<H: Hash> Proof<H> {
             source_query.verify(&commitment.inner)?;
             quotient_query.verify(&self.quotient_commitment.inner)?;
             if *source_query.value() - self.z
-                != *quotient_query.value() * (source_query.x() - *source_query.value())
+                != *quotient_query.value() * (source_query.x() - self.x)
             {
                 return Err(anyhow!("DEEP check failed"));
             }
