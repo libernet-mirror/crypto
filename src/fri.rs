@@ -483,7 +483,7 @@ impl<H: Hash> Prover<H> {
         let main_tree = Tree::<H>::new(
             polynomials
                 .into_iter()
-                .map(|polynomial| polynomial.lde2(n))
+                .map(|polynomial| polynomial.shifted_lde2(n))
                 .collect(),
         );
         let trees = main_tree.fold_all(degree_bound.trailing_zeros() as usize);
