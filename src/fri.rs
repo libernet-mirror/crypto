@@ -188,39 +188,6 @@ impl Commitment {
     }
 }
 
-#[derive(Debug, Clone)]
-struct Tree<H: Hash> {
-    leaves: Vec<Vec<Scalar>>,
-    hashes: Vec<Scalar>,
-    _data: PhantomData<H>,
-}
-
-impl<H: Hash> Tree<H> {
-    fn new(values: Vec<Vec<Scalar>>) -> Self {
-        let n = values.len();
-        assert!(n.is_power_of_two());
-        let mut hashes = Vec::with_capacity(n * 2 - 1);
-        for i in 0..n {
-            hashes.push(hash_leaf::<H>(values[i].as_slice()));
-        }
-        merklify::<H>(&mut hashes, n);
-        Self {
-            leaves: values,
-            hashes,
-            _data: Default::default(),
-        }
-    }
-
-    fn num_leaves(&self) -> usize {
-        self.leaves.len()
-    }
-
-    fn root_hash(&self) -> Scalar {
-        let n = self.leaves.len();
-        self.hashes[(n - 1) * 2]
-    }
-}
-
 /// A Merkle proof.
 ///
 /// A FRI `Query` uses several of these: two from the main Merkle tree and two for each folding
@@ -289,6 +256,87 @@ impl<H: Hash> LeafProof<H> {
     }
 }
 
+/// A Merkle tree.
+#[derive(Debug, Clone)]
+struct Tree<H: Hash> {
+    leaves: Vec<Vec<Scalar>>,
+    hashes: Vec<Scalar>,
+    _data: PhantomData<H>,
+}
+
+impl<H: Hash> Tree<H> {
+    fn new(values: Vec<Vec<Scalar>>) -> Self {
+        let n = values.len();
+        assert!(n.is_power_of_two());
+        let mut hashes = Vec::with_capacity(n * 2 - 1);
+        for i in 0..n {
+            hashes.push(hash_leaf::<H>(values[i].as_slice()));
+        }
+        merklify::<H>(&mut hashes, n);
+        Self {
+            leaves: values,
+            hashes,
+            _data: Default::default(),
+        }
+    }
+
+    fn root_hash(&self) -> Scalar {
+        let n = self.leaves.len();
+        self.hashes[(n - 1) * 2]
+    }
+
+    fn num_leaves(&self) -> usize {
+        self.leaves.len()
+    }
+
+    fn leaf(&self, index: usize) -> &[Scalar] {
+        self.leaves[index].as_slice()
+    }
+
+    fn fold(&self) -> Self {
+        let n = self.leaves.len();
+        assert!(n.is_power_of_two());
+
+        let alpha = H::hash(*FOLD_DST, self.hashes[(n - 1) * 2]);
+
+        let k = n.trailing_zeros();
+        let omega_inv = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
+
+        let m = n / 2;
+        let mut omega_inv_i = Scalar::ONE;
+
+        let mut leaves = Vec::with_capacity(m);
+        for i in 0..m {
+            let pos = self.leaves[i].as_slice();
+            let neg = self.leaves[i + m].as_slice();
+            leaves.push(
+                pos.iter()
+                    .cloned()
+                    .zip(neg.iter().cloned())
+                    .map(|(pos, neg)| {
+                        (pos + neg + alpha * omega_inv_i * (pos - neg)) * Scalar::TWO_INV
+                    })
+                    .collect::<Vec<Scalar>>(),
+            );
+            omega_inv_i *= omega_inv;
+        }
+
+        Self::new(leaves)
+    }
+
+    fn fold_all(self, times: usize) -> Vec<Self> {
+        let mut trees = Vec::with_capacity(times + 1);
+        let mut tree = self;
+        for _ in 0..times {
+            let folded = tree.fold();
+            trees.push(tree);
+            tree = folded;
+        }
+        trees.push(tree);
+        trees
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Query<H: Hash> {
     /// The number of committed evaluations.
@@ -312,20 +360,44 @@ impl<H: Hash> Query<H> {
 
     /// Returns the opened domain element, that is the X-coordinate of the evaluation.
     ///
-    /// This is the element corresponding to the first value returned by `index()`, while the
+    /// This is the element corresponding to the first value returned by `indices`, while the
     /// partner element can be obtained by simply negating this one.
     pub fn x(&self) -> Scalar {
         Polynomial::domain_element2(self.index, self.n)
     }
 
-    /// Returns the opened evaluations, one for each committed polynomial.
+    /// Returns the opened evaluations, one for every committed polynomial.
     ///
-    /// The first component of the returned tuple
+    /// The first component of the returned tuple contains the evaluations at the first index
+    /// returned by `indices`, while the second component contains those at the second index.
     pub fn values(&self) -> (&[Scalar], &[Scalar]) {
         (self.values.0.as_slice(), self.values.1.as_slice())
     }
 
-    // TODO
+    /// Verifies this proof against the given commitment.
+    ///
+    /// NOTE: for low-degree testing you also need to check that `len()` returns the log2 of the
+    /// expected degree bound. This function only verifies the opened value pair across the folding
+    /// structure.
+    pub fn verify(&self, commitment: &Commitment) -> Result<()> {
+        assert!(self.n.is_power_of_two());
+        assert!(self.index < self.n);
+        let k = self.n.trailing_zeros();
+
+        let folds = self.folds.as_slice();
+
+        let h = folds.len();
+        if h > k as usize + 1 {
+            return Err(anyhow!("invalid proof size"));
+        }
+        if commitment.len() != h {
+            return Err(anyhow!("wrong number of folding rounds"));
+        }
+
+        // TODO
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -346,10 +418,25 @@ impl<H: Hash> Prover<H> {
         let n = degree_bound << blowup_exp;
         assert!(n <= Scalar::S as usize);
 
-        // TODO
-        todo!()
+        let main_tree = Tree::<H>::new(
+            polynomials
+                .into_iter()
+                .map(|polynomial| polynomial.lde2(n))
+                .collect(),
+        );
+        let trees = main_tree.fold_all(degree_bound.trailing_zeros() as usize);
+
+        Self {
+            degree_bound,
+            blowup_exp,
+            trees,
+        }
     }
 
+    /// Returns the degree bound of the committed polynomials (always a power of 2).
+    ///
+    /// NOTE: the actual degree of the original polynomials is often even lower than this value
+    /// because it was rounded up to the next power of 2 in order to run the FFT and FRI algorithms.
     pub fn degree_bound(&self) -> usize {
         self.degree_bound
     }
@@ -359,19 +446,48 @@ impl<H: Hash> Prover<H> {
     }
 
     pub fn commit(&self) -> Commitment {
-        assert!(self.degree_bound.is_power_of_two());
-        let k = self.degree_bound.trailing_zeros() as usize + 1;
         Commitment {
-            roots: self
-                .trees
-                .iter()
-                .take(k)
-                .map(|tree| tree.root_hash())
-                .collect(),
+            roots: self.trees.iter().map(|tree| tree.root_hash()).collect(),
         }
     }
 
-    // TODO
+    pub fn query(&self, index: usize) -> Query<H> {
+        let d = self.degree_bound;
+        assert!(d.is_power_of_two());
+
+        let n = self.degree_bound << self.blowup_exp;
+        assert!(index < n);
+
+        let k = d.trailing_zeros();
+
+        let mut m = n;
+        let mut i = index;
+        let mut folds = vec![];
+        for _ in 0..=k {
+            // TODO
+            m /= 2;
+            i %= m;
+        }
+
+        match folds.last() {
+            Some((left, right)) => {
+                assert!(left.is_constant());
+                assert!(right.is_constant());
+            }
+            None => {}
+        }
+
+        Query {
+            n,
+            index,
+            values: (
+                self.trees[0].leaf(index).to_vec(),
+                self.trees[0].leaf((index + n / 2) % n).to_vec(),
+            ),
+            folds,
+            _data: Default::default(),
+        }
+    }
 }
 
 #[cfg(test)]
