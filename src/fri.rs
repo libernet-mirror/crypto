@@ -193,17 +193,23 @@ impl Commitment {
 /// A FRI `Query` uses several of these: two from the main Merkle tree and two for each folding
 /// round.
 ///
-/// NOTE: this object only stores the sister hashes of the Merkle path, it doesn't store the opened
-/// leaf values, the lookup key, or the root hash anywhere because those pieces of information are
-/// reconstructed separately during the verification of a whole `Query`. In particular, all root
+/// NOTE: this object only stores the sister hashes of the Merkle path and the opened leaf values,
+/// it doesn't store the lookup key and the root hash anywhere because those pieces of information
+/// are reconstructed separately during the verification of a whole `Query`. In particular, all root
 /// hashes are stored in the `Commitment`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LeafProof<H: Hash> {
+    leaf: Vec<Scalar>,
     path: Vec<Scalar>,
     _data: PhantomData<H>,
 }
 
 impl<H: Hash> LeafProof<H> {
+    /// Returns a reference to the leaf values (one for every committed polynomial).
+    pub fn leaf(&self) -> &[Scalar] {
+        self.leaf.as_slice()
+    }
+
     /// Returns the length of the Merkle path, corresponding to the height of the tree minus 1 (the
     /// root hash is not included in this count).
     pub fn len(&self) -> usize {
@@ -211,13 +217,17 @@ impl<H: Hash> LeafProof<H> {
     }
 
     /// Verifies the proof against the given root hash.
-    pub fn verify(
-        &self,
-        mut index: usize,
-        leaf_values: &[Scalar],
-        root_hash: Scalar,
-    ) -> Result<()> {
-        let mut hash = hash_leaf::<H>(leaf_values);
+    pub fn verify(&self, mut index: usize, leaf: &[Scalar], root_hash: Scalar) -> Result<()> {
+        if leaf.len() != self.leaf.len()
+            || self
+                .leaf
+                .iter()
+                .zip(leaf.iter())
+                .any(|(&value1, &value2)| value1 != value2)
+        {
+            return Err(anyhow!("leaf value mismatch"));
+        }
+        let mut hash = hash_leaf::<H>(self.leaf.as_slice());
         for sibling in &self.path {
             hash = if index & 1 != 0 {
                 H::hash(*sibling, hash)
@@ -245,19 +255,14 @@ impl<H: Hash> LeafProof<H> {
     /// Note that some polynomials may collapse earlier than others, and this function returns false
     /// if one or more haven't collapsed yet. So it returns true if and only if all have collapsed.
     pub fn is_constant(&self) -> bool {
-        match self.path.first() {
-            Some(hash) => {
-                let mut hash = *hash;
-                for &sibling in &self.path {
-                    if sibling != hash {
-                        return false;
-                    }
-                    hash = H::hash(hash, hash);
-                }
-                true
+        let mut hash = hash_leaf::<H>(self.leaf.as_slice());
+        for &sibling in &self.path {
+            if sibling != hash {
+                return false;
             }
-            None => true,
+            hash = H::hash(hash, hash);
         }
+        true
     }
 }
 
@@ -335,6 +340,7 @@ impl<H: Hash> Tree<H> {
         let mut n = self.leaves.len();
         assert!(n.is_power_of_two());
         assert!(index < n);
+        let leaf = self.leaves[index].clone();
         let mut path = Vec::with_capacity(n.trailing_zeros() as usize);
         let mut hashes = self.hashes.as_slice();
         while n > 1 {
@@ -344,6 +350,7 @@ impl<H: Hash> Tree<H> {
             index >>= 1;
         }
         LeafProof {
+            leaf,
             path,
             _data: Default::default(),
         }
@@ -458,13 +465,14 @@ impl<H: Hash> Query<H> {
 
         let mut m = self.n;
         let mut index = self.index;
-        let (mut pos, mut neg) = self.values.clone();
+        let mut pos = self.values.0.clone();
         let mut step = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
 
         for r in 0..h {
             let (left, right) = &folds[r];
             let root_hash = commitment.roots()[r];
             let alpha = H::hash(*FOLD_DST, root_hash);
+            let neg = right.leaf();
 
             if 1usize << left.len() != m {
                 return Err(anyhow!(
@@ -482,7 +490,7 @@ impl<H: Hash> Query<H> {
             }
 
             left.verify(index, pos.as_slice(), root_hash)?;
-            right.verify((index + m / 2) % m, neg.as_slice(), root_hash)?;
+            right.verify((index + m / 2) % m, neg, root_hash)?;
 
             m /= 2;
             index %= m;
@@ -491,7 +499,6 @@ impl<H: Hash> Query<H> {
             for i in 0..pos.len() {
                 pos[i] =
                     (pos[i] + neg[i] + alpha * omega_inv_i * (pos[i] - neg[i])) * Scalar::TWO_INV;
-                // TODO: update neg[i].
             }
             step = step.square();
         }
