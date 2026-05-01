@@ -244,15 +244,20 @@ impl<H: Hash> LeafProof<H> {
     ///
     /// Note that some polynomials may collapse earlier than others, and this function returns false
     /// if one or more haven't collapsed yet. So it returns true if and only if all have collapsed.
-    pub fn is_constant(&self, leaf_values: &[Scalar]) -> bool {
-        let mut hash = hash_leaf::<H>(leaf_values);
-        for &sibling in &self.path {
-            if sibling != hash {
-                return false;
+    pub fn is_constant(&self) -> bool {
+        match self.path.first() {
+            Some(hash) => {
+                let mut hash = *hash;
+                for &sibling in &self.path {
+                    if sibling != hash {
+                        return false;
+                    }
+                    hash = H::hash(hash, hash);
+                }
+                true
             }
-            hash = H::hash(hash, hash);
+            None => true,
         }
-        true
     }
 }
 
@@ -291,6 +296,24 @@ impl<H: Hash> Tree<H> {
 
     fn leaf(&self, index: usize) -> &[Scalar] {
         self.leaves[index].as_slice()
+    }
+
+    fn query(&self, mut index: usize) -> LeafProof<H> {
+        let mut n = self.leaves.len();
+        assert!(n.is_power_of_two());
+        assert!(index < n);
+        let mut path = Vec::with_capacity(n.trailing_zeros() as usize);
+        let mut hashes = self.hashes.as_slice();
+        while n > 1 {
+            path.push(hashes[index ^ 1]);
+            hashes = &hashes[n..];
+            n /= 2;
+            index >>= 1;
+        }
+        LeafProof {
+            path,
+            _data: Default::default(),
+        }
     }
 
     fn fold(&self) -> Self {
@@ -458,32 +481,33 @@ impl<H: Hash> Prover<H> {
         let n = self.degree_bound << self.blowup_exp;
         assert!(index < n);
 
-        let k = d.trailing_zeros();
-
         let mut m = n;
         let mut i = index;
         let mut folds = vec![];
-        for _ in 0..=k {
-            // TODO
+        for tree in &self.trees {
+            folds.push((tree.query(i), tree.query((i + m / 2) % m)));
             m /= 2;
             i %= m;
         }
 
-        match folds.last() {
-            Some((left, right)) => {
-                assert!(left.is_constant());
-                assert!(right.is_constant());
-            }
-            None => {}
+        {
+            let (left, right) = folds.last().unwrap();
+            assert!(left.is_constant());
+            assert!(right.is_constant());
         }
+
+        let values = {
+            let main_tree = self.trees.first().unwrap();
+            (
+                main_tree.leaf(index).to_vec(),
+                main_tree.leaf((index + n / 2) % n).to_vec(),
+            )
+        };
 
         Query {
             n,
             index,
-            values: (
-                self.trees[0].leaf(index).to_vec(),
-                self.trees[0].leaf((index + n / 2) % n).to_vec(),
-            ),
+            values,
             folds,
             _data: Default::default(),
         }
