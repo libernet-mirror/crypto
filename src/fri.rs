@@ -456,7 +456,45 @@ impl<H: Hash> Query<H> {
             return Err(anyhow!("wrong number of folding rounds"));
         }
 
-        // TODO
+        let mut m = self.n;
+        let mut index = self.index;
+        let (mut pos, mut neg) = self.values.clone();
+        let mut step = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
+
+        for r in 0..h {
+            let (left, right) = &folds[r];
+            let root_hash = commitment.roots()[r];
+            let alpha = H::hash(*FOLD_DST, root_hash);
+
+            if 1usize << left.len() != m {
+                return Err(anyhow!(
+                    "invalid left-hand side Merkle proof height (got {}, want {})",
+                    left.len(),
+                    m.trailing_zeros()
+                ));
+            }
+            if 1usize << right.len() != m {
+                return Err(anyhow!(
+                    "invalid right-hand side Merkle proof height (got {}, want {})",
+                    right.len(),
+                    m.trailing_zeros()
+                ));
+            }
+
+            left.verify(index, pos.as_slice(), root_hash)?;
+            right.verify((index + m / 2) % m, neg.as_slice(), root_hash)?;
+
+            m /= 2;
+            index %= m;
+
+            let omega_inv_i = step.pow_vartime([index as u64, 0, 0, 0]);
+            for i in 0..pos.len() {
+                pos[i] =
+                    (pos[i] + neg[i] + alpha * omega_inv_i * (pos[i] - neg[i])) * Scalar::TWO_INV;
+                // TODO: update neg[i].
+            }
+            step = step.square();
+        }
 
         Ok(())
     }
