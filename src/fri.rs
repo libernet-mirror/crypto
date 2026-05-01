@@ -270,34 +270,67 @@ struct Tree<H: Hash> {
 }
 
 impl<H: Hash> Tree<H> {
-    fn new(values: Vec<Vec<Scalar>>) -> Self {
-        let n = values.len();
+    fn from_leaves(leaves: Vec<Vec<Scalar>>) -> Self {
+        let n = leaves.len();
         assert!(n.is_power_of_two());
-        let mut hashes = Vec::with_capacity(n * 2 - 1);
+        let mut hashes = vec![Scalar::ZERO; n * 2 - 1];
         for i in 0..n {
-            hashes.push(hash_leaf::<H>(values[i].as_slice()));
+            hashes[i] = hash_leaf::<H>(leaves[i].as_slice());
         }
-        merklify::<H>(&mut hashes, n);
+        merklify::<H>(hashes.as_mut_slice(), n);
         Self {
-            leaves: values,
+            leaves,
             hashes,
             _data: Default::default(),
         }
     }
 
+    /// Constructs a Merkle tree from a matrix of polynomial evaluations.
+    ///
+    /// The outer array of `values` contains one entry per committed polynomial, and each of the
+    /// inner arrays represents the evaluations of a polynomial.
+    ///
+    /// Therefore `values` has as many elements as the number of polynomials being committed and the
+    /// length of the inner arrays must equal the size of the (extended) evaluation domain.
+    ///
+    /// Neither the outer array nor the inner arrays can be empty.
+    fn new(values: Vec<Vec<Scalar>>) -> Self {
+        let k = values.len();
+        assert!(k > 0);
+        let n = values[0].len();
+        let leaves: Vec<Vec<Scalar>> = (0..n)
+            .map(|i| {
+                (0..k)
+                    .map(|j| {
+                        assert_eq!(n, values[j].len());
+                        values[j][i]
+                    })
+                    .collect()
+            })
+            .collect();
+        Self::from_leaves(leaves)
+    }
+
+    /// Returns the root hash of the Merkle tree.
     fn root_hash(&self) -> Scalar {
         let n = self.leaves.len();
         self.hashes[(n - 1) * 2]
     }
 
+    /// Returns the number of leaves in the tree, corresponding to the size of the evaluation domain
+    /// (always a power of 2).
     fn num_leaves(&self) -> usize {
         self.leaves.len()
     }
 
+    /// Returns a reference to the i-th leaf.
+    ///
+    /// Note that the leaf contains k elements, one for every committed polynomial.
     fn leaf(&self, index: usize) -> &[Scalar] {
         self.leaves[index].as_slice()
     }
 
+    /// Returns a Merkle proof for the leaf at `index`.
     fn query(&self, mut index: usize) -> LeafProof<H> {
         let mut n = self.leaves.len();
         assert!(n.is_power_of_two());
@@ -316,6 +349,7 @@ impl<H: Hash> Tree<H> {
         }
     }
 
+    /// Performs one FRI folding round, returning the new folded tree.
     fn fold(&self) -> Self {
         let n = self.leaves.len();
         assert!(n.is_power_of_two());
@@ -344,9 +378,14 @@ impl<H: Hash> Tree<H> {
             omega_inv_i *= omega_inv;
         }
 
-        Self::new(leaves)
+        Self::from_leaves(leaves)
     }
 
+    /// Performs `times` FRI folding and returns an array of `times+1` trees.
+    ///
+    /// The first element is `self` (N leaves), the second element is the tree from the first
+    /// folding round (N/2 leaves), the third element is the tree from the second folding round (N/4
+    /// leaves), and so on.
     fn fold_all(self, times: usize) -> Vec<Self> {
         let mut trees = Vec::with_capacity(times + 1);
         let mut tree = self;
@@ -635,6 +674,84 @@ mod tests {
             merkle_root::<Poseidon2Hash>(&mut values),
             parse_scalar("0x4e13560d1ea42657b5de5bf8a055a2f4b5d9757ddfb5be7c6f16dff5dc52abc8")
         );
+    }
+
+    #[test]
+    fn test_merkle_root_two_polys_one_element() {
+        let mut values = vec![vec![12.into(), 34.into()]];
+        assert_eq!(
+            merkle_root::<Sha2Hash>(&mut values),
+            parse_scalar("0x614eaeb45d6c697d7cf720c4c7c604efe3e2d7ee733caa3a67a951975bcfd1c7")
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_two_polys_two_elements() {
+        let mut values = vec![vec![12.into(), 34.into()], vec![56.into(), 78.into()]];
+        assert_eq!(
+            merkle_root::<Sha2Hash>(&mut values),
+            parse_scalar("0x4b6c34fae57b624fce3e71bcf11e0fd520c473d85b540d8fb62a9400aae31f81")
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_two_polys_four_elements() {
+        let mut values = vec![
+            vec![12.into(), 34.into(), 56.into(), 78.into()],
+            vec![34.into(), 56.into(), 78.into(), 90.into()],
+        ];
+        assert_eq!(
+            merkle_root::<Sha2Hash>(&mut values),
+            parse_scalar("0x5e6c5f7234b09aaecd96b4edb4ee2e50f610e33d8e55e57ab6ae2458c9c85421")
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_three_polys_one_element() {
+        let mut values = vec![vec![12.into(), 34.into(), 56.into()]];
+        assert_eq!(
+            merkle_root::<Sha2Hash>(&mut values),
+            parse_scalar("0x6ba46ed6f29f6a4f8e1a9d8f93b51f5e902143d00356b65b867dde9cc879a8d1")
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_three_polys_two_elements() {
+        let mut values = vec![
+            vec![12.into(), 34.into(), 56.into()],
+            vec![42.into(), 43.into(), 44.into()],
+        ];
+        assert_eq!(
+            merkle_root::<Sha2Hash>(&mut values),
+            parse_scalar("0x732d643b6abcdc15ef7f7cbc36407b31fe021d38251d01226955127e8c7932c6")
+        );
+    }
+
+    #[test]
+    fn test_merkle_root_three_polys_four_elements() {
+        let mut values = vec![
+            vec![12.into(), 34.into(), 56.into()],
+            vec![42.into(), 43.into(), 44.into()],
+            vec![90.into(), 78.into(), 56.into()],
+            vec![46.into(), 45.into(), 44.into()],
+        ];
+        assert_eq!(
+            merkle_root::<Sha2Hash>(&mut values),
+            parse_scalar("0x16a660ffcd68990dc46293967c73361deb4ab9c83fdc20e5f7d69186b96d618a")
+        );
+    }
+
+    #[test]
+    fn test_one_polynomial() {
+        let polynomial =
+            Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]);
+        let prover = Prover::<Sha2Hash>::new(vec![polynomial], 1);
+        assert_eq!(prover.degree_bound(), 4);
+        assert_eq!(prover.extended_domain_size(), 8);
+        let commitment = prover.commit();
+        let query = prover.query(0);
+        assert_eq!(query.indices(), (0, 4));
+        assert!(query.verify(&commitment).is_ok());
     }
 
     // TODO
