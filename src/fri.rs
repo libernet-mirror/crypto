@@ -360,10 +360,9 @@ impl<H: Hash> Query<H> {
             left.verify(index, pos, root_hash)?;
             right.verify((index + m / 2) % m, neg, root_hash)?;
 
+            let omega_inv_i = step.pow_vartime([index as u64, 0, 0, 0]);
             m /= 2;
             index %= m;
-
-            let omega_inv_i = step.pow_vartime([index as u64, 0, 0, 0]);
             pos = (pos + neg + alpha * omega_inv_i * (pos - neg)) * Scalar::TWO_INV;
             step = step.square();
         }
@@ -1060,6 +1059,7 @@ mod tests {
         assert_ne!(query.values().0, value2);
         assert_ne!(query.values().1, value1);
         assert_ne!(query.values().1, value2);
+        query.verify(&commitment).unwrap();
         assert!(query.verify(&commitment).is_ok());
     }
 
