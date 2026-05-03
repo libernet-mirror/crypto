@@ -2,7 +2,7 @@ use crate::bluesky::Scalar;
 use crate::fri::{self, merklify};
 use crate::poly;
 use crate::utils;
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use ff::{Field, PrimeField};
 use primitive_types::U256;
 use std::collections::{BTreeMap, BTreeSet};
@@ -236,36 +236,36 @@ impl<H: Hash> Proof<H> {
             }
             query.verify(&commitment.inner)?;
 
-            let numerator = {
+            let mut combined = {
                 let mut rlc = Scalar::ZERO;
                 let mut pow = Scalar::ONE;
                 for &value in opening.leaf() {
                     rlc += value * pow;
                     pow *= alpha;
                 }
-                let mut numerator = rlc;
-                for (_, values) in &self.points {
-                    let mut v = Scalar::ZERO;
-                    let mut pow = Scalar::ONE;
-                    for &value in values {
-                        v += value * pow;
-                        pow *= alpha;
-                    }
-                    numerator -= v;
-                }
-                numerator
-            };
-            let denominator = {
-                let x = Scalar::MULTIPLICATIVE_GENERATOR * query.x();
-                let mut denominator = Scalar::ONE;
-                for (&z, _) in &self.points {
-                    denominator *= x - z;
-                }
-                denominator
+                rlc
             };
             let (quotient, _) = query.values();
 
-            if quotient * denominator != numerator {
+            for (&z, values) in &self.points {
+                let v = {
+                    let mut rlc = Scalar::ZERO;
+                    let mut pow = Scalar::ONE;
+                    for &value in values {
+                        rlc += value * pow;
+                        pow *= alpha;
+                    }
+                    rlc
+                };
+                let x = Scalar::MULTIPLICATIVE_GENERATOR * query.x();
+                combined = (combined - v)
+                    * (x - z)
+                        .invert()
+                        .into_option()
+                        .context("one or more opened points are not off-domain")?;
+            }
+
+            if quotient != combined {
                 return Err(anyhow!("algebraic check failed at query index {index}"));
             }
         }
@@ -334,23 +334,14 @@ impl<H: Hash> Prover<H> {
             pow *= alpha;
         }
 
-        for (&z, v) in &points {
-            assert_eq!(v.len(), k);
-            let v = {
-                let mut value = Scalar::ZERO;
-                let mut pow = Scalar::ONE;
-                for &v in v {
-                    value += v * pow;
-                    pow *= alpha;
-                }
-                value
-            };
-            let (quotient, remainder) = (combined - v).horner(z);
+        for (&z, _) in &points {
+            let evaluation = combined.evaluate(z);
+            let (quotient, remainder) = (combined - evaluation).horner(z);
             assert_eq!(remainder, Scalar::ZERO);
             combined = quotient;
         }
 
-        let inner = fri::Prover::<H>::new(combined, blowup_exp);
+        let inner = fri::Prover::<H>::new(combined, degree_bound, blowup_exp);
         Self {
             degree_bound,
             blowup_exp,
@@ -419,6 +410,7 @@ mod tests {
         let commitment = prover.commit();
         let proof = prover.prove();
         assert_eq!(proof.degree_bound(), degree_bound);
+        proof.verify(&commitment).unwrap(); // TODO: remove
         assert!(proof.verify(&commitment).is_ok());
         assert_eq!(*proof.points(), points);
     }

@@ -474,9 +474,10 @@ impl<H: Hash> Prover<H> {
     /// The evaluation domain is inflated by a blowup factor of `2^blowup_exp`. The FRI prover will
     /// then enable low-degree testing queries that prove the original degree of the polynomial with
     /// exponentially increasing probability.
-    pub fn new(polynomial: Polynomial, blowup_exp: usize) -> Self {
+    pub fn new(polynomial: Polynomial, degree_bound: usize, blowup_exp: usize) -> Self {
         assert_eq!(polynomial.len(), polynomial.degree_bound());
-        let degree_bound = polynomial.len().next_power_of_two();
+        assert!(degree_bound.is_power_of_two());
+        assert!(degree_bound >= polynomial.len());
         let mut data = polynomial.shifted_lde2(degree_bound << blowup_exp);
         let n = data.len();
         assert!(n.is_power_of_two());
@@ -914,7 +915,7 @@ mod tests {
         expected_root_hash: Scalar,
     ) {
         let degree_bound = polynomial.degree_bound().next_power_of_two();
-        let prover = Prover::<H>::new(polynomial, blowup_exp);
+        let prover = Prover::<H>::new(polynomial, degree_bound, blowup_exp);
         assert_eq!(prover.degree_bound(), degree_bound);
         assert_eq!(prover.size(), degree_bound << blowup_exp);
         assert_eq!(prover.root_hash(), expected_root_hash);
@@ -1011,7 +1012,7 @@ mod tests {
 
     fn test_query_one_element<H: Hash>(value: Scalar, blowup_exp: usize, index: usize) {
         let polynomial = Polynomial::encode2(vec![value]);
-        let prover = Prover::<H>::new(polynomial, blowup_exp);
+        let prover = Prover::<H>::new(polynomial, 1, blowup_exp);
         let commitment = prover.commit();
         assert_eq!(commitment.len(), 1);
         assert_eq!(commitment.root(), prover.root_hash());
@@ -1085,7 +1086,7 @@ mod tests {
         index: usize,
     ) {
         let polynomial = Polynomial::encode2(vec![value1, value2]);
-        let prover = Prover::<H>::new(polynomial, blowup_exp);
+        let prover = Prover::<H>::new(polynomial, 2, blowup_exp);
         let commitment = prover.commit();
         assert_eq!(commitment.len(), 2);
         assert_eq!(commitment.root(), prover.root_hash());
@@ -1155,7 +1156,7 @@ mod tests {
         index: usize,
     ) {
         let polynomial = Polynomial::encode2(values.to_vec());
-        let prover = Prover::<H>::new(polynomial, blowup_exp);
+        let prover = Prover::<H>::new(polynomial, 4, blowup_exp);
         let commitment = prover.commit();
         assert_eq!(commitment.len(), 3);
         assert_eq!(commitment.root(), prover.root_hash());
