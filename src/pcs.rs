@@ -334,9 +334,17 @@ impl<H: Hash> Prover<H> {
             pow *= alpha;
         }
 
-        for (&z, _) in &points {
-            let evaluation = combined.evaluate(z);
-            let (quotient, remainder) = (combined - evaluation).horner(z);
+        for (&z, values) in &points {
+            let value = {
+                let mut rlc = Scalar::ZERO;
+                let mut pow = Scalar::ONE;
+                for &value in values {
+                    rlc += value * pow;
+                    pow *= alpha;
+                }
+                rlc
+            };
+            let (quotient, remainder) = (combined - value).horner(z);
             assert_eq!(remainder, Scalar::ZERO);
             combined = quotient;
         }
