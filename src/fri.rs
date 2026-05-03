@@ -20,11 +20,15 @@ static FOLD_DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"lib
 ///
 /// This trait is used for both binary Merkle trees and Fiat-Shamir challenges.
 pub trait Hash {
-    /// Hashes two input scalars.
+    /// Hashes two input scalars with a DST.
+    fn hash_raw(dst: Scalar, input1: Scalar, input2: Scalar) -> Scalar;
+
+    /// Hashes two input scalars using the `TREE_DST`.
     ///
-    /// This is used both for hashing the Merkle tree nodes and for deriving the Fiat-Shamir
-    /// challenge used in the folding argument.
-    fn hash(input1: Scalar, input2: Scalar) -> Scalar;
+    /// This is used for hashing Merkle tree nodes.
+    fn hash(input1: Scalar, input2: Scalar) -> Scalar {
+        Self::hash_raw(*TREE_DST, input1, input2)
+    }
 
     /// Hashes many input scalars.
     ///
@@ -61,9 +65,9 @@ impl Sha2Hash {
 }
 
 impl Hash for Sha2Hash {
-    fn hash(input1: Scalar, input2: Scalar) -> Scalar {
-        let lo = Self::hash_internal([Scalar::ZERO, *TREE_DST, input1, input2]);
-        let hi = Self::hash_internal([Scalar::ONE, *TREE_DST, input1, input2]);
+    fn hash_raw(dst: Scalar, input1: Scalar, input2: Scalar) -> Scalar {
+        let lo = Self::hash_internal([Scalar::ZERO, dst, input1, input2]);
+        let hi = Self::hash_internal([Scalar::ONE, dst, input1, input2]);
         let mut bytes = [0u8; 64];
         bytes[0..32].copy_from_slice(&lo);
         bytes[32..64].copy_from_slice(&hi);
@@ -84,8 +88,8 @@ impl Hash for Sha2Hash {
 pub struct Poseidon2Hash {}
 
 impl Hash for Poseidon2Hash {
-    fn hash(input1: Scalar, input2: Scalar) -> Scalar {
-        poseidon::hash_t4(&[*TREE_DST, input1, input2])
+    fn hash_raw(dst: Scalar, input1: Scalar, input2: Scalar) -> Scalar {
+        poseidon::hash_t4(&[dst, input1, input2])
     }
 
     fn hash_many(inputs: &[Scalar]) -> Scalar {
@@ -109,15 +113,14 @@ impl Hash for Poseidon2Hash {
 /// that the full tree can be stored.
 ///
 /// Note that the Merkle root will be at index `(n - 1) * 2`.
-pub fn merklify<H: Hash>(values: &mut [Scalar], mut n: usize) {
+pub fn merklify<H: Hash>(mut values: &mut [Scalar], mut n: usize) {
     assert!(n.is_power_of_two());
-    let mut i = 0;
     while n > 1 {
         let m = n / 2;
         for j in 0..m {
-            values[i + n + j] = H::hash(values[i + j * 2], values[i + j * 2 + 1]);
+            values[n + j] = H::hash(values[j * 2], values[j * 2 + 1]);
         }
-        i += n;
+        values = &mut values[n..];
         n = m;
     }
 }
@@ -188,7 +191,7 @@ impl Commitment {
 /// reconstructed separately during the verification of a whole `Query`. In particular, all root
 /// hashes are stored in the `Commitment`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct LeafProof<H: Hash> {
+pub struct LeafProof<H: Hash> {
     value: Scalar,
     path: Vec<Scalar>,
     _data: PhantomData<H>,
@@ -202,7 +205,7 @@ impl<H: Hash> LeafProof<H> {
     /// REQUIRES: `n` must be a power of 2.
     /// REQUIRES: values.len() >= n * 2 - 1
     /// REQUIRES: index < n
-    fn new(mut values: &[Scalar], mut n: usize, mut index: usize) -> Self {
+    pub fn new(mut values: &[Scalar], mut n: usize, mut index: usize) -> Self {
         assert!(n.is_power_of_two());
         assert!(index < n);
         let value = values[index];
@@ -355,7 +358,7 @@ impl<H: Hash> Query<H> {
         for r in 0..h {
             let (left, right) = &folds[r];
             let root_hash = commitment.roots()[r];
-            let alpha = H::hash(*FOLD_DST, root_hash);
+            let alpha = H::hash_raw(*FOLD_DST, root_hash, Scalar::ZERO);
             let neg = right.value();
 
             if 1usize << left.len() != m {
@@ -430,7 +433,7 @@ impl<H: Hash> Prover<H> {
     fn fold(values: &mut [Scalar], n: usize) {
         assert!(n.is_power_of_two());
 
-        let alpha = H::hash(*FOLD_DST, values[(n - 1) * 2]);
+        let alpha = H::hash_raw(*FOLD_DST, values[(n - 1) * 2], Scalar::ZERO);
 
         let k = n.trailing_zeros();
         let omega_inv = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
