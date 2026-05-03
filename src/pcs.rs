@@ -219,7 +219,7 @@ impl<H: Hash> Proof<H> {
                 numerator
             };
             let denominator = {
-                let x = query.x();
+                let x = Scalar::MULTIPLICATIVE_GENERATOR * query.x();
                 let mut denominator = Scalar::ONE;
                 for (&z, _) in &self.points {
                     denominator *= x - z;
