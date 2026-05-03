@@ -1098,7 +1098,6 @@ mod tests {
         assert_ne!(query.values().0, value2);
         assert_ne!(query.values().1, value1);
         assert_ne!(query.values().1, value2);
-        query.verify(&commitment).unwrap();
         assert!(query.verify(&commitment).is_ok());
     }
 

@@ -208,15 +208,19 @@ impl<H: Hash> Proof<H> {
                 }
                 let mut numerator = rlc;
                 for (_, values) in &self.points {
+                    let mut v = Scalar::ZERO;
+                    let mut pow = Scalar::ONE;
                     for &value in values {
-                        numerator -= value;
+                        v += value * pow;
+                        pow *= alpha;
                     }
+                    numerator -= v;
                 }
                 numerator
             };
             let denominator = {
                 let x = query.x();
-                let mut denominator = Scalar::ZERO;
+                let mut denominator = Scalar::ONE;
                 for (&z, _) in &self.points {
                     denominator *= x - z;
                 }
@@ -359,7 +363,7 @@ mod tests {
         let prover = Prover::<Sha2Hash>::new(polynomials, BTreeSet::from([123.into()]), 3);
         let commitment = prover.commit();
         let proof = prover.prove();
-        proof.verify(&commitment).unwrap();
+        proof.verify(&commitment).unwrap(); // TODO: remove
         assert!(proof.verify(&commitment).is_ok());
     }
 
