@@ -5,7 +5,7 @@ use crate::utils;
 use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
 use primitive_types::U256;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::marker::PhantomData;
 use std::sync::LazyLock;
 
@@ -50,13 +50,17 @@ fn get_query_indices<H: Hash>(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
-    sources_root: Scalar,
-    quotient_commitment: fri::Commitment,
+    root_hash: Scalar,
+    inner: fri::Commitment,
 }
 
 impl Commitment {
+    pub fn root_hash(&self) -> Scalar {
+        self.root_hash
+    }
+
     fn get_query_indices<H: Hash>(&self, degree_bound: usize, blowup_exp: usize) -> Vec<usize> {
-        get_query_indices::<H>(self.sources_root, degree_bound, blowup_exp)
+        get_query_indices::<H>(self.root_hash, degree_bound, blowup_exp)
     }
 }
 
@@ -174,7 +178,7 @@ impl<H: Hash> Proof<H> {
             ));
         }
 
-        let alpha = H::hash_raw(*RLC_DST, commitment.sources_root, Scalar::ZERO);
+        let alpha = H::hash_raw(*RLC_DST, commitment.root_hash, Scalar::ZERO);
         for ((query, opening), &expected_index) in
             (self.queries.iter().zip(self.openings.iter())).zip(indices.iter())
         {
@@ -185,15 +189,15 @@ impl<H: Hash> Proof<H> {
                 ));
             }
 
-            if opening.len() != self.extended_domain_size() {
+            if 1usize << opening.len() != self.extended_domain_size() {
                 return Err(anyhow!("invalid opening for index {index}"));
             }
-            opening.verify(index, commitment.sources_root)?;
+            opening.verify(index, commitment.root_hash)?;
 
-            if query.len() != self.degree_bound + 1 {
+            if 1usize << (query.len() - 1) != self.degree_bound {
                 return Err(anyhow!("invalid low-degree proof for index {index}"));
             }
-            query.verify(&commitment.quotient_commitment)?;
+            query.verify(&commitment.inner)?;
 
             let numerator = {
                 let mut rlc = Scalar::ZERO;
@@ -239,11 +243,7 @@ pub struct Prover<H: Hash> {
 }
 
 impl<H: Hash> Prover<H> {
-    pub fn new(
-        polynomials: Vec<Polynomial>,
-        blowup_exp: usize,
-        points: BTreeMap<Scalar, Vec<Scalar>>,
-    ) -> Self {
+    pub fn new(polynomials: Vec<Polynomial>, points: BTreeSet<Scalar>, blowup_exp: usize) -> Self {
         assert!(!polynomials.is_empty());
         let k = polynomials.len();
 
@@ -255,6 +255,19 @@ impl<H: Hash> Prover<H> {
             .next_power_of_two();
         let n = degree_bound << blowup_exp;
         assert!(n.trailing_zeros() <= Scalar::S);
+
+        let points: BTreeMap<Scalar, Vec<Scalar>> = points
+            .into_iter()
+            .map(|z| {
+                (
+                    z,
+                    polynomials
+                        .iter()
+                        .map(|polynomial| polynomial.evaluate(z))
+                        .collect(),
+                )
+            })
+            .collect();
 
         let leaves = {
             let evaluations = polynomials
@@ -308,8 +321,8 @@ impl<H: Hash> Prover<H> {
 
     pub fn commit(&self) -> Commitment {
         Commitment {
-            sources_root: self.tree.root(),
-            quotient_commitment: self.inner.commit(),
+            root_hash: self.tree.root(),
+            inner: self.inner.commit(),
         }
     }
 
@@ -343,14 +356,10 @@ mod tests {
             Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
             Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
         ];
-        let z = 123.into();
-        let v = polynomials
-            .iter()
-            .map(|polynomial| polynomial.evaluate(z))
-            .collect();
-        let prover = Prover::<Sha2Hash>::new(polynomials, 3, BTreeMap::from([(z, v)]));
+        let prover = Prover::<Sha2Hash>::new(polynomials, BTreeSet::from([123.into()]), 3);
         let commitment = prover.commit();
         let proof = prover.prove();
+        proof.verify(&commitment).unwrap();
         assert!(proof.verify(&commitment).is_ok());
     }
 
