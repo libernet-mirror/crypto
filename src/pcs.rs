@@ -48,38 +48,57 @@ fn get_query_indices<H: Hash>(
     indices
 }
 
+/// A batched DEEP-FRI polynomial commitment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
+    /// The root hash of the Merkle tree where the evaluations of all batched polynomials are
+    /// stored.
     root_hash: Scalar,
+    /// The underlying FRI commitment.
     inner: fri::Commitment,
 }
 
 impl Commitment {
+    /// Returns the root hash of the Merkle tree where all batched polynomials are stored.
     pub fn root_hash(&self) -> Scalar {
         self.root_hash
     }
 
+    /// Returns the indices to query in FRI based on a Fiat-Shamir challenge derived from the Merkle
+    /// root hash.
     fn get_query_indices<H: Hash>(&self, degree_bound: usize, blowup_exp: usize) -> Vec<usize> {
         get_query_indices::<H>(self.root_hash, degree_bound, blowup_exp)
     }
 }
 
+/// A simple Merkle proof (not a FRI query).
+///
+/// The opened leaf is an array of K polynomial evaluations, where K is the number of batched
+/// polynomials.
 #[derive(Debug, Clone)]
-pub struct LeafProof<H: Hash> {
+struct LeafProof<H: Hash> {
+    /// The opened evaluations, one for each batched polynomial.
     leaf: Vec<Scalar>,
+    /// The inner FRI proof.
     inner: fri::LeafProof<H>,
 }
 
 impl<H: Hash> LeafProof<H> {
-    pub fn leaf(&self) -> &[Scalar] {
+    /// Returns the opened evaluations, one for each batched polynomial.
+    fn leaf(&self) -> &[Scalar] {
         self.leaf.as_slice()
     }
 
-    pub fn len(&self) -> usize {
+    /// Returns the length of the Merkle path.
+    ///
+    /// NOTE: this must be checked manually at verification time: it must be equal to the log2 of
+    /// the extended domain size.
+    fn len(&self) -> usize {
         self.inner.len()
     }
 
-    pub fn verify(&self, index: usize, root_hash: Scalar) -> Result<()> {
+    /// Verifies the proof.
+    fn verify(&self, index: usize, root_hash: Scalar) -> Result<()> {
         let leaf_hash = H::hash_many(
             std::iter::once(*LEAF_DST)
                 .chain(self.leaf.iter().cloned())
@@ -90,14 +109,27 @@ impl<H: Hash> LeafProof<H> {
     }
 }
 
+/// A Merkle tree whose leaves are multiple polynomial evaluations.
+///
+/// The tree has N leaf in total, with N being the size of the extended domain, and each leaf has K
+/// polynomial evaluations, with K being the number of committed polynomials.
+///
+/// The internal nodes are single hashes.
 #[derive(Debug, Clone)]
 struct Tree<H: Hash> {
+    /// The leaves of the tree (N leaves with K evaluations each).
     leaves: Vec<Vec<Scalar>>,
+    /// The internal nodes of the tree. There are 2*N-1 nodes in this array, with N = number of
+    /// leaves. The nodes of the bottom layer are hashes of the corresponding leaves.
     nodes: Vec<Scalar>,
     _data: PhantomData<H>,
 }
 
 impl<H: Hash> Tree<H> {
+    /// Builds a Merkle tree over the given leaves.
+    ///
+    /// `leaves` has the usual layout: N leaves with K evaluations each, where N is the size of the
+    /// extended domain and K is the number of committed polynomials.
     fn new(leaves: Vec<Vec<Scalar>>) -> Self {
         let n = leaves.len();
         assert!(n.is_power_of_two());
@@ -120,15 +152,20 @@ impl<H: Hash> Tree<H> {
         }
     }
 
+    /// Returns the number of leaves in the tree, ie. the size of the extended evaluation domain.
     fn num_leaves(&self) -> usize {
         self.leaves.len()
     }
 
+    /// Returns the root hash of the Merkle tree.
     fn root(&self) -> Scalar {
         let n = self.leaves.len();
         self.nodes[(n - 1) * 2]
     }
 
+    /// Opens the leaf at `index`, returning a Merkle proof for it.
+    ///
+    /// `index` must be strictly less than `num_leaves()`.
     fn query(&self, index: usize) -> LeafProof<H> {
         let n = self.leaves.len();
         assert!(index < n);
@@ -323,6 +360,10 @@ impl<H: Hash> Prover<H> {
         }
     }
 
+    pub fn points(&self) -> &BTreeMap<Scalar, Vec<Scalar>> {
+        &self.points
+    }
+
     pub fn commit(&self) -> Commitment {
         Commitment {
             root_hash: self.tree.root(),
@@ -354,17 +395,107 @@ impl<H: Hash> Prover<H> {
 mod tests {
     use super::*;
 
+    fn test_prover<H: Hash>(
+        polynomials: Vec<Polynomial>,
+        points: &[Scalar],
+        degree_bound: usize,
+        blowup_exp: usize,
+    ) {
+        let points = BTreeMap::from_iter(points.iter().cloned().map(|z| {
+            (
+                z,
+                polynomials
+                    .iter()
+                    .map(|polynomial| polynomial.evaluate(z))
+                    .collect::<Vec<Scalar>>(),
+            )
+        }));
+        let prover = Prover::<H>::new(
+            polynomials,
+            points.iter().map(|(&z, _)| z).collect(),
+            blowup_exp,
+        );
+        assert_eq!(*prover.points(), points);
+        let commitment = prover.commit();
+        let proof = prover.prove();
+        assert_eq!(proof.degree_bound(), degree_bound);
+        assert!(proof.verify(&commitment).is_ok());
+        assert_eq!(*proof.points(), points);
+    }
+
     #[test]
-    fn test_prover() {
+    fn test_one_constant_polynomials_one_point_1() {
+        let polynomials = vec![Polynomial::with_coefficients(vec![12.into()])];
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 1, 1);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 1, 1);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 1, 2);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 1, 2);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 1, 3);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 1, 3);
+    }
+
+    #[test]
+    fn test_one_constant_polynomials_one_point_2() {
+        let polynomials = vec![Polynomial::with_coefficients(vec![12.into()])];
+        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 1, 1);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 1, 1);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 1, 2);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 1, 2);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 1, 3);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 1, 3);
+    }
+
+    #[test]
+    fn test_one_constant_polynomials_two_points() {
+        let polynomials = vec![Polynomial::with_coefficients(vec![12.into()])];
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 1);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 1);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 2);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 2);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 3);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 3);
+    }
+
+    #[test]
+    fn test_two_polynomials_degree_three_one_point_1() {
         let polynomials = vec![
             Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
             Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
         ];
-        let prover = Prover::<Sha2Hash>::new(polynomials, BTreeSet::from([123.into()]), 3);
-        let commitment = prover.commit();
-        let proof = prover.prove();
-        proof.verify(&commitment).unwrap(); // TODO: remove
-        assert!(proof.verify(&commitment).is_ok());
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 4, 1);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 4, 1);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 4, 2);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 4, 2);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 4, 3);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 4, 3);
+    }
+
+    #[test]
+    fn test_two_polynomials_degree_three_one_point_2() {
+        let polynomials = vec![
+            Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
+            Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
+        ];
+        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 4, 1);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 4, 1);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 4, 2);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 4, 2);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 4, 3);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 4, 3);
+    }
+
+    #[test]
+    fn test_two_polynomials_degree_three_two_points() {
+        let polynomials = vec![
+            Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
+            Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
+        ];
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 1);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 1);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 2);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 2);
+        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 3);
+        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 3);
     }
 
     // TODO
