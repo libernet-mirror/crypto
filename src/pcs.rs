@@ -39,11 +39,11 @@ fn get_query_indices<H: Hash>(
 ) -> Vec<usize> {
     let n = U256::from((degree_bound << blowup_exp) as u64);
     let k = num_queries(blowup_exp);
-    let mut indices = vec![0usize; k];
+    let mut indices = Vec::with_capacity(k);
     for i in 0..k {
         let hash = H::hash_raw(*QUERY_DST, root_hash, Scalar::from(i as u64));
         let index = utils::scalar_to_u256(hash) % n;
-        indices[i] = index.as_u64() as usize;
+        indices.push(index.as_u64() as usize);
     }
     indices
 }
@@ -140,6 +140,7 @@ pub struct Proof<H: Hash> {
     degree_bound: usize,
     blowup_exp: usize,
     points: BTreeMap<Scalar, Vec<Scalar>>,
+    openings: Vec<LeafProof<H>>,
     queries: Vec<fri::Query<H>>,
 }
 
@@ -158,6 +159,13 @@ impl<H: Hash> Proof<H> {
 
     pub fn verify(&self, commitment: &Commitment) -> Result<()> {
         let indices = commitment.get_query_indices::<H>(self.degree_bound, self.blowup_exp);
+        if self.openings.len() != indices.len() {
+            return Err(anyhow!(
+                "incorrect number of openings (got {}, want {})",
+                self.openings.len(),
+                indices.len()
+            ));
+        }
         if self.queries.len() != indices.len() {
             return Err(anyhow!(
                 "incorrect number of queries (got {}, want {})",
@@ -165,18 +173,58 @@ impl<H: Hash> Proof<H> {
                 indices.len()
             ));
         }
-        for (query, &expected_index) in self.queries.iter().zip(indices.iter()) {
+
+        let alpha = H::hash_raw(*RLC_DST, commitment.sources_root, Scalar::ZERO);
+        for ((query, opening), &expected_index) in
+            (self.queries.iter().zip(self.openings.iter())).zip(indices.iter())
+        {
             let (index, _) = query.indices();
             if index != expected_index {
                 return Err(anyhow!(
-                    "wrong query index (got {}, want {})",
-                    index,
-                    expected_index
+                    "wrong query index (got {index}, want {expected_index})",
                 ));
             }
+
+            if opening.len() != self.extended_domain_size() {
+                return Err(anyhow!("invalid opening for index {index}"));
+            }
+            opening.verify(index, commitment.sources_root)?;
+
+            if query.len() != self.degree_bound + 1 {
+                return Err(anyhow!("invalid low-degree proof for index {index}"));
+            }
             query.verify(&commitment.quotient_commitment)?;
-            // TODO: algebraic check
+
+            let numerator = {
+                let mut rlc = Scalar::ZERO;
+                let mut pow = Scalar::ONE;
+                for &value in opening.leaf() {
+                    rlc += value * pow;
+                    pow *= alpha;
+                }
+                let mut numerator = rlc;
+                for (_, values) in &self.points {
+                    for &value in values {
+                        numerator -= value;
+                    }
+                }
+                numerator
+            };
+            let denominator = {
+                let x = query.x();
+                let mut denominator = Scalar::ZERO;
+                for (&z, _) in &self.points {
+                    denominator *= x - z;
+                }
+                denominator
+            };
+            let (quotient, _) = query.values();
+
+            if quotient * denominator != numerator {
+                return Err(anyhow!("algebraic check failed at query index {index}"));
+            }
         }
+
         Ok(())
     }
 }
@@ -267,14 +315,19 @@ impl<H: Hash> Prover<H> {
 
     pub fn prove(&self) -> Proof<H> {
         let indices = get_query_indices::<H>(self.tree.root(), self.degree_bound, self.blowup_exp);
+        let openings = indices
+            .iter()
+            .map(|&index| self.tree.query(index))
+            .collect();
         let queries = indices
-            .into_iter()
-            .map(|index| self.inner.query(index))
+            .iter()
+            .map(|&index| self.inner.query(index))
             .collect();
         Proof {
             degree_bound: self.degree_bound,
             blowup_exp: self.blowup_exp,
             points: self.points.clone(),
+            openings,
             queries,
         }
     }
