@@ -824,5 +824,48 @@ mod tests {
         );
     }
 
-    // TODO
+    #[test]
+    fn test_one_polynomial_degree_three() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![
+                12.into(),
+                34.into(),
+                56.into(),
+                78.into(),
+            ])],
+            4,
+        );
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![
+                42.into(),
+                43.into(),
+                44.into(),
+                45.into(),
+            ])],
+            4,
+        );
+    }
+
+    #[test]
+    fn test_two_polynomials_degree_three() {
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
+                Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
+            ],
+            4,
+        );
+    }
+
+    #[test]
+    fn test_three_polynomials_degree_three() {
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
+                Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
+                Polynomial::with_coefficients(vec![34.into(), 56.into(), 78.into(), 90.into()]),
+            ],
+            4,
+        );
+    }
 }
