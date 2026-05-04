@@ -137,6 +137,7 @@ impl<H: Hash> Proof<H> {
                 rlc
             };
             let (quotients, _) = query.values();
+            let x = query.x();
 
             for ((&z, values), &quotient) in self.points.iter().zip(quotients.iter()) {
                 let v = {
@@ -148,7 +149,6 @@ impl<H: Hash> Proof<H> {
                     }
                     rlc
                 };
-                let x = Scalar::MULTIPLICATIVE_GENERATOR * query.x();
                 let numerator = combined - v;
                 let denominator = x - z;
                 if quotient * denominator != numerator {
@@ -312,7 +312,6 @@ mod tests {
         let commitment = prover.commit();
         let proof = prover.prove();
         assert_eq!(proof.degree_bound(), degree_bound);
-        proof.verify(&commitment).unwrap(); // TODO: remove
         assert!(proof.verify(&commitment).is_ok());
         assert_eq!(*proof.points(), points);
     }

@@ -462,8 +462,13 @@ impl<H: Hash> Query<H> {
     ///
     /// This is the element corresponding to the first value returned by `indices`, while the
     /// partner element can be obtained by simply negating this one.
+    ///
+    /// Note that we use `Polynomial::shifted_lde2` when committing polynomials, so the element
+    /// returned here is a shifted power of an N-th root of unity, with
+    /// `N = degree_bound * 2^blowup_factor`. The shift consists of multiplying the actual domain
+    /// element by `Scalar::MULTIPLICATIVE_GENERATOR`, consistently with `shifted_lde2`.
     pub fn x(&self) -> Scalar {
-        Polynomial::domain_element2(self.index, self.n)
+        Scalar::MULTIPLICATIVE_GENERATOR * Polynomial::domain_element2(self.index, self.n)
     }
 
     /// Returns the opened evaluations, one for every committed polynomial.
