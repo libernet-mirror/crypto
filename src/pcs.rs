@@ -151,9 +151,17 @@ impl<H: Hash> Proof<H> {
                 }
                 rlc
             };
-            let (quotients, _) = query.values();
-            let x = query.x();
 
+            let (quotients, _) = query.values();
+            if quotients.len() != self.points.len() {
+                return Err(anyhow!(
+                    "the number of evaluation claims doesn't match the number of FRI quotients (got {}, want {})",
+                    self.points.len(),
+                    quotients.len()
+                ));
+            }
+
+            let x = query.x();
             for ((&z, values), &quotient) in self.points.iter().zip(quotients.iter()) {
                 let v = {
                     let mut rlc = Scalar::ZERO;
