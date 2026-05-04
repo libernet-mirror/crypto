@@ -733,6 +733,145 @@ mod tests {
         );
     }
 
+    fn test_merkle_tree<H: Hash>(leaves: Vec<Vec<Scalar>>, expected_root_hash: Scalar) {
+        let tree = Tree::<H>::from_leaves(leaves.clone());
+        assert_eq!(tree.num_leaves(), leaves.len());
+        assert_eq!(tree.root_hash(), expected_root_hash);
+        for i in 0..leaves.len() {
+            let leaf = &leaves[i];
+            let proof = tree.query(i);
+            assert!(proof.verify(i, expected_root_hash).is_ok());
+            assert_eq!(proof.leaf().len(), leaf.len());
+            assert!(
+                proof
+                    .leaf()
+                    .iter()
+                    .zip(leaf.iter())
+                    .all(|(&lhs, &rhs)| lhs == rhs)
+            );
+        }
+    }
+
+    #[test]
+    fn test_merkle_tree_one_leaf_1() {
+        test_merkle_tree::<Sha2Hash>(
+            vec![vec![12.into()]],
+            parse_scalar("0x20e662747ccd53b24b82f95803effc667c97695debcce4cff135b903440f616b"),
+        );
+        test_merkle_tree::<Poseidon2Hash>(
+            vec![vec![12.into()]],
+            parse_scalar("0x7ddaad1f5a5863603fe031376b604a9b26c714c0b3488de169918a2fa7fab7a3"),
+        );
+    }
+
+    #[test]
+    fn test_merkle_tree_one_leaf_2() {
+        test_merkle_tree::<Sha2Hash>(
+            vec![vec![34.into()]],
+            parse_scalar("0x2b4c08d0c960dcb7e0bc85b36122669832296335cb97ec2e47cbd660679515b7"),
+        );
+        test_merkle_tree::<Poseidon2Hash>(
+            vec![vec![34.into()]],
+            parse_scalar("0x13d7d4388040c638dd2c8f8ed1113c0c4144daa222be09a5e54fd637350895b3"),
+        );
+    }
+
+    #[test]
+    fn test_merkle_tree_one_leaf_two_polynomials_1() {
+        test_merkle_tree::<Sha2Hash>(
+            vec![vec![12.into(), 34.into()]],
+            parse_scalar("0x2bd421d452e909b084c15b35ab934e06988d7589d61b10c9477eda62f00a420c"),
+        );
+        test_merkle_tree::<Poseidon2Hash>(
+            vec![vec![12.into(), 34.into()]],
+            parse_scalar("0x0d5c8dbe08ef0cd4ef927e04844ff9b7d18799ab459259e66ba7fd170a645e71"),
+        );
+    }
+
+    #[test]
+    fn test_merkle_tree_one_leaf_two_polynomials_2() {
+        test_merkle_tree::<Sha2Hash>(
+            vec![vec![34.into(), 12.into()]],
+            parse_scalar("0x4a3fdf5b16a84409b2dfe335aa95597e836ab5e8cb38562f85506b3aab91f7e1"),
+        );
+        test_merkle_tree::<Poseidon2Hash>(
+            vec![vec![34.into(), 12.into()]],
+            parse_scalar("0x2f406ed7abfbf48e4294d3e3a44aacf222a0cc69f07010ce6ccd3909626da81a"),
+        );
+    }
+
+    #[test]
+    fn test_merkle_tree_one_leaf_three_polynomials_1() {
+        test_merkle_tree::<Sha2Hash>(
+            vec![vec![12.into(), 34.into(), 56.into()]],
+            parse_scalar("0x4a06e35b47ecbc90a70ec2276d3167174696255526e2f73f5632b74f4f97bfd0"),
+        );
+        test_merkle_tree::<Poseidon2Hash>(
+            vec![vec![12.into(), 34.into(), 56.into()]],
+            parse_scalar("0x45bfbd23c174373739c52cf6fe45827ec7f99644b1b2160fb3869f8f00c61e9c"),
+        );
+    }
+
+    #[test]
+    fn test_merkle_tree_one_leaf_three_polynomials_2() {
+        test_merkle_tree::<Sha2Hash>(
+            vec![vec![34.into(), 12.into(), 78.into()]],
+            parse_scalar("0x78217d81af1a982f2e5edd2cc3c6a4f04a16dddcfe72c4e9d769a2222c65a89f"),
+        );
+        test_merkle_tree::<Poseidon2Hash>(
+            vec![vec![34.into(), 12.into(), 78.into()]],
+            parse_scalar("0x64ed329161263f42edc834ea7ad2496e82411fe9980bfabfbcf611717af96b00"),
+        );
+    }
+
+    #[test]
+    fn test_merkle_tree_two_leaves_1() {
+        test_merkle_tree::<Sha2Hash>(
+            vec![vec![12.into()], vec![34.into()]],
+            parse_scalar("0x30ea933bacd6b5f5a456e5969fc75f81714a03180751e7189e5da2b842449388"),
+        );
+        test_merkle_tree::<Poseidon2Hash>(
+            vec![vec![12.into()], vec![34.into()]],
+            parse_scalar("0x72e3aab3f8dfa490d8e0b20359d30a816ecd33073c5110aa6af56dfa72c3a868"),
+        );
+    }
+
+    #[test]
+    fn test_merkle_tree_two_leaves_2() {
+        test_merkle_tree::<Sha2Hash>(
+            vec![vec![34.into()], vec![56.into()]],
+            parse_scalar("0x6f23fcc629174ff1f7c5f135a4e90326f27e07dbbaeea513f4b881b74e8332fb"),
+        );
+        test_merkle_tree::<Poseidon2Hash>(
+            vec![vec![34.into()], vec![56.into()]],
+            parse_scalar("0x597cf71ccf978d4d78ff66f9ef863515471438a7b97a05f9d20b981839fd2efa"),
+        );
+    }
+
+    #[test]
+    fn test_merkle_tree_two_leaves_two_polynomials_1() {
+        test_merkle_tree::<Sha2Hash>(
+            vec![vec![12.into(), 34.into()], vec![56.into(), 78.into()]],
+            parse_scalar("0x2582a680364687a9ed97c7f950b7c5c2aa98fc73b4ca34d39c5ad816781848f7"),
+        );
+        test_merkle_tree::<Poseidon2Hash>(
+            vec![vec![12.into(), 34.into()], vec![56.into(), 78.into()]],
+            parse_scalar("0x5517bc558a108119a0487c9745e1363a6115098f803910da43e6583587c8ad33"),
+        );
+    }
+
+    #[test]
+    fn test_merkle_tree_two_leaves_two_polynomials_2() {
+        test_merkle_tree::<Sha2Hash>(
+            vec![vec![78.into(), 56.into()], vec![34.into(), 12.into()]],
+            parse_scalar("0x6b61ee4a92496285fead9e24543d5806a4c3a40a9693a199c75a91c59e08c23c"),
+        );
+        test_merkle_tree::<Poseidon2Hash>(
+            vec![vec![78.into(), 56.into()], vec![34.into(), 12.into()]],
+            parse_scalar("0x6c703fabc10666cc2fcd96ac4c4fe40128bd862c31f32ec5e120bd12524b3a8d"),
+        );
+    }
+
     fn test_prover_impl<H: Hash>(
         polynomials: Vec<Polynomial>,
         degree_bound: usize,
