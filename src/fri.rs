@@ -568,13 +568,14 @@ pub struct Prover<H: Hash> {
 }
 
 impl<H: Hash> Prover<H> {
-    pub fn new(polynomials: Vec<Polynomial>, blowup_exp: usize) -> Self {
-        let degree_bound = polynomials
-            .iter()
-            .map(|polynomial| polynomial.degree_bound())
-            .max()
-            .unwrap()
-            .next_power_of_two();
+    pub fn new(polynomials: Vec<Polynomial>, degree_bound: usize, blowup_exp: usize) -> Self {
+        assert!(degree_bound.is_power_of_two());
+        assert!(
+            polynomials
+                .iter()
+                .all(|polynomial| degree_bound >= polynomial.degree_bound())
+        );
+
         let n = degree_bound << blowup_exp;
         assert!(n <= Scalar::S as usize);
 
@@ -842,7 +843,7 @@ mod tests {
     fn test_one_polynomial() {
         let polynomial =
             Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]);
-        let prover = Prover::<Sha2Hash>::new(vec![polynomial], 1);
+        let prover = Prover::<Sha2Hash>::new(vec![polynomial], 4, 1);
         assert_eq!(prover.degree_bound(), 4);
         assert_eq!(prover.extended_domain_size(), 8);
         let commitment = prover.commit();

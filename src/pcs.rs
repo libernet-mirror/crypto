@@ -210,7 +210,7 @@ impl<H: Hash> Prover<H> {
             }
             leaves
         };
-        let tree = Tree::<H>::new(leaves);
+        let tree = Tree::<H>::from_leaves(leaves);
 
         let alpha = H::hash_raw(*RLC_DST, tree.root_hash(), Scalar::ZERO);
 
@@ -242,7 +242,7 @@ impl<H: Hash> Prover<H> {
             })
             .collect();
 
-        let inner = fri::Prover::<H>::new(quotients, blowup_exp);
+        let inner = fri::Prover::<H>::new(quotients, degree_bound, blowup_exp);
         Self {
             degree_bound,
             blowup_exp,
