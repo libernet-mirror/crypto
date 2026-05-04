@@ -524,6 +524,11 @@ impl<H: Hash> Query<H> {
             step = step.square();
         }
 
+        let (left, right) = folds.last().unwrap();
+        if !left.is_constant() || !right.is_constant() {
+            return Err(anyhow!("final folded polynomial is not constant"));
+        }
+
         Ok(())
     }
 }
@@ -728,17 +733,95 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_one_polynomial() {
-        let polynomial =
-            Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]);
-        let prover = Prover::<Sha2Hash>::new(vec![polynomial], 4, 1);
-        assert_eq!(prover.degree_bound(), 4);
-        assert_eq!(prover.extended_domain_size(), 8);
+    fn test_prover_impl<H: Hash>(
+        polynomials: Vec<Polynomial>,
+        degree_bound: usize,
+        blowup_exp: usize,
+    ) {
+        let prover = Prover::<H>::new(polynomials, degree_bound, blowup_exp);
+        assert_eq!(prover.degree_bound(), degree_bound);
+        let n = degree_bound << blowup_exp;
+        assert_eq!(prover.extended_domain_size(), n);
         let commitment = prover.commit();
-        let query = prover.query(0);
-        assert_eq!(query.indices(), (0, 4));
-        assert!(query.verify(&commitment).is_ok());
+        for i in 0..n {
+            let query = prover.query(i);
+            assert_eq!(query.indices(), (i, (i + n / 2) % n));
+            assert_eq!(query.len(), degree_bound.trailing_zeros() as usize + 1);
+            assert!(query.verify(&commitment).is_ok());
+        }
+    }
+
+    fn test_prover(polynomials: Vec<Polynomial>, degree_bound: usize) {
+        test_prover_impl::<Sha2Hash>(polynomials.clone(), degree_bound, 1);
+        test_prover_impl::<Poseidon2Hash>(polynomials.clone(), degree_bound, 1);
+        test_prover_impl::<Sha2Hash>(polynomials.clone(), degree_bound, 2);
+        test_prover_impl::<Poseidon2Hash>(polynomials.clone(), degree_bound, 2);
+        test_prover_impl::<Sha2Hash>(polynomials.clone(), degree_bound, 3);
+        test_prover_impl::<Poseidon2Hash>(polynomials.clone(), degree_bound, 3);
+    }
+
+    #[test]
+    fn test_one_constant_polynomial() {
+        test_prover(vec![Polynomial::with_coefficients(vec![12.into()])], 1);
+        test_prover(vec![Polynomial::with_coefficients(vec![34.into()])], 1);
+    }
+
+    #[test]
+    fn test_two_constant_polynomials() {
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![12.into()]),
+                Polynomial::with_coefficients(vec![34.into()]),
+            ],
+            1,
+        );
+    }
+
+    #[test]
+    fn test_three_constant_polynomials() {
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![34.into()]),
+                Polynomial::with_coefficients(vec![56.into()]),
+                Polynomial::with_coefficients(vec![78.into()]),
+            ],
+            1,
+        );
+    }
+
+    #[test]
+    fn test_one_polynomial_degree_one() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![12.into(), 34.into()])],
+            2,
+        );
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![56.into(), 78.into()])],
+            2,
+        );
+    }
+
+    #[test]
+    fn test_two_polynomials_degree_one() {
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![12.into(), 34.into()]),
+                Polynomial::with_coefficients(vec![56.into(), 78.into()]),
+            ],
+            2,
+        );
+    }
+
+    #[test]
+    fn test_three_polynomials_degree_one() {
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![34.into(), 56.into()]),
+                Polynomial::with_coefficients(vec![56.into(), 78.into()]),
+                Polynomial::with_coefficients(vec![78.into(), 90.into()]),
+            ],
+            2,
+        );
     }
 
     // TODO

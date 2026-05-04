@@ -23,9 +23,10 @@ static QUERY_DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"li
 static RLC_DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/pcs/rlc"));
 
 /// Returns the number of FRI queries required to achieve 128-bit security using a blowup factor of
-/// `2^blowup_exp`.
-pub fn num_queries(blowup_exp: usize) -> usize {
-    LAMBDA.div_ceil(blowup_exp)
+/// `2^blowup_exp` when opening `num_points` evaluation points.
+fn num_queries(blowup_exp: usize, num_points: usize) -> usize {
+    let extra = num_points.next_power_of_two().trailing_zeros() as usize;
+    (LAMBDA + extra).div_ceil(blowup_exp)
 }
 
 /// A batched DEEP-FRI polynomial commitment.
@@ -46,9 +47,14 @@ impl Commitment {
 
     /// Returns the indices to query in FRI based on a Fiat-Shamir challenge derived from the Merkle
     /// root hash.
-    fn get_query_indices<H: Hash>(&self, degree_bound: usize, blowup_exp: usize) -> Vec<usize> {
+    fn get_query_indices<H: Hash>(
+        &self,
+        degree_bound: usize,
+        blowup_exp: usize,
+        num_points: usize,
+    ) -> Vec<usize> {
         let n = U256::from((degree_bound << blowup_exp) as u64);
-        let k = num_queries(blowup_exp);
+        let k = num_queries(blowup_exp, num_points);
         let mut indices = Vec::with_capacity(k);
         for i in 0..k {
             let hash = H::hash_many(
@@ -95,7 +101,11 @@ impl<H: Hash> Proof<H> {
     }
 
     pub fn verify(&self, commitment: &Commitment) -> Result<()> {
-        let indices = commitment.get_query_indices::<H>(self.degree_bound, self.blowup_exp);
+        let indices = commitment.get_query_indices::<H>(
+            self.degree_bound,
+            self.blowup_exp,
+            self.points.len(),
+        );
         if self.openings.len() != indices.len() {
             return Err(anyhow!(
                 "incorrect number of openings (got {}, want {})",
@@ -270,7 +280,11 @@ impl<H: Hash> Prover<H> {
 
     pub fn prove(&self) -> Proof<H> {
         let commitment = self.commit();
-        let indices = commitment.get_query_indices::<H>(self.degree_bound, self.blowup_exp);
+        let indices = commitment.get_query_indices::<H>(
+            self.degree_bound,
+            self.blowup_exp,
+            self.points.len(),
+        );
         let openings = indices
             .iter()
             .map(|&index| self.tree.query(index))
