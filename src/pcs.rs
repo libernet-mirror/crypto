@@ -29,6 +29,19 @@ fn num_queries(blowup_exp: usize, num_points: usize) -> usize {
     (LAMBDA + extra).div_ceil(blowup_exp)
 }
 
+/// Computes a random linear combination of a list of values.
+///
+/// `alpha` is a Fiat-Shamir challenge of some sort.
+fn rlc(values: &[Scalar], alpha: Scalar) -> Scalar {
+    let mut rlc = Scalar::ZERO;
+    let mut pow = Scalar::ONE;
+    for &value in values {
+        rlc += value * pow;
+        pow *= alpha;
+    }
+    rlc
+}
+
 /// A batched DEEP-FRI polynomial commitment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
@@ -142,15 +155,7 @@ impl<H: Hash> Proof<H> {
             }
             query.verify(&commitment.inner)?;
 
-            let combined = {
-                let mut rlc = Scalar::ZERO;
-                let mut pow = Scalar::ONE;
-                for &value in opening.leaf() {
-                    rlc += value * pow;
-                    pow *= alpha;
-                }
-                rlc
-            };
+            let combined = rlc(opening.leaf(), alpha);
 
             let (quotients, _) = query.values();
             if quotients.len() != self.points.len() {
@@ -163,15 +168,7 @@ impl<H: Hash> Proof<H> {
 
             let x = query.x();
             for ((&z, values), &quotient) in self.points.iter().zip(quotients.iter()) {
-                let v = {
-                    let mut rlc = Scalar::ZERO;
-                    let mut pow = Scalar::ONE;
-                    for &value in values {
-                        rlc += value * pow;
-                        pow *= alpha;
-                    }
-                    rlc
-                };
+                let v = rlc(values.as_slice(), alpha);
                 let numerator = combined - v;
                 let denominator = x - z;
                 if quotient * denominator != numerator {
@@ -250,15 +247,7 @@ impl<H: Hash> Prover<H> {
         let quotients = points
             .iter()
             .map(|(&z, values)| {
-                let value = {
-                    let mut rlc = Scalar::ZERO;
-                    let mut pow = Scalar::ONE;
-                    for &value in values {
-                        rlc += value * pow;
-                        pow *= alpha;
-                    }
-                    rlc
-                };
+                let value = rlc(values.as_slice(), alpha);
                 let (quotient, remainder) = (combined.clone() - value).horner(z);
                 assert_eq!(remainder, Scalar::ZERO);
                 quotient
