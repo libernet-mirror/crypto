@@ -28,22 +28,6 @@ pub fn num_queries(blowup_exp: usize) -> usize {
     LAMBDA.div_ceil(blowup_exp)
 }
 
-fn get_query_indices<H: Hash>(
-    root_hash: Scalar,
-    degree_bound: usize,
-    blowup_exp: usize,
-) -> Vec<usize> {
-    let n = U256::from((degree_bound << blowup_exp) as u64);
-    let k = num_queries(blowup_exp);
-    let mut indices = Vec::with_capacity(k);
-    for i in 0..k {
-        let hash = H::hash_raw(*QUERY_DST, root_hash, Scalar::from(i as u64));
-        let index = utils::scalar_to_u256(hash) % n;
-        indices.push(index.as_u64() as usize);
-    }
-    indices
-}
-
 /// A batched DEEP-FRI polynomial commitment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
@@ -63,7 +47,28 @@ impl Commitment {
     /// Returns the indices to query in FRI based on a Fiat-Shamir challenge derived from the Merkle
     /// root hash.
     fn get_query_indices<H: Hash>(&self, degree_bound: usize, blowup_exp: usize) -> Vec<usize> {
-        get_query_indices::<H>(self.root_hash, degree_bound, blowup_exp)
+        let n = U256::from((degree_bound << blowup_exp) as u64);
+        let k = num_queries(blowup_exp);
+        let mut indices = Vec::with_capacity(k);
+        for i in 0..k {
+            let hash = H::hash_many(
+                std::iter::once(*QUERY_DST)
+                    .chain(
+                        [
+                            Scalar::from(i as u64),
+                            self.root_hash,
+                            Scalar::from(self.inner.len() as u64),
+                        ]
+                        .into_iter(),
+                    )
+                    .chain(self.inner.roots().iter().cloned())
+                    .collect::<Vec<Scalar>>()
+                    .as_slice(),
+            );
+            let index = utils::scalar_to_u256(hash) % n;
+            indices.push(index.as_u64() as usize);
+        }
+        indices
     }
 }
 
@@ -264,8 +269,8 @@ impl<H: Hash> Prover<H> {
     }
 
     pub fn prove(&self) -> Proof<H> {
-        let indices =
-            get_query_indices::<H>(self.tree.root_hash(), self.degree_bound, self.blowup_exp);
+        let commitment = self.commit();
+        let indices = commitment.get_query_indices::<H>(self.degree_bound, self.blowup_exp);
         let openings = indices
             .iter()
             .map(|&index| self.tree.query(index))

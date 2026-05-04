@@ -101,6 +101,7 @@ impl Hash for Poseidon2Hash {
 fn hash_leaf<H: Hash>(values: &[Scalar]) -> Scalar {
     H::hash_many(
         std::iter::once(*LEAF_DST)
+            .chain(std::iter::once(Scalar::from(values.len() as u64)))
             .chain(values.iter().cloned())
             .collect::<Vec<Scalar>>()
             .as_slice(),
@@ -136,40 +137,6 @@ pub fn merklify<H: Hash>(mut values: &mut [Scalar], mut n: usize) {
         values = &mut values[n..];
         n = m;
     }
-}
-
-fn merkle_root_internal<H: Hash>(values: &[Scalar]) -> Scalar {
-    let n = values.len();
-    assert!(n.is_power_of_two());
-    if n > 1 {
-        H::hash(
-            merkle_root_internal::<H>(&values[0..(n / 2)]),
-            merkle_root_internal::<H>(&values[(n / 2)..n]),
-        )
-    } else {
-        values[0]
-    }
-}
-
-/// Calculates the Merkle root of the given set of polynomial evaluations.
-///
-/// The inner vectors are the evaluations of each polynomial and must all have the same length,
-/// which must be a power of 2. The outer slice represents an array of evaluated polynomials.
-///
-/// The returned value is compatible with `merklify` and calling `merkle_root::<H>(values)` is
-/// effectively equivalent to calling `merklify` with the same hash backend `H` and reading the root
-/// at index `(n - 1) * 2`. However, `merkle_root` is more efficient than `merklify` because it
-/// doesn't need the extra space allocation.
-///
-/// Running time: O(N).
-pub fn merkle_root<H: Hash>(values: &[Vec<Scalar>]) -> Scalar {
-    merkle_root_internal::<H>(
-        values
-            .iter()
-            .map(|values| H::hash_many(values.as_slice()))
-            .collect::<Vec<Scalar>>()
-            .as_slice(),
-    )
 }
 
 /// Stores the Merkle root hashes of a FRI commitment.
@@ -262,7 +229,9 @@ impl<H: Hash> LeafProof<H> {
             };
             index >>= 1;
         }
-        assert_eq!(index, 0);
+        if index != 0 {
+            return Err(anyhow!("invalid index"));
+        }
         if hash != root_hash {
             return Err(anyhow!(
                 "root hash mismatch (got {}, want {})",
@@ -582,7 +551,7 @@ impl<H: Hash> Prover<H> {
         );
 
         let n = degree_bound << blowup_exp;
-        assert!(n <= Scalar::S as usize);
+        assert!(n <= 1usize << Scalar::S);
 
         let main_tree = Tree::<H>::new(
             polynomials
@@ -750,97 +719,6 @@ mod tests {
                 parse_scalar("0x5e4a742eb4809793ef06d6c6f9878040bb34f2058f3aacb3b9eca24c56203c36"),
                 parse_scalar("0x4097efe42a882fcb78457cbc0549a00eeb1f923ea6ce0a210ea3b95320ec2cf1"),
             ]
-        );
-    }
-
-    #[test]
-    fn test_merkle_root_one_sha2() {
-        assert_eq!(
-            merkle_root::<Sha2Hash>(&[vec![12.into()]]),
-            parse_scalar("0x70f2261a2a020a7ae1fe4cd2a47244115f5243bebb22dc002adfc597e24a436a")
-        );
-    }
-
-    #[test]
-    fn test_merkle_root_one_poseidon2() {
-        assert_eq!(
-            merkle_root::<Poseidon2Hash>(&[vec![12.into()]]),
-            parse_scalar("0x45782306ba3302ebe2f07eacbf5d0c36a5f307dc1cde4f3f9e8196ef498eddf2")
-        );
-    }
-
-    #[test]
-    fn test_merkle_root_two_sha2() {
-        assert_eq!(
-            merkle_root::<Sha2Hash>(&[vec![34.into()], vec![56.into()]]),
-            parse_scalar("0x4eaa7af4dfd70ff8418a5753dd60fe4a6e6f0f98af030c4b30c51a806f03f5de")
-        );
-    }
-
-    #[test]
-    fn test_merkle_root_two_poseidon2() {
-        assert_eq!(
-            merkle_root::<Poseidon2Hash>(&[vec![34.into()], vec![56.into()]]),
-            parse_scalar("0x4e13560d1ea42657b5de5bf8a055a2f4b5d9757ddfb5be7c6f16dff5dc52abc8")
-        );
-    }
-
-    #[test]
-    fn test_merkle_root_two_polys_one_element() {
-        assert_eq!(
-            merkle_root::<Sha2Hash>(&[vec![12.into(), 34.into()]]),
-            parse_scalar("0x614eaeb45d6c697d7cf720c4c7c604efe3e2d7ee733caa3a67a951975bcfd1c7")
-        );
-    }
-
-    #[test]
-    fn test_merkle_root_two_polys_two_elements() {
-        assert_eq!(
-            merkle_root::<Sha2Hash>(&[vec![12.into(), 34.into()], vec![56.into(), 78.into()]]),
-            parse_scalar("0x4b6c34fae57b624fce3e71bcf11e0fd520c473d85b540d8fb62a9400aae31f81")
-        );
-    }
-
-    #[test]
-    fn test_merkle_root_two_polys_four_elements() {
-        assert_eq!(
-            merkle_root::<Sha2Hash>(&[
-                vec![12.into(), 34.into(), 56.into(), 78.into()],
-                vec![34.into(), 56.into(), 78.into(), 90.into()],
-            ]),
-            parse_scalar("0x5e6c5f7234b09aaecd96b4edb4ee2e50f610e33d8e55e57ab6ae2458c9c85421")
-        );
-    }
-
-    #[test]
-    fn test_merkle_root_three_polys_one_element() {
-        assert_eq!(
-            merkle_root::<Sha2Hash>(&[vec![12.into(), 34.into(), 56.into()]]),
-            parse_scalar("0x6ba46ed6f29f6a4f8e1a9d8f93b51f5e902143d00356b65b867dde9cc879a8d1")
-        );
-    }
-
-    #[test]
-    fn test_merkle_root_three_polys_two_elements() {
-        assert_eq!(
-            merkle_root::<Sha2Hash>(&[
-                vec![12.into(), 34.into(), 56.into()],
-                vec![42.into(), 43.into(), 44.into()],
-            ]),
-            parse_scalar("0x732d643b6abcdc15ef7f7cbc36407b31fe021d38251d01226955127e8c7932c6")
-        );
-    }
-
-    #[test]
-    fn test_merkle_root_three_polys_four_elements() {
-        assert_eq!(
-            merkle_root::<Sha2Hash>(&[
-                vec![12.into(), 34.into(), 56.into()],
-                vec![42.into(), 43.into(), 44.into()],
-                vec![90.into(), 78.into(), 56.into()],
-                vec![46.into(), 45.into(), 44.into()],
-            ]),
-            parse_scalar("0x16a660ffcd68990dc46293967c73361deb4ab9c83fdc20e5f7d69186b96d618a")
         );
     }
 
