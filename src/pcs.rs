@@ -1,12 +1,11 @@
 use crate::bluesky::Scalar;
-use crate::fri::{self, merklify};
+use crate::fri::{self, LeafProof, Tree};
 use crate::poly;
 use crate::utils;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
 use primitive_types::U256;
 use std::collections::{BTreeMap, BTreeSet};
-use std::marker::PhantomData;
 use std::sync::LazyLock;
 
 /// Re-export the available hash backends and other FRI APIs.
@@ -16,9 +15,6 @@ type Polynomial = poly::Polynomial<Scalar>;
 
 /// Target security level in bits.
 pub const LAMBDA: usize = 128;
-
-/// Domain separator tag used for hashing Merkle tree leaves.
-static LEAF_DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/pcs/leaf"));
 
 /// Domain separator tag for the Fiat-Shamir challenge used to derive query indices.
 static QUERY_DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/pcs/query"));
@@ -68,111 +64,6 @@ impl Commitment {
     /// root hash.
     fn get_query_indices<H: Hash>(&self, degree_bound: usize, blowup_exp: usize) -> Vec<usize> {
         get_query_indices::<H>(self.root_hash, degree_bound, blowup_exp)
-    }
-}
-
-/// A simple Merkle proof (not a FRI query).
-///
-/// The opened leaf is an array of K polynomial evaluations, where K is the number of batched
-/// polynomials.
-#[derive(Debug, Clone)]
-struct LeafProof<H: Hash> {
-    /// The opened evaluations, one for each batched polynomial.
-    leaf: Vec<Scalar>,
-    /// The inner FRI proof.
-    inner: fri::LeafProof<H>,
-}
-
-impl<H: Hash> LeafProof<H> {
-    /// Returns the opened evaluations, one for each batched polynomial.
-    fn leaf(&self) -> &[Scalar] {
-        self.leaf.as_slice()
-    }
-
-    /// Returns the length of the Merkle path.
-    ///
-    /// NOTE: this must be checked manually at verification time: it must be equal to the log2 of
-    /// the extended domain size.
-    fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    /// Verifies the proof.
-    fn verify(&self, index: usize, root_hash: Scalar) -> Result<()> {
-        let leaf_hash = H::hash_many(
-            std::iter::once(*LEAF_DST)
-                .chain(self.leaf.iter().cloned())
-                .collect::<Vec<Scalar>>()
-                .as_slice(),
-        );
-        self.inner.verify(index, leaf_hash, root_hash)
-    }
-}
-
-/// A Merkle tree whose leaves are multiple polynomial evaluations.
-///
-/// The tree has N leaf in total, with N being the size of the extended domain, and each leaf has K
-/// polynomial evaluations, with K being the number of committed polynomials.
-///
-/// The internal nodes are single hashes.
-#[derive(Debug, Clone)]
-struct Tree<H: Hash> {
-    /// The leaves of the tree (N leaves with K evaluations each).
-    leaves: Vec<Vec<Scalar>>,
-    /// The internal nodes of the tree. There are 2*N-1 nodes in this array, with N = number of
-    /// leaves. The nodes of the bottom layer are hashes of the corresponding leaves.
-    nodes: Vec<Scalar>,
-    _data: PhantomData<H>,
-}
-
-impl<H: Hash> Tree<H> {
-    /// Builds a Merkle tree over the given leaves.
-    ///
-    /// `leaves` has the usual layout: N leaves with K evaluations each, where N is the size of the
-    /// extended domain and K is the number of committed polynomials.
-    fn new(leaves: Vec<Vec<Scalar>>) -> Self {
-        let n = leaves.len();
-        assert!(n.is_power_of_two());
-        let k = leaves[0].len();
-        let mut nodes = vec![Scalar::ZERO; n * 2 - 1];
-        for i in 0..n {
-            assert_eq!(leaves[i].len(), k);
-            nodes[i] = H::hash_many(
-                std::iter::once(*LEAF_DST)
-                    .chain(leaves[i].iter().cloned())
-                    .collect::<Vec<Scalar>>()
-                    .as_slice(),
-            );
-        }
-        merklify::<H>(nodes.as_mut_slice(), n);
-        Self {
-            leaves,
-            nodes,
-            _data: Default::default(),
-        }
-    }
-
-    /// Returns the number of leaves in the tree, ie. the size of the extended evaluation domain.
-    fn num_leaves(&self) -> usize {
-        self.leaves.len()
-    }
-
-    /// Returns the root hash of the Merkle tree.
-    fn root(&self) -> Scalar {
-        let n = self.leaves.len();
-        self.nodes[(n - 1) * 2]
-    }
-
-    /// Opens the leaf at `index`, returning a Merkle proof for it.
-    ///
-    /// `index` must be strictly less than `num_leaves()`.
-    fn query(&self, index: usize) -> LeafProof<H> {
-        let n = self.leaves.len();
-        assert!(index < n);
-        LeafProof {
-            leaf: self.leaves[index].clone(),
-            inner: fri::LeafProof::<H>::new(&self.nodes, n, index),
-        }
     }
 }
 
@@ -236,7 +127,7 @@ impl<H: Hash> Proof<H> {
             }
             query.verify(&commitment.inner)?;
 
-            let mut combined = {
+            let combined = {
                 let mut rlc = Scalar::ZERO;
                 let mut pow = Scalar::ONE;
                 for &value in opening.leaf() {
@@ -245,9 +136,9 @@ impl<H: Hash> Proof<H> {
                 }
                 rlc
             };
-            let (quotient, _) = query.values();
+            let (quotients, _) = query.values();
 
-            for (&z, values) in &self.points {
+            for ((&z, values), &quotient) in self.points.iter().zip(quotients.iter()) {
                 let v = {
                     let mut rlc = Scalar::ZERO;
                     let mut pow = Scalar::ONE;
@@ -258,15 +149,11 @@ impl<H: Hash> Proof<H> {
                     rlc
                 };
                 let x = Scalar::MULTIPLICATIVE_GENERATOR * query.x();
-                combined = (combined - v)
-                    * (x - z)
-                        .invert()
-                        .into_option()
-                        .context("one or more opened points are not off-domain")?;
-            }
-
-            if quotient != combined {
-                return Err(anyhow!("algebraic check failed at query index {index}"));
+                let numerator = combined - v;
+                let denominator = x - z;
+                if quotient * denominator != numerator {
+                    return Err(anyhow!("algebraic check failed at query index {index}"));
+                }
             }
         }
 
@@ -325,31 +212,37 @@ impl<H: Hash> Prover<H> {
         };
         let tree = Tree::<H>::new(leaves);
 
-        let alpha = H::hash_raw(*RLC_DST, tree.root(), Scalar::ZERO);
+        let alpha = H::hash_raw(*RLC_DST, tree.root_hash(), Scalar::ZERO);
 
-        let mut combined = Polynomial::default();
-        let mut pow = Scalar::ONE;
-        for polynomial in polynomials {
-            combined += polynomial * pow;
-            pow *= alpha;
-        }
+        let combined = {
+            let mut combined = Polynomial::default();
+            let mut pow = Scalar::ONE;
+            for polynomial in polynomials {
+                combined += polynomial * pow;
+                pow *= alpha;
+            }
+            combined
+        };
 
-        for (&z, values) in &points {
-            let value = {
-                let mut rlc = Scalar::ZERO;
-                let mut pow = Scalar::ONE;
-                for &value in values {
-                    rlc += value * pow;
-                    pow *= alpha;
-                }
-                rlc
-            };
-            let (quotient, remainder) = (combined - value).horner(z);
-            assert_eq!(remainder, Scalar::ZERO);
-            combined = quotient;
-        }
+        let quotients = points
+            .iter()
+            .map(|(&z, values)| {
+                let value = {
+                    let mut rlc = Scalar::ZERO;
+                    let mut pow = Scalar::ONE;
+                    for &value in values {
+                        rlc += value * pow;
+                        pow *= alpha;
+                    }
+                    rlc
+                };
+                let (quotient, remainder) = (combined.clone() - value).horner(z);
+                assert_eq!(remainder, Scalar::ZERO);
+                quotient
+            })
+            .collect();
 
-        let inner = fri::Prover::<H>::new(combined, degree_bound, blowup_exp);
+        let inner = fri::Prover::<H>::new(quotients, blowup_exp);
         Self {
             degree_bound,
             blowup_exp,
@@ -365,13 +258,14 @@ impl<H: Hash> Prover<H> {
 
     pub fn commit(&self) -> Commitment {
         Commitment {
-            root_hash: self.tree.root(),
+            root_hash: self.tree.root_hash(),
             inner: self.inner.commit(),
         }
     }
 
     pub fn prove(&self) -> Proof<H> {
-        let indices = get_query_indices::<H>(self.tree.root(), self.degree_bound, self.blowup_exp);
+        let indices =
+            get_query_indices::<H>(self.tree.root_hash(), self.degree_bound, self.blowup_exp);
         let openings = indices
             .iter()
             .map(|&index| self.tree.query(index))
