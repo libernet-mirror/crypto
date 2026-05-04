@@ -19,6 +19,12 @@ static TREE_DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"lib
 /// Domain separator tag used when deriving the Fiat-Shamir challenge for FRI folding.
 static FOLD_DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/fri/fold"));
 
+/// The modular inverse of the multiplicative generator, used to correct the coset shift in the FRI
+/// fold formula: the standard formula divides by `x = g * omega^i`, so the fold coefficient is
+/// `alpha * g^{-1} * omega^{-i}`.
+static GENERATOR_INV: LazyLock<Scalar> =
+    LazyLock::new(|| Scalar::MULTIPLICATIVE_GENERATOR.invert().unwrap());
+
 /// A generic cryptographic hash backend for use with FRI.
 ///
 /// This trait is used for both binary Merkle trees and Fiat-Shamir challenges.
@@ -364,7 +370,7 @@ impl<H: Hash> Tree<H> {
         let n = self.leaves.len();
         assert!(n.is_power_of_two());
 
-        let alpha = H::hash_raw(*FOLD_DST, self.hashes[(n - 1) * 2], Scalar::ZERO);
+        let alpha = H::hash_raw(*FOLD_DST, self.hashes[(n - 1) * 2], Scalar::ZERO) * *GENERATOR_INV;
 
         let k = n.trailing_zeros();
         let omega_inv = Scalar::ROOT_OF_UNITY_INV.pow_vartime([1u64 << (Scalar::S - k), 0, 0, 0]);
@@ -485,7 +491,7 @@ impl<H: Hash> Query<H> {
         for r in 0..h {
             let (left, right) = &folds[r];
             let root_hash = commitment.roots()[r];
-            let alpha = H::hash_raw(*FOLD_DST, root_hash, Scalar::ZERO);
+            let alpha = H::hash_raw(*FOLD_DST, root_hash, Scalar::ZERO) * *GENERATOR_INV;
             let neg = right.leaf();
 
             if 1usize << left.len() != m {

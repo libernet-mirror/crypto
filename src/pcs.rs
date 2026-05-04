@@ -293,18 +293,18 @@ impl<H: Hash> Prover<H> {
 mod tests {
     use super::*;
 
-    fn test_prover<H: Hash>(
+    fn test_prover_impl<H: Hash>(
         polynomials: Vec<Polynomial>,
-        points: &[Scalar],
+        points: &[u64],
         degree_bound: usize,
         blowup_exp: usize,
     ) {
         let points = BTreeMap::from_iter(points.iter().cloned().map(|z| {
             (
-                z,
+                Scalar::from(z),
                 polynomials
                     .iter()
-                    .map(|polynomial| polynomial.evaluate(z))
+                    .map(|polynomial| polynomial.evaluate(z.into()))
                     .collect::<Vec<Scalar>>(),
             )
         }));
@@ -321,80 +321,162 @@ mod tests {
         assert_eq!(*proof.points(), points);
     }
 
-    #[test]
-    fn test_one_constant_polynomials_one_point_1() {
-        let polynomials = vec![Polynomial::with_coefficients(vec![12.into()])];
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 1, 1);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 1, 1);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 1, 2);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 1, 2);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 1, 3);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 1, 3);
+    fn test_prover(polynomials: Vec<Polynomial>, points: &[u64], degree_bound: usize) {
+        test_prover_impl::<Sha2Hash>(polynomials.clone(), points, degree_bound, 1);
+        test_prover_impl::<Poseidon2Hash>(polynomials.clone(), points, degree_bound, 1);
+        test_prover_impl::<Sha2Hash>(polynomials.clone(), points, degree_bound, 2);
+        test_prover_impl::<Poseidon2Hash>(polynomials.clone(), points, degree_bound, 2);
+        test_prover_impl::<Sha2Hash>(polynomials.clone(), points, degree_bound, 3);
+        test_prover_impl::<Poseidon2Hash>(polynomials, points, degree_bound, 3);
     }
 
     #[test]
-    fn test_one_constant_polynomials_one_point_2() {
-        let polynomials = vec![Polynomial::with_coefficients(vec![12.into()])];
-        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 1, 1);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 1, 1);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 1, 2);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 1, 2);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 1, 3);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 1, 3);
+    fn test_one_constant_polynomial_one_point_1() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![12.into()])],
+            &[123],
+            1,
+        );
     }
 
     #[test]
-    fn test_one_constant_polynomials_two_points() {
-        let polynomials = vec![Polynomial::with_coefficients(vec![12.into()])];
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 1);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 1);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 2);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 2);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 3);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 1, 3);
+    fn test_one_constant_polynomial_one_point_2() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![12.into()])],
+            &[321],
+            1,
+        );
+    }
+
+    #[test]
+    fn test_one_constant_polynomial_one_point_3() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![34.into()])],
+            &[123],
+            1,
+        );
+    }
+
+    #[test]
+    fn test_one_constant_polynomial_two_points() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![12.into()])],
+            &[123, 456],
+            1,
+        );
+    }
+
+    #[test]
+    fn test_one_constant_polynomial_three_points() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![12.into()])],
+            &[789, 456, 123],
+            1,
+        );
+    }
+
+    #[test]
+    fn test_one_polynomial_degree_one_one_point_1() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![12.into(), 34.into()])],
+            &[123],
+            2,
+        );
+    }
+
+    #[test]
+    fn test_one_polynomial_degree_one_one_point_2() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![12.into(), 34.into()])],
+            &[321],
+            2,
+        );
+    }
+
+    #[test]
+    fn test_one_polynomial_degree_one_one_point_3() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![34.into(), 56.into()])],
+            &[123],
+            2,
+        );
+    }
+
+    #[test]
+    fn test_one_polynomial_degree_one_two_points() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![12.into(), 34.into()])],
+            &[123, 456],
+            2,
+        );
+    }
+
+    #[test]
+    fn test_one_polynomial_degree_one_three_points() {
+        test_prover(
+            vec![Polynomial::with_coefficients(vec![12.into(), 34.into()])],
+            &[789, 456, 123],
+            2,
+        );
     }
 
     #[test]
     fn test_two_polynomials_degree_three_one_point_1() {
-        let polynomials = vec![
-            Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
-            Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
-        ];
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 4, 1);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 4, 1);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 4, 2);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 4, 2);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into()], 4, 3);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into()], 4, 3);
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
+                Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
+            ],
+            &[123],
+            4,
+        );
     }
 
     #[test]
     fn test_two_polynomials_degree_three_one_point_2() {
-        let polynomials = vec![
-            Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
-            Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
-        ];
-        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 4, 1);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 4, 1);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 4, 2);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 4, 2);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[321.into()], 4, 3);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[321.into()], 4, 3);
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
+                Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
+            ],
+            &[321],
+            4,
+        );
+    }
+
+    #[test]
+    fn test_two_polynomials_degree_three_one_point_3() {
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![45.into(), 44.into(), 43.into(), 42.into()]),
+                Polynomial::with_coefficients(vec![78.into(), 56.into(), 34.into(), 12.into()]),
+            ],
+            &[123],
+            4,
+        );
     }
 
     #[test]
     fn test_two_polynomials_degree_three_two_points() {
-        let polynomials = vec![
-            Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
-            Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
-        ];
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 1);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 1);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 2);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 2);
-        test_prover::<Sha2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 3);
-        test_prover::<Poseidon2Hash>(polynomials.clone(), &[123.into(), 456.into()], 4, 3);
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
+                Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
+            ],
+            &[123, 456],
+            4,
+        );
     }
 
-    // TODO
+    #[test]
+    fn test_two_polynomials_degree_three_three_points() {
+        test_prover(
+            vec![
+                Polynomial::with_coefficients(vec![12.into(), 34.into(), 56.into(), 78.into()]),
+                Polynomial::with_coefficients(vec![42.into(), 43.into(), 44.into(), 45.into()]),
+            ],
+            &[789, 456, 123],
+            4,
+        );
+    }
 }
