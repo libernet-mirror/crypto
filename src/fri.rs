@@ -443,7 +443,7 @@ impl<H: Hash> Query<H> {
     /// `N = degree_bound * 2^blowup_factor`. The shift consists of multiplying the actual domain
     /// element by `Scalar::MULTIPLICATIVE_GENERATOR`, consistently with `shifted_lde2`.
     pub fn x(&self) -> Scalar {
-        Scalar::MULTIPLICATIVE_GENERATOR * Polynomial::domain_element2(self.index, self.n)
+        Polynomial::coset_element2(self.index, self.n)
     }
 
     /// Returns the opened evaluations, one for every committed polynomial.
