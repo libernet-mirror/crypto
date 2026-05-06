@@ -42,24 +42,24 @@ fn rlc(values: &[Scalar], alpha: Scalar) -> Scalar {
     rlc
 }
 
-/// A batched DEEP-FRI polynomial commitment (see `Prover` for details).
+/// A batched DEEP-FRI polynomial commitment (see `Committer` for details).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
-    /// The root hash of the Merkle tree where the evaluations of all batched polynomials are
-    /// stored.
+    /// The root hashes of the Merkle trees where the evaluations of all batched polynomials are
+    /// stored. There is one root hash per polynomial batch.
     tree_roots: Vec<Scalar>,
     /// The underlying FRI commitment.
     inner: fri::Commitment,
 }
 
 impl Commitment {
-    /// Returns the root hash of the Merkle tree where all batched polynomials are stored.
+    /// Returns the root hashes of the Merkle trees where all batched polynomials are stored.
     pub fn tree_roots(&self) -> &[Scalar] {
         self.tree_roots.as_slice()
     }
 
-    /// Returns the indices to query in FRI based on a Fiat-Shamir challenge derived from the Merkle
-    /// root hash.
+    /// Returns the FRI query indices derived via Fiat-Shamir from the full commitment transcript
+    /// (all polynomial and FRI Merkle root hashes).
     fn get_query_indices<H: Hash>(
         &self,
         degree_bound: usize,
@@ -89,15 +89,16 @@ impl Commitment {
 
 /// Collects batches of polynomials and allows building a DEEP-FRI prover for them.
 ///
-/// This works by building Merkle trees on the batched polynomials, one tree, and eventually handing
-/// everything over to a newly constructed `Prover` (see the `commit` method).
+/// This works by building Merkle trees on the batched polynomials, one tree per batch, and
+/// eventually handing everything over to a newly constructed `Prover` (see the `commit` method).
 ///
 /// This two-stage Committer-Prover architecture allows getting Merkle roots for the proven
 /// polynomials before running the FRI folding argument and even before batching all polynomials, so
 /// that Fiat-Shamir challenges can be derived before any quotients are built.
 #[derive(Debug, Clone)]
 pub struct Committer<H: Hash> {
-    /// The proven degree bound. All batched polynomials
+    /// The proven degree bound. The degree of all batched polynomials must be strictly less than
+    /// this value.
     degree_bound: usize,
     /// The base-2 logarithm of the blowup factor.
     blowup_exp: usize,
@@ -197,6 +198,25 @@ impl<H: Hash> Committer<H> {
     /// (off-domain) X-coordinates; the corresponding Y-coordinates will be computed automatically
     /// for every batched polynomial.
     pub fn commit(self, points: BTreeSet<Scalar>) -> (Commitment, Prover<H>) {
+        {
+            let n = self.degree_bound << self.blowup_exp;
+            let g = Scalar::MULTIPLICATIVE_GENERATOR.pow_vartime([n as u64, 0, 0, 0]);
+            for &z in &points {
+                // All opened points must lie outside the evaluation domain.
+                assert_ne!(z.pow_vartime([n as u64, 0, 0, 0]), g);
+            }
+        }
+
+        let alpha = H::hash_many(
+            std::iter::once(*RLC_DST)
+                .chain(std::iter::once(Scalar::from(self.trees.len() as u64)))
+                .chain(self.trees.iter().map(|tree| tree.root_hash()))
+                .chain(std::iter::once(Scalar::from(points.len() as u64)))
+                .chain(points.iter().cloned())
+                .collect::<Vec<Scalar>>()
+                .as_slice(),
+        );
+
         let points: BTreeMap<Scalar, Vec<Scalar>> = points
             .iter()
             .map(|&z| {
@@ -209,14 +229,6 @@ impl<H: Hash> Committer<H> {
                 )
             })
             .collect();
-
-        let alpha = H::hash_many(
-            std::iter::once(*RLC_DST)
-                .chain(std::iter::once(Scalar::from(self.trees.len() as u64)))
-                .chain(self.trees.iter().map(|tree| tree.root_hash()))
-                .collect::<Vec<Scalar>>()
-                .as_slice(),
-        );
 
         let combined = {
             let mut combined = Polynomial::default();
@@ -270,8 +282,8 @@ pub struct Proof<H: Hash> {
     /// The outer array has one entry for every FRI query (`openings.len() == queries.len()`), and
     /// the inner arrays contain one proof for every Merkle tree.
     openings: Vec<Vec<LeafProof<H>>>,
-    /// FRI queries on the quotient. The number of queries is calculated by `num_queries` above and
-    /// is tuned so as to achieve 128-bit security.
+    /// FRI queries on the DEEP quotients. The number of queries is calculated by `num_queries`
+    /// above and is tuned so as to achieve 128-bit security.
     queries: Vec<fri::Query<H>>,
 }
 
@@ -320,6 +332,8 @@ impl<H: Hash> Proof<H> {
                     commitment.tree_roots().len() as u64
                 )))
                 .chain(commitment.tree_roots().iter().cloned())
+                .chain(std::iter::once(Scalar::from(self.points.len() as u64)))
+                .chain(self.points.keys().cloned())
                 .collect::<Vec<Scalar>>()
                 .as_slice(),
         );
@@ -419,8 +433,7 @@ impl<H: Hash> Prover<H> {
         self.degree_bound << self.blowup_exp
     }
 
-    /// Returns the number of Merkle trees constructed so far, corresponding to the number of
-    /// polynomial batches.
+    /// Returns the number of Merkle trees, corresponding to the number of polynomial batches.
     pub fn num_trees(&self) -> usize {
         self.trees.len()
     }
@@ -444,7 +457,7 @@ impl<H: Hash> Prover<H> {
     }
 
     /// Makes a DEEP-FRI proof opening the committed polynomials at the points specified at
-    /// committment time (see `Committer::commit()`).
+    /// commitment time (see `Committer::commit()`).
     pub fn prove(&self, commitment: &Commitment) -> Proof<H> {
         let indices = commitment.get_query_indices::<H>(
             self.degree_bound,
@@ -493,7 +506,6 @@ mod tests {
         assert_eq!(*prover.points(), points);
         let proof = prover.prove(&commitment);
         assert_eq!(proof.degree_bound(), degree_bound);
-        proof.verify(&commitment).unwrap(); // TODO: remove
         assert!(proof.verify(&commitment).is_ok());
         assert_eq!(*proof.points(), points);
     }
