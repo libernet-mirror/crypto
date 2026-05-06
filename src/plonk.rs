@@ -939,6 +939,19 @@ impl Circuit {
         Ok((accumulator, fixpoint_constraint, recurrence_constraint))
     }
 
+    fn split_polynomial(polynomial: Polynomial, n: usize) -> (Polynomial, Polynomial, Polynomial) {
+        let mut coefficients = polynomial.take();
+        coefficients.resize(n * 3, Scalar::ZERO);
+        let low = Vec::from(&coefficients[0..n]);
+        let mid = Vec::from(&coefficients[n..(n * 2)]);
+        let high = Vec::from(&coefficients[(n * 2)..(n * 3)]);
+        (
+            Polynomial::with_coefficients(low),
+            Polynomial::with_coefficients(mid),
+            Polynomial::with_coefficients(high),
+        )
+    }
+
     pub fn prove<H: Hash>(&self, mut witness: Witness, blowup_exp: usize) -> Result<Proof<H>> {
         witness.blind();
         if witness.size() != self.size {
@@ -1002,7 +1015,19 @@ impl Circuit {
 
         let omega = Polynomial::domain_element2(1, degree_bound);
 
-        committer.add_batch(vec![permutation_accumulator, quotient]);
+        let (accumulator_low, accumulator_mid, accumulator_high) =
+            Self::split_polynomial(permutation_accumulator, degree_bound);
+        let (quotient_low, quotient_mid, quotient_high) =
+            Self::split_polynomial(quotient, degree_bound);
+        committer.add_batch(vec![
+            accumulator_low,
+            accumulator_mid,
+            accumulator_high,
+            quotient_low,
+            quotient_mid,
+            quotient_high,
+        ]);
+
         let (commitment, prover) = committer.commit(BTreeSet::from([xi, xi * omega]));
         let inner_proof = prover.prove(&commitment);
 
