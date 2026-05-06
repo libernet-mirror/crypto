@@ -229,6 +229,18 @@ impl<H: Hash> Proof<H> {
 ///
 /// Polynomials are accepted in batches. Each batch has its own Merkle tree so that you can derive a
 /// Fiat-Shamir challenge after each batch.
+///
+/// The prover can be in either of two states: not committed and committed. The initial state is not
+/// committed; during this state the prover accepts polynomial batches. When the user calls `commit`
+/// for the first time the prover transitions into the committed states by calculating the quotient
+/// polynomials and running the FRI folding argument. At that point new batches can no longer be
+/// accepted.
+///
+/// Calling `commit` multiple times is okay, the folding argument runs only the first time. The
+/// returned commitment is always the same.
+///
+/// `prove` performs an implicit `commit` call internally, so it's okay to call it while the prover
+/// is not committed -- it will transition into committed automatically.
 #[derive(Debug, Clone)]
 pub struct Prover<H: Hash> {
     /// The proven degree bound. The degree of all batched polynomials should be this value minus
@@ -243,23 +255,19 @@ pub struct Prover<H: Hash> {
     trees: Vec<Tree<H>>,
     /// The underlying FRI prover for the DEEP quotients. There's one quotient for every opened
     /// point, all quotients are batched into the same FRI folding argument.
-    inner: fri::Prover<H>,
+    ///
+    /// The `Option` is `None` initially, when the prover is not committed; it gets filled in with
+    /// an actual prover during commitment.
+    inner_prover: Option<fri::Prover<H>>,
 }
 
 impl<H: Hash> Prover<H> {
-    pub fn new(polynomials: Vec<Polynomial>, points: BTreeSet<Scalar>, blowup_exp: usize) -> Self {
-        assert!(!polynomials.is_empty());
-        let k = polynomials.len();
-
-        let degree_bound = polynomials
-            .iter()
-            .map(|polynomial| polynomial.degree_bound())
-            .max()
-            .unwrap()
-            .next_power_of_two();
-        let n = degree_bound << blowup_exp;
-        assert!(n.trailing_zeros() <= Scalar::S);
-
+    pub fn new(
+        polynomials: Vec<Polynomial>,
+        points: BTreeSet<Scalar>,
+        degree_bound: usize,
+        blowup_exp: usize,
+    ) -> Self {
         let points: BTreeMap<Scalar, Vec<Scalar>> = points
             .into_iter()
             .map(|z| {
@@ -272,6 +280,76 @@ impl<H: Hash> Prover<H> {
                 )
             })
             .collect();
+
+        let mut prover = Self {
+            degree_bound,
+            blowup_exp,
+            points,
+            trees: vec![],
+            inner_prover: None,
+        };
+        prover.add_batch(polynomials);
+        prover
+    }
+
+    /// Returns the proven degree bound.
+    pub fn degree_bound(&self) -> usize {
+        self.degree_bound
+    }
+
+    /// Returns the size of the extended evaluation domain.
+    pub fn extended_domain_size(&self) -> usize {
+        self.degree_bound << self.blowup_exp
+    }
+
+    /// Returns a reference to the opened points. Keys are (off-domain) X-coordinates, values are
+    /// the corresponding evaluations (one for every committed polynomial).
+    pub fn points(&self) -> &BTreeMap<Scalar, Vec<Scalar>> {
+        &self.points
+    }
+
+    /// Returns the number of Merkle trees constructed so far, corresponding to the number of
+    /// polynomial batches.
+    pub fn num_trees(&self) -> usize {
+        self.trees.len()
+    }
+
+    /// Returns the i-th Merkle tree. `index` must be less than `num_trees()`.
+    pub fn tree(&self, index: usize) -> &Tree<H> {
+        &self.trees[index]
+    }
+
+    /// Returns the root hash of the i-th Merkle tree. `index` must be less than `num_trees()`.
+    ///
+    /// This value can be used to derive Fiat-Shamir challenges.
+    pub fn root_hash(&self, index: usize) -> Scalar {
+        self.trees[index].root_hash()
+    }
+
+    /// Adds a batch of polynomials.
+    ///
+    /// REQUIRES: the prover must be in the not committed state (`is_committed() == false`),
+    /// otherwise `add_batch` will assert.
+    ///
+    /// REQUIRES: `polynomials` must not be empty.
+    ///
+    /// REQUIRES: the degree of all specified polynomials must be strictly less than
+    /// `degree_bound()`.
+    pub fn add_batch(&mut self, polynomials: Vec<Polynomial>) {
+        assert!(!self.is_committed());
+
+        assert!(!polynomials.is_empty());
+        let k = polynomials.len();
+
+        let degree_bound = polynomials
+            .iter()
+            .map(|polynomial| polynomial.degree_bound())
+            .max()
+            .unwrap()
+            .next_power_of_two();
+        assert!(degree_bound <= self.degree_bound);
+        let n = self.degree_bound << self.blowup_exp;
+        assert!(n.trailing_zeros() <= Scalar::S);
 
         let leaves = {
             let evaluations = polynomials
@@ -288,7 +366,17 @@ impl<H: Hash> Prover<H> {
         };
         let tree = Tree::<H>::from_leaves(leaves);
 
-        let alpha = H::hash_many(&[*RLC_DST, Scalar::ONE, tree.root_hash()]);
+        self.trees.push(tree);
+    }
+
+    fn get_inner_prover_or_commit(&mut self) -> &fri::Prover<H> {
+        let alpha = H::hash_many(
+            std::iter::once(*RLC_DST)
+                .chain(std::iter::once(Scalar::from(self.trees.len() as u64)))
+                .chain(self.trees.iter().map(|tree| tree.root_hash()))
+                .collect::<Vec<Scalar>>()
+                .as_slice(),
+        );
 
         let combined = {
             let mut combined = Polynomial::default();
@@ -300,7 +388,8 @@ impl<H: Hash> Prover<H> {
             combined
         };
 
-        let quotients = points
+        let quotients = self
+            .points
             .iter()
             .map(|(&z, values)| {
                 let value = rlc(values.as_slice(), alpha);
@@ -310,40 +399,27 @@ impl<H: Hash> Prover<H> {
             })
             .collect();
 
-        let inner = fri::Prover::<H>::new(quotients, degree_bound, blowup_exp);
-        Self {
-            degree_bound,
-            blowup_exp,
-            points,
-            trees: vec![tree],
-            inner,
-        }
+        self.inner_prover = Some(fri::Prover::<H>::new(
+            quotients,
+            self.degree_bound,
+            self.blowup_exp,
+        ));
+        self.inner_prover.as_ref().unwrap()
     }
 
-    pub fn points(&self) -> &BTreeMap<Scalar, Vec<Scalar>> {
-        &self.points
+    /// Indicates whether this prover is in the committed state.
+    pub fn is_committed(&self) -> bool {
+        self.inner_prover.is_some()
     }
 
-    pub fn num_trees(&self) -> usize {
-        self.trees.len()
+    pub fn commit(&mut self) -> Commitment {
+        let tree_roots = self.trees.iter().map(|tree| tree.root_hash()).collect();
+        let inner_prover = self.get_inner_prover_or_commit();
+        let inner = inner_prover.commit();
+        Commitment { tree_roots, inner }
     }
 
-    pub fn tree(&self, index: usize) -> &Tree<H> {
-        &self.trees[index]
-    }
-
-    pub fn root_hash(&self, index: usize) -> Scalar {
-        self.trees[index].root_hash()
-    }
-
-    pub fn commit(&self) -> Commitment {
-        Commitment {
-            tree_roots: self.trees.iter().map(|tree| tree.root_hash()).collect(),
-            inner: self.inner.commit(),
-        }
-    }
-
-    pub fn prove(&self) -> Proof<H> {
+    pub fn prove(&mut self) -> Proof<H> {
         let commitment = self.commit();
         let indices = commitment.get_query_indices::<H>(
             self.degree_bound,
@@ -356,7 +432,7 @@ impl<H: Hash> Prover<H> {
             .collect();
         let queries = indices
             .iter()
-            .map(|&index| self.inner.query(index))
+            .map(|&index| self.inner_prover.as_ref().unwrap().query(index))
             .collect();
         Proof {
             degree_bound: self.degree_bound,
@@ -387,9 +463,10 @@ mod tests {
                     .collect::<Vec<Scalar>>(),
             )
         }));
-        let prover = Prover::<H>::new(
+        let mut prover = Prover::<H>::new(
             polynomials,
             points.iter().map(|(&z, _)| z).collect(),
+            degree_bound,
             blowup_exp,
         );
         assert_eq!(*prover.points(), points);

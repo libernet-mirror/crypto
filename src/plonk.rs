@@ -968,7 +968,7 @@ impl Circuit {
             ));
         }
 
-        let n = padded_size(self.size);
+        let degree_bound = padded_size(self.size);
 
         let public_inputs = self
             .public_inputs
@@ -1014,14 +1014,15 @@ impl Circuit {
             let constraint = gate_constraint
                 + permutation_fixpoint_constraint * alpha
                 + permutation_recurrence_constraint * alpha.square();
-            constraint.divide_by_zero(n)?
+            constraint.divide_by_zero(degree_bound)?
         };
 
-        let omega = Polynomial::domain_element2(1, n);
+        let omega = Polynomial::domain_element2(1, degree_bound);
 
-        let prover = pcs::Prover::<H>::new(
+        let mut prover = pcs::Prover::<H>::new(
             vec![left, right, out, permutation_accumulator, quotient],
             BTreeSet::from([xi, xi * omega]),
+            degree_bound,
             blowup_exp,
         );
 
