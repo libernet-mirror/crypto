@@ -275,6 +275,8 @@ impl<H: Hash> LeafProof<H> {
 /// The internal nodes are single hashes.
 #[derive(Debug, Clone)]
 pub struct Tree<H: Hash> {
+    /// Number of polynomials in the tree. This is the number of values in each leaf.
+    num_polys: usize,
     /// The leaves of the tree (N leaves with K evaluations each).
     leaves: Vec<Vec<Scalar>>,
     /// The internal nodes of the tree. There are 2*N-1 nodes in this array, with N = number of
@@ -285,14 +287,19 @@ pub struct Tree<H: Hash> {
 
 impl<H: Hash> Tree<H> {
     pub fn from_leaves(leaves: Vec<Vec<Scalar>>) -> Self {
+        let num_polys = leaves[0].len();
+        assert!(num_polys > 0);
         let n = leaves.len();
         assert!(n.is_power_of_two());
         let mut hashes = vec![Scalar::ZERO; n * 2 - 1];
         for i in 0..n {
-            hashes[i] = hash_leaf::<H>(leaves[i].as_slice());
+            let leaf = leaves[i].as_slice();
+            assert_eq!(leaf.len(), num_polys);
+            hashes[i] = hash_leaf::<H>(leaf);
         }
         merklify::<H>(hashes.as_mut_slice(), n);
         Self {
+            num_polys,
             leaves,
             hashes,
             _data: Default::default(),
@@ -325,16 +332,23 @@ impl<H: Hash> Tree<H> {
         Self::from_leaves(leaves)
     }
 
-    /// Returns the root hash of the Merkle tree.
-    pub fn root_hash(&self) -> Scalar {
-        let n = self.leaves.len();
-        self.hashes[(n - 1) * 2]
+    /// Returns the number of polynomials stored in the tree.
+    ///
+    /// Each leaf of the tree has this number of values.
+    pub fn num_polys(&self) -> usize {
+        self.num_polys
     }
 
     /// Returns the number of leaves in the tree, corresponding to the size of the evaluation domain
     /// (always a power of 2).
     pub fn num_leaves(&self) -> usize {
         self.leaves.len()
+    }
+
+    /// Returns the root hash of the Merkle tree.
+    pub fn root_hash(&self) -> Scalar {
+        let n = self.leaves.len();
+        self.hashes[(n - 1) * 2]
     }
 
     /// Returns a reference to the i-th leaf.
@@ -735,6 +749,7 @@ mod tests {
 
     fn test_merkle_tree<H: Hash>(leaves: Vec<Vec<Scalar>>, expected_root_hash: Scalar) {
         let tree = Tree::<H>::from_leaves(leaves.clone());
+        assert_eq!(tree.num_polys(), leaves[0].len());
         assert_eq!(tree.num_leaves(), leaves.len());
         assert_eq!(tree.root_hash(), expected_root_hash);
         for i in 0..leaves.len() {

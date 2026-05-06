@@ -379,6 +379,16 @@ impl<H: Hash> Prover<H> {
         );
 
         let combined = {
+            let n = self.extended_domain_size();
+            let polynomials = self
+                .trees
+                .iter()
+                .map(|tree| {
+                    let k = tree.num_polys();
+                    (0..k).map(move |i| (0..n).map(move |j| tree.leaf(j)[i]))
+                })
+                .flatten()
+                .map(|values| Polynomial::encode2(values.collect()));
             let mut combined = Polynomial::default();
             let mut pow = Scalar::ONE;
             for polynomial in polynomials {
