@@ -1021,13 +1021,12 @@ impl Circuit {
 
         let mut prover = pcs::Prover::<H>::new(
             vec![left, right, out, permutation_accumulator, quotient],
-            BTreeSet::from([xi, xi * omega]),
             degree_bound,
             blowup_exp,
         );
 
-        let commitment = prover.commit();
-        let inner_proof = prover.prove();
+        let commitment = prover.commit(BTreeSet::from([xi, xi * omega]));
+        let inner_proof = prover.prove(BTreeSet::from([xi, xi * omega]));
 
         Ok(Proof {
             public_inputs,

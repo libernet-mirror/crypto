@@ -248,11 +248,19 @@ pub struct Prover<H: Hash> {
     degree_bound: usize,
     /// The base-2 logarithm of the blowup factor.
     blowup_exp: usize,
-    /// The opened points. Keys are (off-domain) X-coordinates, values are the corresponding
-    /// evaluations (one for every committed polynomial).
-    points: BTreeMap<Scalar, Vec<Scalar>>,
+    /// All batched polynomials.
+    polynomials: Vec<Polynomial>,
     /// Raw Merkle trees for the committed polynomials, one for each batch.
     trees: Vec<Tree<H>>,
+    /// The opened points.
+    ///
+    /// The keys of the map are the (off-domain) X-coordinates of the points, while values are lists
+    /// of polynomial evaluations at that point. Each point is evaluated in K points, with K being
+    /// the number of committed polynomials.
+    ///
+    /// This data structure is initially empty and is filled in at commitment time, when the total
+    /// number K of polynomials becomes known.
+    points: BTreeMap<Scalar, Vec<Scalar>>,
     /// The underlying FRI prover for the DEEP quotients. There's one quotient for every opened
     /// point, all quotients are batched into the same FRI folding argument.
     ///
@@ -262,29 +270,12 @@ pub struct Prover<H: Hash> {
 }
 
 impl<H: Hash> Prover<H> {
-    pub fn new(
-        polynomials: Vec<Polynomial>,
-        points: BTreeSet<Scalar>,
-        degree_bound: usize,
-        blowup_exp: usize,
-    ) -> Self {
-        let points: BTreeMap<Scalar, Vec<Scalar>> = points
-            .into_iter()
-            .map(|z| {
-                (
-                    z,
-                    polynomials
-                        .iter()
-                        .map(|polynomial| polynomial.evaluate(z))
-                        .collect(),
-                )
-            })
-            .collect();
-
+    pub fn new(polynomials: Vec<Polynomial>, degree_bound: usize, blowup_exp: usize) -> Self {
         let mut prover = Self {
             degree_bound,
             blowup_exp,
-            points,
+            points: BTreeMap::default(),
+            polynomials: vec![],
             trees: vec![],
             inner_prover: None,
         };
@@ -300,12 +291,6 @@ impl<H: Hash> Prover<H> {
     /// Returns the size of the extended evaluation domain.
     pub fn extended_domain_size(&self) -> usize {
         self.degree_bound << self.blowup_exp
-    }
-
-    /// Returns a reference to the opened points. Keys are (off-domain) X-coordinates, values are
-    /// the corresponding evaluations (one for every committed polynomial).
-    pub fn points(&self) -> &BTreeMap<Scalar, Vec<Scalar>> {
-        &self.points
     }
 
     /// Returns the number of Merkle trees constructed so far, corresponding to the number of
@@ -324,6 +309,14 @@ impl<H: Hash> Prover<H> {
     /// This value can be used to derive Fiat-Shamir challenges.
     pub fn root_hash(&self, index: usize) -> Scalar {
         self.trees[index].root_hash()
+    }
+
+    /// Returns a reference to the opened points. Keys are (off-domain) X-coordinates, values are
+    /// the corresponding evaluations (one for every committed polynomial).
+    ///
+    /// Note that this data structure is initially empty, and is filled in at commitment time.
+    pub fn points(&self) -> &BTreeMap<Scalar, Vec<Scalar>> {
+        &self.points
     }
 
     /// Adds a batch of polynomials.
@@ -366,10 +359,24 @@ impl<H: Hash> Prover<H> {
         };
         let tree = Tree::<H>::from_leaves(leaves);
 
+        self.polynomials.extend(polynomials);
         self.trees.push(tree);
     }
 
-    fn get_inner_prover_or_commit(&mut self) -> &fri::Prover<H> {
+    fn get_inner_prover_or_commit(&mut self, points: BTreeSet<Scalar>) -> &fri::Prover<H> {
+        self.points = points
+            .iter()
+            .map(|&z| {
+                (
+                    z,
+                    self.polynomials
+                        .iter()
+                        .map(|polynomial| polynomial.evaluate(z))
+                        .collect(),
+                )
+            })
+            .collect();
+
         let alpha = H::hash_many(
             std::iter::once(*RLC_DST)
                 .chain(std::iter::once(Scalar::from(self.trees.len() as u64)))
@@ -379,20 +386,10 @@ impl<H: Hash> Prover<H> {
         );
 
         let combined = {
-            let n = self.extended_domain_size();
-            let polynomials = self
-                .trees
-                .iter()
-                .map(|tree| {
-                    let k = tree.num_polys();
-                    (0..k).map(move |i| (0..n).map(move |j| tree.leaf(j)[i]))
-                })
-                .flatten()
-                .map(|values| Polynomial::encode2(values.collect()));
             let mut combined = Polynomial::default();
             let mut pow = Scalar::ONE;
-            for polynomial in polynomials {
-                combined += polynomial * pow;
+            for polynomial in &self.polynomials {
+                combined += polynomial.clone() * pow;
                 pow *= alpha;
             }
             combined
@@ -422,15 +419,15 @@ impl<H: Hash> Prover<H> {
         self.inner_prover.is_some()
     }
 
-    pub fn commit(&mut self) -> Commitment {
+    pub fn commit(&mut self, points: BTreeSet<Scalar>) -> Commitment {
         let tree_roots = self.trees.iter().map(|tree| tree.root_hash()).collect();
-        let inner_prover = self.get_inner_prover_or_commit();
+        let inner_prover = self.get_inner_prover_or_commit(points);
         let inner = inner_prover.commit();
         Commitment { tree_roots, inner }
     }
 
-    pub fn prove(&mut self) -> Proof<H> {
-        let commitment = self.commit();
+    pub fn prove(&mut self, points: BTreeSet<Scalar>) -> Proof<H> {
+        let commitment = self.commit(points);
         let indices = commitment.get_query_indices::<H>(
             self.degree_bound,
             self.blowup_exp,
@@ -473,17 +470,13 @@ mod tests {
                     .collect::<Vec<Scalar>>(),
             )
         }));
-        let mut prover = Prover::<H>::new(
-            polynomials,
-            points.iter().map(|(&z, _)| z).collect(),
-            degree_bound,
-            blowup_exp,
-        );
+        let z: BTreeSet<Scalar> = points.iter().map(|(&z, _)| z).collect();
+        let mut prover = Prover::<H>::new(polynomials, degree_bound, blowup_exp);
+        let commitment = prover.commit(z.clone());
         assert_eq!(*prover.points(), points);
-        let commitment = prover.commit();
-        let proof = prover.prove();
+        let proof = prover.prove(z);
         assert_eq!(proof.degree_bound(), degree_bound);
-        proof.verify(&commitment).unwrap();
+        proof.verify(&commitment).unwrap(); // TODO: remove
         assert!(proof.verify(&commitment).is_ok());
         assert_eq!(*proof.points(), points);
     }
