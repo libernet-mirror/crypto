@@ -1822,5 +1822,106 @@ mod tests {
         test_circuit1::<Poseidon2Hash>(8);
     }
 
+    fn test_circuit1_with_helpers<H: Hash>(blowup_exp: usize) {
+        let mut builder = CircuitBuilder::default();
+        let input = Wire::LeftIn(builder.gate_count());
+        let gate1 = builder.add_square_gate(input.into());
+        let gate2 = builder.add_mul_gate(gate1.into(), input.into());
+        let gate3 = builder.add_sum_gate(input.into(), gate2.into());
+        let gate4 = builder.add_sum_with_const_gate(gate3.into(), 5.into());
+        builder.declare_public_gates([gate4.gate()]);
+        let witness = witness(
+            vec![3.into(), 9.into(), 3.into(), 30.into()],
+            vec![3.into(), 3.into(), 27.into(), 30.into()],
+            vec![9.into(), 27.into(), 30.into(), 35.into()],
+        );
+        assert!(builder.check_witness(&witness).is_ok());
+        let circuit = builder.build();
+        let proof = circuit.prove::<H>(witness, blowup_exp).unwrap();
+        let public_inputs = circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&gate4).unwrap(), 35.into());
+    }
+
+    #[test]
+    fn test_circuit1_with_helpers_blowup_2() {
+        test_circuit1_with_helpers::<Sha2Hash>(1);
+        test_circuit1_with_helpers::<Poseidon2Hash>(1);
+    }
+
+    #[test]
+    fn test_circuit1_with_helpers_blowup_4() {
+        test_circuit1_with_helpers::<Sha2Hash>(2);
+        test_circuit1_with_helpers::<Poseidon2Hash>(2);
+    }
+
+    fn test_circuit2<H: Hash>(blowup_exp: usize) {
+        let (circuit, gate) = build_test_circuit();
+        let proof = circuit
+            .prove::<H>(
+                witness(
+                    vec![4.into(), 16.into(), 4.into(), 68.into()],
+                    vec![4.into(), 4.into(), 64.into(), 5.into()],
+                    vec![16.into(), 64.into(), 68.into(), 73.into()],
+                ),
+                blowup_exp,
+            )
+            .unwrap();
+        let public_inputs = circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 73.into());
+    }
+
+    #[test]
+    fn test_circuit2_blowup_2() {
+        test_circuit2::<Sha2Hash>(1);
+        test_circuit2::<Poseidon2Hash>(1);
+    }
+
+    #[test]
+    fn test_circuit2_blowup_4() {
+        test_circuit2::<Sha2Hash>(2);
+        test_circuit2::<Poseidon2Hash>(2);
+    }
+
+    #[test]
+    fn test_circuit2_blowup_8() {
+        test_circuit2::<Sha2Hash>(3);
+        test_circuit2::<Poseidon2Hash>(3);
+    }
+
+    fn test_gate_constraint_violation<H: Hash>(blowup_exp: usize) {
+        let (circuit, _) = build_test_circuit();
+        assert!(
+            circuit
+                .prove::<H>(
+                    witness(
+                        vec![4.into(), 16.into(), 4.into(), 68.into()],
+                        vec![4.into(), 4.into(), 64.into(), 5.into()],
+                        vec![16.into(), 64.into(), 68.into(), 35.into()],
+                    ),
+                    blowup_exp
+                )
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_gate_constraint_violation_blowup_2() {
+        test_gate_constraint_violation::<Sha2Hash>(1);
+        test_gate_constraint_violation::<Poseidon2Hash>(1);
+    }
+
+    #[test]
+    fn test_gate_constraint_violation_blowup_4() {
+        test_gate_constraint_violation::<Sha2Hash>(2);
+        test_gate_constraint_violation::<Poseidon2Hash>(2);
+    }
+
+    #[test]
+    fn test_gate_constraint_violation_blowup_8() {
+        test_gate_constraint_violation::<Sha2Hash>(3);
+        test_gate_constraint_violation::<Poseidon2Hash>(3);
+    }
+
     // TODO
 }
