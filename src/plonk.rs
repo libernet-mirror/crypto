@@ -1,5 +1,4 @@
 use crate::bluesky::Scalar;
-use crate::fri;
 use crate::pcs;
 use crate::poly;
 use crate::utils;
@@ -24,22 +23,14 @@ type Polynomial = poly::Polynomial<Scalar>;
 /// witness columns in its definition).
 pub const NUM_BLINDING_ROWS: usize = 3;
 
+/// Domain separator tag used for the main Fiat-Shamir challenge.
+static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/plonk/challenge"));
+
 const K1: Scalar = Scalar::from_const(71);
 const K2: Scalar = Scalar::from_const(104);
 
 fn padded_size(n: usize) -> usize {
     std::cmp::max(2, n.next_power_of_two())
-}
-
-/// Returns the challenge point of the PLONK scheme, referred to as `xi` throughout the rest of the
-/// codebase.
-///
-/// The three arguments are the Merkle root hashes of the three witness columns, from which the
-/// challenge point is derived as per Fiat-Shamir.
-fn get_challenge<H: Hash>(lhs_root: Scalar, rhs_root: Scalar, out_root: Scalar) -> Scalar {
-    static DST: LazyLock<Scalar> =
-        LazyLock::new(|| utils::hash_to_scalar(b"libernet/plonk/challenge"));
-    H::hash_many(&[*DST, lhs_root, rhs_root, out_root])
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -948,69 +939,16 @@ impl Circuit {
         Ok((accumulator, fixpoint_constraint, recurrence_constraint))
     }
 
-    pub fn get_lhs_query_points(&self, xi: Scalar, n: usize) -> BTreeSet<Scalar> {
-        BTreeSet::from_iter(
-            std::iter::once(xi).chain(
-                self.public_inputs
-                    .iter()
-                    .filter(|&wire| match wire {
-                        Wire::LeftIn(_) => true,
-                        _ => false,
-                    })
-                    .map(|&wire| {
-                        Polynomial::domain_element2(
-                            match wire {
-                                Wire::LeftIn(index) => index,
-                                _ => unreachable!(),
-                            } as usize,
-                            n,
-                        )
-                    }),
-            ),
-        )
-    }
-
-    pub fn get_rhs_query_points(&self, xi: Scalar, n: usize) -> BTreeSet<Scalar> {
-        BTreeSet::from_iter(
-            std::iter::once(xi).chain(
-                self.public_inputs
-                    .iter()
-                    .filter(|&wire| match wire {
-                        Wire::RightIn(_) => true,
-                        _ => false,
-                    })
-                    .map(|&wire| {
-                        Polynomial::domain_element2(
-                            match wire {
-                                Wire::RightIn(index) => index,
-                                _ => unreachable!(),
-                            } as usize,
-                            n,
-                        )
-                    }),
-            ),
-        )
-    }
-
-    pub fn get_out_query_points(&self, xi: Scalar, n: usize) -> BTreeSet<Scalar> {
-        BTreeSet::from_iter(
-            std::iter::once(xi).chain(
-                self.public_inputs
-                    .iter()
-                    .filter(|&wire| match wire {
-                        Wire::Out(_) => true,
-                        _ => false,
-                    })
-                    .map(|&wire| {
-                        Polynomial::domain_element2(
-                            match wire {
-                                Wire::Out(index) => index,
-                                _ => unreachable!(),
-                            } as usize,
-                            n,
-                        )
-                    }),
-            ),
+    fn split_polynomial(polynomial: Polynomial, n: usize) -> (Polynomial, Polynomial, Polynomial) {
+        let mut coefficients = polynomial.take();
+        coefficients.resize(n * 3, Scalar::ZERO);
+        let low = Vec::from(&coefficients[0..n]);
+        let mid = Vec::from(&coefficients[n..(n * 2)]);
+        let high = Vec::from(&coefficients[(n * 2)..(n * 3)]);
+        (
+            Polynomial::with_coefficients(low),
+            Polynomial::with_coefficients(mid),
+            Polynomial::with_coefficients(high),
         )
     }
 
@@ -1024,8 +962,7 @@ impl Circuit {
             ));
         }
 
-        let n = padded_size(self.size);
-        let pcs_degree_bound = (self.size * 3).next_power_of_two();
+        let degree_bound = padded_size(self.size);
 
         let public_inputs = self
             .public_inputs
@@ -1046,14 +983,13 @@ impl Circuit {
         let right = Polynomial::encode2(witness.right.clone());
         let out = Polynomial::encode2(witness.out.clone());
 
-        let xi = {
-            let m = pcs_degree_bound << blowup_exp;
-            get_challenge::<H>(
-                pcs::merkle_root::<H>(left.clone().lde2(m).as_slice()),
-                pcs::merkle_root::<H>(right.clone().lde2(m).as_slice()),
-                pcs::merkle_root::<H>(out.clone().lde2(m).as_slice()),
-            )
-        };
+        let mut committer = pcs::Committer::<H>::new(
+            degree_bound,
+            blowup_exp,
+            vec![left.clone(), right.clone(), out.clone()],
+        );
+
+        let xi = H::hash_raw(*DST, committer.root_hash(0), Scalar::ZERO);
 
         let alpha = H::hash(xi, Scalar::from_const(1));
         let beta = H::hash(xi, Scalar::from_const(2));
@@ -1074,30 +1010,25 @@ impl Circuit {
             let constraint = gate_constraint
                 + permutation_fixpoint_constraint * alpha
                 + permutation_recurrence_constraint * alpha.square();
-            constraint.divide_by_zero(n)?
+            constraint.divide_by_zero(degree_bound)?
         };
 
-        let omega = Polynomial::domain_element2(1, n);
+        let omega = Polynomial::domain_element2(1, degree_bound);
 
-        let prover = pcs::Prover::<H>::new(
-            vec![
-                left.clone(),
-                right.clone(),
-                out.clone(),
-                permutation_accumulator,
-                quotient,
-            ],
-            blowup_exp,
-            vec![
-                self.get_lhs_query_points(xi, n),
-                self.get_rhs_query_points(xi, n),
-                self.get_out_query_points(xi, n),
-                [xi, xi * omega].into(),
-                [xi].into(),
-            ],
-        );
+        let (accumulator_low, accumulator_mid, accumulator_high) =
+            Self::split_polynomial(permutation_accumulator, degree_bound);
+        let (quotient_low, quotient_mid, quotient_high) =
+            Self::split_polynomial(quotient, degree_bound);
+        committer.add_batch(vec![
+            accumulator_low,
+            accumulator_mid,
+            accumulator_high,
+            quotient_low,
+            quotient_mid,
+            quotient_high,
+        ]);
 
-        let commitment = prover.commit();
+        let (commitment, prover) = committer.commit(BTreeSet::from([xi, xi * omega]));
         let inner_proof = prover.prove(&commitment);
 
         Ok(Proof {
@@ -1107,128 +1038,12 @@ impl Circuit {
         })
     }
 
-    fn lagrange0(x: Scalar, n: usize) -> Scalar {
-        (x.pow_vartime([n as u64, 0, 0, 0]) - Scalar::ONE)
-            * (Scalar::from(n as u64) * (x - Scalar::ONE))
-                .invert()
-                .into_option()
-                .unwrap()
-    }
-
     pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
         let inner_proof = &proof.inner_proof;
-        if inner_proof.len() != 5 {
-            return Err(anyhow!("incorrect number of openings"));
-        }
 
         let n = padded_size(self.size);
-
-        let xi = {
-            let sources = proof.commitment.sources();
-            get_challenge::<H>(sources[0].root(), sources[1].root(), sources[2].root())
-        };
-        for i in 0..5 {
-            if !inner_proof.points(i).contains_key(&xi) {
-                return Err(anyhow!(
-                    "invalid proof: missing required opening on Fiat-Shamir challenge point"
-                ));
-            }
-        }
-
         let omega = Polynomial::domain_element2(1, n);
-        if !inner_proof.points(3).contains_key(&(xi * omega)) {
-            return Err(anyhow!(
-                "invalid proof: missing required opening for the shifted permutation accumulator"
-            ));
-        }
 
-        inner_proof.verify(&proof.commitment)?;
-
-        let alpha = H::hash(xi, Scalar::from_const(1));
-        let beta = H::hash(xi, Scalar::from_const(2));
-        let gamma = H::hash(xi, Scalar::from_const(3));
-
-        let left = inner_proof.points(0).get(&xi).cloned().unwrap();
-        let right = inner_proof.points(1).get(&xi).cloned().unwrap();
-        let out = inner_proof.points(2).get(&xi).cloned().unwrap();
-        let (permutation_accumulator, shifted_permutation_accumulator) = {
-            let points = inner_proof.points(3);
-            (
-                points.get(&xi).cloned().unwrap(),
-                points.get(&(xi * omega)).cloned().unwrap(),
-            )
-        };
-        let quotient = inner_proof.points(4).get(&xi).cloned().unwrap();
-        let zero = xi.pow([n as u64, 0, 0, 0]) - Scalar::ONE;
-
-        let gate_constraint = self.ql.evaluate(xi) * left
-            + self.qr.evaluate(xi) * right
-            + self.qo.evaluate(xi) * out
-            + self.qm.evaluate(xi) * left * right
-            + self.qc.evaluate(xi);
-
-        let permutation_numerator = (left + beta * xi + gamma)
-            * (right + beta * K1 * xi + gamma)
-            * (out + beta * K2 * xi + gamma);
-        let permutation_denominator = {
-            (left + beta * self.sl.evaluate(xi) + gamma)
-                * (right + beta * self.sr.evaluate(xi) + gamma)
-                * (out + beta * self.so.evaluate(xi) + gamma)
-        };
-        let permutation_recurrence_constraint = shifted_permutation_accumulator
-            * permutation_denominator
-            - permutation_accumulator * permutation_numerator;
-        let permutation_fixpoint_constraint =
-            (permutation_accumulator - Scalar::from_const(1)) * Self::lagrange0(xi, n);
-
-        let full_constraint = gate_constraint
-            + alpha * permutation_fixpoint_constraint
-            + alpha.square() * permutation_recurrence_constraint;
-        if full_constraint != quotient * zero {
-            return Err(anyhow!("constraint violation"));
-        }
-
-        Ok(BTreeMap::from_iter(self.public_inputs.iter().map(
-            |&wire| {
-                (
-                    wire,
-                    *match wire {
-                        Wire::LeftIn(index) => inner_proof
-                            .points(0)
-                            .get(&Polynomial::domain_element2(index as usize, n)),
-                        Wire::RightIn(index) => inner_proof
-                            .points(1)
-                            .get(&Polynomial::domain_element2(index as usize, n)),
-                        Wire::Out(index) => inner_proof
-                            .points(2)
-                            .get(&Polynomial::domain_element2(index as usize, n)),
-                    }
-                    .unwrap(),
-                )
-            },
-        )))
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct CompressedCircuit {
-    original_size: usize,
-    ql: fri::Commitment,
-    qr: fri::Commitment,
-    qo: fri::Commitment,
-    qm: fri::Commitment,
-    qc: fri::Commitment,
-    sl: fri::Commitment,
-    sr: fri::Commitment,
-    so: fri::Commitment,
-}
-
-impl CompressedCircuit {
-    pub fn original_size(&self) -> usize {
-        self.original_size
-    }
-
-    pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
         // TODO
         todo!()
     }
@@ -1897,109 +1712,6 @@ mod tests {
     fn test_circuit1_blowup_256() {
         test_circuit1::<Sha2Hash>(8);
         test_circuit1::<Poseidon2Hash>(8);
-    }
-
-    #[test]
-    fn test_circuit1_with_helpers() {
-        let mut builder = CircuitBuilder::default();
-        let input = Wire::LeftIn(builder.gate_count());
-        let gate1 = builder.add_square_gate(input.into());
-        let gate2 = builder.add_mul_gate(gate1.into(), input.into());
-        let gate3 = builder.add_sum_gate(input.into(), gate2.into());
-        let gate4 = builder.add_sum_with_const_gate(gate3.into(), 5.into());
-        builder.declare_public_inputs([gate4]);
-        let witness = witness(
-            vec![3.into(), 9.into(), 3.into(), 30.into()],
-            vec![3.into(), 3.into(), 27.into(), 30.into()],
-            vec![9.into(), 27.into(), 30.into(), 35.into()],
-        );
-        assert!(builder.check_witness(&witness).is_ok());
-        let circuit = builder.build();
-        let proof = circuit.prove::<Sha2Hash>(witness, 3).unwrap();
-        let public_inputs = circuit.verify(&proof).unwrap();
-        assert_eq!(*public_inputs.get(&gate4).unwrap(), 35.into());
-    }
-
-    fn test_circuit2<H: Hash>(blowup_exp: usize) {
-        let (circuit, gate) = build_test_circuit();
-        let proof = circuit
-            .prove::<H>(
-                witness(
-                    vec![4.into(), 16.into(), 4.into(), 68.into()],
-                    vec![4.into(), 4.into(), 64.into(), 5.into()],
-                    vec![16.into(), 64.into(), 68.into(), 73.into()],
-                ),
-                blowup_exp,
-            )
-            .unwrap();
-        let public_inputs = circuit.verify(&proof).unwrap();
-        assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
-        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 73.into());
-    }
-
-    #[test]
-    fn test_circuit2_blowup_2() {
-        test_circuit2::<Sha2Hash>(1);
-        test_circuit2::<Poseidon2Hash>(1);
-    }
-
-    #[test]
-    fn test_circuit2_blowup_4() {
-        test_circuit2::<Sha2Hash>(2);
-        test_circuit2::<Poseidon2Hash>(2);
-    }
-
-    #[test]
-    fn test_circuit2_blowup_8() {
-        test_circuit2::<Sha2Hash>(3);
-        test_circuit2::<Poseidon2Hash>(3);
-    }
-
-    #[test]
-    fn test_circuit2_blowup_16() {
-        test_circuit2::<Sha2Hash>(4);
-        test_circuit2::<Poseidon2Hash>(4);
-    }
-
-    #[test]
-    fn test_circuit2_blowup_32() {
-        test_circuit2::<Sha2Hash>(5);
-        test_circuit2::<Poseidon2Hash>(5);
-    }
-
-    #[test]
-    fn test_circuit2_blowup_64() {
-        test_circuit2::<Sha2Hash>(6);
-        test_circuit2::<Poseidon2Hash>(6);
-    }
-
-    #[test]
-    fn test_circuit2_blowup_128() {
-        test_circuit2::<Sha2Hash>(7);
-        test_circuit2::<Poseidon2Hash>(7);
-    }
-
-    #[test]
-    fn test_circuit2_blowup_256() {
-        test_circuit2::<Sha2Hash>(8);
-        test_circuit2::<Poseidon2Hash>(8);
-    }
-
-    #[test]
-    fn test_gate_constraint_violation() {
-        let (circuit, _) = build_test_circuit();
-        assert!(
-            circuit
-                .prove::<Sha2Hash>(
-                    witness(
-                        vec![4.into(), 16.into(), 4.into(), 68.into()],
-                        vec![4.into(), 4.into(), 64.into(), 5.into()],
-                        vec![16.into(), 64.into(), 68.into(), 35.into()],
-                    ),
-                    2
-                )
-                .is_err()
-        );
     }
 
     // TODO

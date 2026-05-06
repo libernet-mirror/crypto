@@ -460,7 +460,7 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         omega.pow_vartime([index as u64, 0, 0, 0])
     }
 
-    /// Returns the X coordinate of the i-th point in the coset LDE domain used by `lde2`.
+    /// Returns the X coordinate of the i-th point in the coset LDE domain used by `shifted_lde2`.
     ///
     /// Equivalent to `F::MULTIPLICATIVE_GENERATOR * domain_element2(index, domain_size)`.
     ///
@@ -484,19 +484,20 @@ impl<F: PrimeField + Ord> Polynomial<F> {
     }
 
     /// Computes a low-degree extension of the polynomial by evaluating it at `m` points on the
-    /// coset `shift * <omega_m>`, where `omega_m` is a primitive `m`-th root of unity. The
-    /// evaluation points are `shift * omega_m^i` for `i = 0..m`.
+    /// coset `shift * <omega_m>`, where `omega_m` is a primitive `m`-th root of unity and `shift`
+    /// is the multiplicative generator of the field, `F::MULTIPLICATIVE_GENERATOR`. The evaluation
+    /// points are `shift * omega_m^i` for `i = 0..m`.
     ///
-    /// The algorithm implicitly shifts the evaluation domain so that the resulting values can be
-    /// used in (DEEP-)FRI without revealing any of the original values. The coset shift is applied
-    /// by multiplying each coefficient `a_k` by `F::MULTIPLICATIVE_GENERATOR^k` before the FFT,
-    /// which is equivalent to substituting `X -> shift * X` in the polynomial.
+    /// The algorithm shifts the evaluation domain so that the resulting values can be used in
+    /// (DEEP-)FRI without revealing any of the original values. The coset shift is applied by
+    /// multiplying each coefficient `a_k` by `F::MULTIPLICATIVE_GENERATOR^k` before the FFT, which
+    /// is equivalent to substituting `X -> shift * X` in the polynomial.
     ///
     /// REQUIRES: `m` must be a power of two at least as large as `self.len()`, and no larger than
     /// `2^(F::S)`.
     ///
     /// Running time: O(M*log(M)).
-    pub fn lde2(self, m: usize) -> Vec<F> {
+    pub fn shifted_lde2(self, m: usize) -> Vec<F> {
         assert!(m.is_power_of_two());
         assert!(m.trailing_zeros() <= F::S);
         assert!(self.coefficients.len() <= m);
@@ -653,7 +654,7 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
         omega.pow_vartime([index as u64, 0, 0, 0])
     }
 
-    /// Returns the X coordinate of the i-th point in the coset LDE domain used by `lde3`.
+    /// Returns the X coordinate of the i-th point in the coset LDE domain used by `shifted_lde3`.
     ///
     /// Equivalent to `F::MULTIPLICATIVE_GENERATOR * domain_element3(index, domain_size)`.
     ///
@@ -676,14 +677,21 @@ impl<F: PrimeField + Ord + ThreeAdicField> Polynomial<F> {
         self.evaluate(Self::coset_element3(index, domain_size))
     }
 
-    /// Computes a low-degree extension of the polynomial by evaluating it at `m` locations, where
-    /// `m` is greater than the current length returned by `len()`.
+    /// Computes a low-degree extension of the polynomial by evaluating it at `m` points on the
+    /// coset `shift * <omega_m>`, where `omega_m` is a primitive `m`-th root of unity and `shift`
+    /// is the multiplicative generator of the field, `F::MULTIPLICATIVE_GENERATOR`. The evaluation
+    /// points are `shift * omega_m^i` for `i = 0..m`.
     ///
-    /// REQUIRES: `m` must be a power of three, at least as large as `self.len()`, and no larger
-    /// than `3^(F::T)`.
+    /// The algorithm shifts the evaluation domain so that the resulting values can be used in
+    /// (DEEP-)FRI without revealing any of the original values. The coset shift is applied by
+    /// multiplying each coefficient `a_k` by `F::MULTIPLICATIVE_GENERATOR^k` before the FFT, which
+    /// is equivalent to substituting `X -> shift * X` in the polynomial.
+    ///
+    /// REQUIRES: `m` must be a power of three at least as large as `self.len()`, and no larger than
+    /// `3^(F::T)`.
     ///
     /// Running time: O(M*log(M)).
-    pub fn lde3(self, m: usize) -> Vec<F> {
+    pub fn shifted_lde3(self, m: usize) -> Vec<F> {
         assert!(xits::is_power_of_three(m));
         assert!(xits::ilog3(m) as u32 <= F::T);
         assert!(self.coefficients.len() <= m);
@@ -1947,7 +1955,7 @@ mod tests {
     fn test_lde2_same_size() {
         let values = vec![12.into(), 34.into(), 56.into(), 78.into()];
         let p = Polynomial::<Scalar>::encode2(values);
-        let lde = p.clone().lde2(4);
+        let lde = p.clone().shifted_lde2(4);
         assert_eq!(
             lde,
             vec![
@@ -1963,7 +1971,7 @@ mod tests {
     fn test_lde2_blowup2() {
         let values = vec![12.into(), 34.into(), 56.into(), 78.into()];
         let p = Polynomial::<Scalar>::encode2(values);
-        let lde = p.clone().lde2(8);
+        let lde = p.clone().shifted_lde2(8);
         assert_eq!(
             lde,
             vec![
@@ -1983,7 +1991,7 @@ mod tests {
     fn test_lde2_blowup4() {
         let values = vec![1.into(), 2.into(), 3.into(), 4.into()];
         let p = Polynomial::<Scalar>::encode2(values);
-        let lde = p.clone().lde2(16);
+        let lde = p.clone().shifted_lde2(16);
         assert_eq!(
             lde,
             vec![
@@ -2013,7 +2021,7 @@ mod tests {
         let p = Polynomial::<Scalar>::encode2(values);
         assert_eq!(p.len(), 1);
         assert_eq!(p.degree_bound(), 1);
-        let lde = p.clone().lde2(4);
+        let lde = p.clone().shifted_lde2(4);
         assert_eq!(
             lde,
             vec![
@@ -2029,7 +2037,7 @@ mod tests {
     fn test_lde3_same_size() {
         let values = vec![12.into(), 34.into(), 56.into()];
         let p = Polynomial::<Scalar>::encode3(values.clone());
-        let lde = p.clone().lde3(3);
+        let lde = p.clone().shifted_lde3(3);
         assert_eq!(
             lde,
             vec![
@@ -2044,7 +2052,7 @@ mod tests {
     fn test_lde3_blowup3() {
         let values = vec![12.into(), 34.into(), 56.into()];
         let p = Polynomial::<Scalar>::encode3(values);
-        let lde = p.clone().lde3(9);
+        let lde = p.clone().shifted_lde3(9);
         assert_eq!(
             lde,
             vec![
@@ -2065,7 +2073,7 @@ mod tests {
     fn test_lde3_blowup9() {
         let values = vec![1.into(), 2.into(), 3.into()];
         let p = Polynomial::<Scalar>::encode3(values);
-        let lde = p.clone().lde3(27);
+        let lde = p.clone().shifted_lde3(27);
         assert_eq!(
             lde,
             vec![
@@ -2104,7 +2112,7 @@ mod tests {
     fn test_lde3_nine_values_blowup3() {
         let values = (1u64..=9).map(Scalar::from).collect();
         let p = Polynomial::<Scalar>::encode3(values);
-        let lde = p.clone().lde3(27);
+        let lde = p.clone().shifted_lde3(27);
         assert_eq!(
             lde,
             vec![
@@ -2145,7 +2153,7 @@ mod tests {
         let p = Polynomial::<Scalar>::encode3(values);
         assert_eq!(p.len(), 1);
         assert_eq!(p.degree_bound(), 1);
-        let lde = p.clone().lde3(9);
+        let lde = p.clone().shifted_lde3(9);
         assert_eq!(
             lde,
             vec![
