@@ -87,15 +87,34 @@ impl Commitment {
     }
 }
 
+/// Collects batches of polynomials and allows building a DEEP-FRI prover for them.
+///
+/// This works by building Merkle trees on the batched polynomials, one tree, and eventually handing
+/// everything over to a newly constructed `Prover` (see the `commit` method).
+///
+/// This two-stage Committer-Prover architecture allows getting Merkle roots for the proven
+/// polynomials before running the FRI folding argument and even before batching all polynomials, so
+/// that Fiat-Shamir challenges can be derived before any quotients are built.
 #[derive(Debug, Clone)]
 pub struct Committer<H: Hash> {
+    /// The proven degree bound. All batched polynomials
     degree_bound: usize,
+    /// The base-2 logarithm of the blowup factor.
     blowup_exp: usize,
+    /// All polynomials batched so far.
     polynomials: Vec<Polynomial>,
+    /// The Merkle trees built so far.
+    ///
+    /// The sum of all `num_polys` of all trees must match the number of `polynomials`.
     trees: Vec<Tree<H>>,
 }
 
 impl<H: Hash> Committer<H> {
+    /// Constructs a `Committer` with the given degree bound, blowup factor, and first batch of
+    /// polynomials.
+    ///
+    /// We require specifying the first batch because our DEEP-FRI protocol requires at least one
+    /// committed polynomial to work.
     pub fn new(degree_bound: usize, blowup_exp: usize, polynomials: Vec<Polynomial>) -> Self {
         let mut committer = Self {
             degree_bound,
@@ -171,6 +190,12 @@ impl<H: Hash> Committer<H> {
         self.trees.push(Tree::<H>::from_leaves(leaves));
     }
 
+    /// Consumes the `Committer`, calculates all DEEP quotients, and returns a polynomial
+    /// `Commitment` and a DEEP-FRI `Prover`.
+    ///
+    /// `points` is the set of points to open in the `Prover`. The contained scalars are
+    /// (off-domain) X-coordinates; the corresponding Y-coordinates will be computed automatically
+    /// for every batched polynomial.
     pub fn commit(self, points: BTreeSet<Scalar>) -> (Commitment, Prover<H>) {
         let points: BTreeMap<Scalar, Vec<Scalar>> = points
             .iter()
@@ -230,11 +255,11 @@ impl<H: Hash> Committer<H> {
     }
 }
 
-/// A DEEP-FRI proof (see `Prover` for details).
+/// A DEEP-FRI proof.
 #[derive(Debug, Clone)]
 pub struct Proof<H: Hash> {
-    /// The proven degree bound. The degree of all batched polynomials should be this value minus
-    /// one.
+    /// The proven degree bound. If the proof is valid the degree of all batched polynomials is
+    /// guaranteed to be strictly less than this value.
     degree_bound: usize,
     /// The base-2 logarithm of the blowup factor.
     blowup_exp: usize,
@@ -364,30 +389,10 @@ impl<H: Hash> Proof<H> {
 
 /// A DEEP-FRI prover.
 ///
-/// This implementation features batching allowing for multiple polynomials and multiple opened
-/// (off-domain) points, all with a single FRI proof. The only limitation is that once a point is
-/// opened it's opened for *all* committed polynomials, so if you need to maintain secrecy on a
-/// subset of the committed polynomials for one or more opened locations you need to use separate
-/// provers.
-///
-/// Polynomials are accepted in batches. Each batch has its own Merkle tree so that you can derive a
-/// Fiat-Shamir challenge after each batch.
-///
-/// The prover can be in either of two states: not committed and committed. The initial state is not
-/// committed; during this state the prover accepts polynomial batches. When the user calls `commit`
-/// for the first time the prover transitions into the committed states by calculating the quotient
-/// polynomials and running the FRI folding argument. At that point new batches can no longer be
-/// accepted.
-///
-/// Calling `commit` multiple times is okay, the folding argument runs only the first time. The
-/// returned commitment is always the same.
-///
-/// `prove` performs an implicit `commit` call internally, so it's okay to call it while the prover
-/// is not committed -- it will transition into committed automatically.
+/// `Prover`s are constructed by `Committer::commit()`; see that method for details.
 #[derive(Debug, Clone)]
 pub struct Prover<H: Hash> {
-    /// The proven degree bound. The degree of all batched polynomials should be this value minus
-    /// one.
+    /// The degree bound to prove.
     degree_bound: usize,
     /// The base-2 logarithm of the blowup factor.
     blowup_exp: usize,
@@ -396,17 +401,10 @@ pub struct Prover<H: Hash> {
     /// The opened points.
     ///
     /// The keys of the map are the (off-domain) X-coordinates of the points, while values are lists
-    /// of polynomial evaluations at that point. Each point is evaluated in K points, with K being
-    /// the number of committed polynomials.
-    ///
-    /// This data structure is initially empty and is filled in at commitment time, when the total
-    /// number K of polynomials becomes known.
+    /// of polynomial evaluations at that point (one for every committed polynomial).
     points: BTreeMap<Scalar, Vec<Scalar>>,
     /// The underlying FRI prover for the DEEP quotients. There's one quotient for every opened
-    /// point, all quotients are batched into the same FRI folding argument.
-    ///
-    /// The `Option` is `None` initially, when the prover is not committed; it gets filled in with
-    /// an actual prover during commitment.
+    /// point, and all quotients are batched into the same FRI folding argument.
     inner_prover: fri::Prover<H>,
 }
 
@@ -441,12 +439,12 @@ impl<H: Hash> Prover<H> {
 
     /// Returns a reference to the opened points. Keys are (off-domain) X-coordinates, values are
     /// the corresponding evaluations (one for every committed polynomial).
-    ///
-    /// Note that this data structure is initially empty, and is filled in at commitment time.
     pub fn points(&self) -> &BTreeMap<Scalar, Vec<Scalar>> {
         &self.points
     }
 
+    /// Makes a DEEP-FRI proof opening the committed polynomials at the points specified at
+    /// committment time (see `Committer::commit()`).
     pub fn prove(&self, commitment: &Commitment) -> Proof<H> {
         let indices = commitment.get_query_indices::<H>(
             self.degree_bound,
