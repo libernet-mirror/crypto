@@ -42,20 +42,20 @@ fn rlc(values: &[Scalar], alpha: Scalar) -> Scalar {
     rlc
 }
 
-/// A batched DEEP-FRI polynomial commitment.
+/// A batched DEEP-FRI polynomial commitment (see `Prover` for details).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commitment {
     /// The root hash of the Merkle tree where the evaluations of all batched polynomials are
     /// stored.
-    root_hash: Scalar,
+    tree_roots: Vec<Scalar>,
     /// The underlying FRI commitment.
     inner: fri::Commitment,
 }
 
 impl Commitment {
     /// Returns the root hash of the Merkle tree where all batched polynomials are stored.
-    pub fn root_hash(&self) -> Scalar {
-        self.root_hash
+    pub fn tree_roots(&self) -> &[Scalar] {
+        self.tree_roots.as_slice()
     }
 
     /// Returns the indices to query in FRI based on a Fiat-Shamir challenge derived from the Merkle
@@ -72,15 +72,11 @@ impl Commitment {
         for i in 0..k {
             let hash = H::hash_many(
                 std::iter::once(*QUERY_DST)
-                    .chain(
-                        [
-                            Scalar::from(i as u64),
-                            self.root_hash,
-                            Scalar::from(self.inner.len() as u64),
-                        ]
-                        .into_iter(),
-                    )
+                    .chain(std::iter::once(Scalar::from(self.tree_roots.len() as u64)))
+                    .chain(self.tree_roots.iter().cloned())
+                    .chain(std::iter::once(Scalar::from(self.inner.len() as u64)))
                     .chain(self.inner.roots().iter().cloned())
+                    .chain(std::iter::once(Scalar::from(i as u64)))
                     .collect::<Vec<Scalar>>()
                     .as_slice(),
             );
@@ -91,28 +87,44 @@ impl Commitment {
     }
 }
 
+/// A DEEP-FRI proof (see `Prover` for details).
 #[derive(Debug, Clone)]
 pub struct Proof<H: Hash> {
+    /// The proven degree bound. The degree of all batched polynomials should be this value minus
+    /// one.
     degree_bound: usize,
+    /// The base-2 logarithm of the blowup factor.
     blowup_exp: usize,
+    /// The opened points. Keys are (off-domain) X-coordinates, values are the corresponding
+    /// evaluations (one for every committed polynomial).
     points: BTreeMap<Scalar, Vec<Scalar>>,
-    openings: Vec<LeafProof<H>>,
+    /// Merkle proofs of the opened points, relative to the raw Merkle trees (not the FRI folds).
+    /// The outer array has one entry for every FRI query (`openings.len() == queries.len()`), and
+    /// the inner arrays contain one proof for every Merkle tree.
+    openings: Vec<Vec<LeafProof<H>>>,
+    /// FRI queries on the quotient. The number of queries is calculated by `num_queries` above and
+    /// is tuned so as to achieve 128-bit security.
     queries: Vec<fri::Query<H>>,
 }
 
 impl<H: Hash> Proof<H> {
+    /// Returns the proven degree bound.
     pub fn degree_bound(&self) -> usize {
         self.degree_bound
     }
 
+    /// Returns the size of the extended evaluation domain.
     pub fn extended_domain_size(&self) -> usize {
         self.degree_bound << self.blowup_exp
     }
 
+    /// Returns a reference to the opened points. Keys are (off-domain) X-coordinates, values are
+    /// the corresponding evaluations (one for every committed polynomial).
     pub fn points(&self) -> &BTreeMap<Scalar, Vec<Scalar>> {
         &self.points
     }
 
+    /// Verifies this proof against the given commitment.
     pub fn verify(&self, commitment: &Commitment) -> Result<()> {
         let indices = commitment.get_query_indices::<H>(
             self.degree_bound,
@@ -134,8 +146,17 @@ impl<H: Hash> Proof<H> {
             ));
         }
 
-        let alpha = H::hash_raw(*RLC_DST, commitment.root_hash, Scalar::ZERO);
-        for ((query, opening), &expected_index) in
+        let alpha = H::hash_many(
+            std::iter::once(*RLC_DST)
+                .chain(std::iter::once(Scalar::from(
+                    commitment.tree_roots().len() as u64
+                )))
+                .chain(commitment.tree_roots().iter().cloned())
+                .collect::<Vec<Scalar>>()
+                .as_slice(),
+        );
+
+        for ((query, openings), &expected_index) in
             (self.queries.iter().zip(self.openings.iter())).zip(indices.iter())
         {
             let (index, _) = query.indices();
@@ -145,17 +166,34 @@ impl<H: Hash> Proof<H> {
                 ));
             }
 
-            if 1usize << opening.len() != self.extended_domain_size() {
-                return Err(anyhow!("invalid opening for index {index}"));
+            if openings.len() != commitment.tree_roots().len() {
+                return Err(anyhow!(
+                    "incorrect number of openings for index {index} (got {}, want {})",
+                    openings.len(),
+                    commitment.tree_roots().len()
+                ));
             }
-            opening.verify(index, commitment.root_hash)?;
+            for (&root_hash, opening) in commitment.tree_roots().iter().zip(openings.iter()) {
+                if 1usize << opening.len() != self.extended_domain_size() {
+                    return Err(anyhow!("invalid opening for index {index}"));
+                }
+                opening.verify(index, root_hash)?;
+            }
 
             if 1usize << (query.len() - 1) != self.degree_bound {
                 return Err(anyhow!("invalid low-degree proof for index {index}"));
             }
             query.verify(&commitment.inner)?;
 
-            let combined = rlc(opening.leaf(), alpha);
+            let combined = rlc(
+                openings
+                    .iter()
+                    .map(|proof| proof.leaf().iter().cloned())
+                    .flatten()
+                    .collect::<Vec<Scalar>>()
+                    .as_slice(),
+                alpha,
+            );
 
             let (quotients, _) = query.values();
             if quotients.len() != self.points.len() {
@@ -181,12 +219,30 @@ impl<H: Hash> Proof<H> {
     }
 }
 
+/// A DEEP-FRI prover.
+///
+/// This implementation features batching allowing for multiple polynomials and multiple opened
+/// (off-domain) points, all with a single FRI proof. The only limitation is that once a point is
+/// opened it's opened for *all* committed polynomials, so if you need to maintain secrecy on a
+/// subset of the committed polynomials for one or more opened locations you need to use separate
+/// provers.
+///
+/// Polynomials are accepted in batches. Each batch has its own Merkle tree so that you can derive a
+/// Fiat-Shamir challenge after each batch.
 #[derive(Debug, Clone)]
 pub struct Prover<H: Hash> {
+    /// The proven degree bound. The degree of all batched polynomials should be this value minus
+    /// one.
     degree_bound: usize,
+    /// The base-2 logarithm of the blowup factor.
     blowup_exp: usize,
+    /// The opened points. Keys are (off-domain) X-coordinates, values are the corresponding
+    /// evaluations (one for every committed polynomial).
     points: BTreeMap<Scalar, Vec<Scalar>>,
-    tree: Tree<H>,
+    /// Raw Merkle trees for the committed polynomials, one for each batch.
+    trees: Vec<Tree<H>>,
+    /// The underlying FRI prover for the DEEP quotients. There's one quotient for every opened
+    /// point, all quotients are batched into the same FRI folding argument.
     inner: fri::Prover<H>,
 }
 
@@ -232,7 +288,7 @@ impl<H: Hash> Prover<H> {
         };
         let tree = Tree::<H>::from_leaves(leaves);
 
-        let alpha = H::hash_raw(*RLC_DST, tree.root_hash(), Scalar::ZERO);
+        let alpha = H::hash_many(&[*RLC_DST, Scalar::ONE, tree.root_hash()]);
 
         let combined = {
             let mut combined = Polynomial::default();
@@ -259,7 +315,7 @@ impl<H: Hash> Prover<H> {
             degree_bound,
             blowup_exp,
             points,
-            tree,
+            trees: vec![tree],
             inner,
         }
     }
@@ -268,9 +324,21 @@ impl<H: Hash> Prover<H> {
         &self.points
     }
 
+    pub fn num_trees(&self) -> usize {
+        self.trees.len()
+    }
+
+    pub fn tree(&self, index: usize) -> &Tree<H> {
+        &self.trees[index]
+    }
+
+    pub fn root_hash(&self, index: usize) -> Scalar {
+        self.trees[index].root_hash()
+    }
+
     pub fn commit(&self) -> Commitment {
         Commitment {
-            root_hash: self.tree.root_hash(),
+            tree_roots: self.trees.iter().map(|tree| tree.root_hash()).collect(),
             inner: self.inner.commit(),
         }
     }
@@ -284,7 +352,7 @@ impl<H: Hash> Prover<H> {
         );
         let openings = indices
             .iter()
-            .map(|&index| self.tree.query(index))
+            .map(|&index| self.trees.iter().map(|tree| tree.query(index)).collect())
             .collect();
         let queries = indices
             .iter()
@@ -328,6 +396,7 @@ mod tests {
         let commitment = prover.commit();
         let proof = prover.prove();
         assert_eq!(proof.degree_bound(), degree_bound);
+        proof.verify(&commitment).unwrap();
         assert!(proof.verify(&commitment).is_ok());
         assert_eq!(*proof.points(), points);
     }
