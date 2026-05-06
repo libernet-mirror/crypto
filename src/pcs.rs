@@ -275,6 +275,8 @@ pub struct Proof<H: Hash> {
     degree_bound: usize,
     /// The base-2 logarithm of the blowup factor.
     blowup_exp: usize,
+    /// Number of committed polynomials.
+    num_polys: usize,
     /// The opened points. Keys are (off-domain) X-coordinates, values are the corresponding
     /// evaluations (one for every committed polynomial).
     points: BTreeMap<Scalar, Vec<Scalar>>,
@@ -296,6 +298,11 @@ impl<H: Hash> Proof<H> {
     /// Returns the size of the extended evaluation domain.
     pub fn extended_domain_size(&self) -> usize {
         self.degree_bound << self.blowup_exp
+    }
+
+    /// Returns the number of committed polynomials.
+    pub fn num_polys(&self) -> usize {
+        self.num_polys
     }
 
     /// Returns a reference to the opened points. Keys are (off-domain) X-coordinates, values are
@@ -433,6 +440,11 @@ impl<H: Hash> Prover<H> {
         self.degree_bound << self.blowup_exp
     }
 
+    /// Returns the number of committed polynomials.
+    pub fn num_polys(&self) -> usize {
+        self.trees.iter().map(|tree| tree.num_polys()).sum()
+    }
+
     /// Returns the number of Merkle trees, corresponding to the number of polynomial batches.
     pub fn num_trees(&self) -> usize {
         self.trees.len()
@@ -475,6 +487,7 @@ impl<H: Hash> Prover<H> {
         Proof {
             degree_bound: self.degree_bound,
             blowup_exp: self.blowup_exp,
+            num_polys: self.num_polys(),
             points: self.points.clone(),
             openings,
             queries,
@@ -492,6 +505,7 @@ mod tests {
         degree_bound: usize,
         blowup_exp: usize,
     ) {
+        let num_polys = polynomials.len();
         let points = BTreeMap::from_iter(points.iter().cloned().map(|z| {
             (
                 Scalar::from(z),
@@ -503,9 +517,15 @@ mod tests {
         }));
         let committer = Committer::<H>::new(degree_bound, blowup_exp, polynomials);
         let (commitment, prover) = committer.commit(points.iter().map(|(&z, _)| z).collect());
+        assert_eq!(prover.degree_bound(), degree_bound);
+        assert_eq!(prover.extended_domain_size(), degree_bound << blowup_exp);
+        assert_eq!(prover.num_polys(), num_polys);
+        assert_eq!(prover.num_trees(), 1);
         assert_eq!(*prover.points(), points);
         let proof = prover.prove(&commitment);
         assert_eq!(proof.degree_bound(), degree_bound);
+        assert_eq!(proof.extended_domain_size(), degree_bound << blowup_exp);
+        assert_eq!(proof.num_polys(), num_polys);
         assert!(proof.verify(&commitment).is_ok());
         assert_eq!(*proof.points(), points);
     }
