@@ -1104,9 +1104,9 @@ impl Circuit {
                 + x.pow_vartime([n as u64 * 2, 0, 0, 0]) * accumulator_high
         };
         let quotient = {
-            let quotient_low = points[&xi][3];
-            let quotient_mid = points[&xi][4];
-            let quotient_high = points[&xi][5];
+            let quotient_low = points[&xi][6];
+            let quotient_mid = points[&xi][7];
+            let quotient_high = points[&xi][8];
             quotient_low
                 + xi.pow_vartime([n as u64, 0, 0, 0]) * quotient_mid
                 + xi.pow_vartime([n as u64 * 2, 0, 0, 0]) * quotient_high
