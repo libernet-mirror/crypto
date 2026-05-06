@@ -23,33 +23,14 @@ type Polynomial = poly::Polynomial<Scalar>;
 /// witness columns in its definition).
 pub const NUM_BLINDING_ROWS: usize = 3;
 
+/// Domain separator tag used for the main Fiat-Shamir challenge.
+static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/plonk/challenge"));
+
 const K1: Scalar = Scalar::from_const(71);
 const K2: Scalar = Scalar::from_const(104);
 
 fn padded_size(n: usize) -> usize {
     std::cmp::max(2, n.next_power_of_two())
-}
-
-/// Returns the challenge point of the PLONK scheme, referred to as `xi` throughout the rest of the
-/// codebase.
-///
-/// The three arguments are the three witness columns, from which the challenge point is derived as
-/// per Fiat-Shamir.
-fn get_challenge<H: Hash>(left: &[Scalar], right: &[Scalar], out: &[Scalar]) -> Scalar {
-    static DST: LazyLock<Scalar> =
-        LazyLock::new(|| utils::hash_to_scalar(b"libernet/plonk/challenge"));
-    let n = left.len();
-    assert_eq!(n, right.len());
-    assert_eq!(n, out.len());
-    H::hash_many(
-        std::iter::once(*DST)
-            .chain(std::iter::once(Scalar::from(n as u64)))
-            .chain(left.iter().cloned())
-            .chain(right.iter().cloned())
-            .chain(out.iter().cloned())
-            .collect::<Vec<Scalar>>()
-            .as_slice(),
-    )
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -985,19 +966,21 @@ impl Circuit {
             })
             .collect();
 
-        let xi = get_challenge::<H>(
-            witness.left.as_slice(),
-            witness.right.as_slice(),
-            witness.out.as_slice(),
+        let left = Polynomial::encode2(witness.left.clone());
+        let right = Polynomial::encode2(witness.right.clone());
+        let out = Polynomial::encode2(witness.out.clone());
+
+        let mut committer = pcs::Committer::<H>::new(
+            degree_bound,
+            blowup_exp,
+            vec![left.clone(), right.clone(), out.clone()],
         );
+
+        let xi = H::hash_raw(*DST, committer.root_hash(0), Scalar::ZERO);
 
         let alpha = H::hash(xi, Scalar::from_const(1));
         let beta = H::hash(xi, Scalar::from_const(2));
         let gamma = H::hash(xi, Scalar::from_const(3));
-
-        let left = Polynomial::encode2(witness.left.clone());
-        let right = Polynomial::encode2(witness.right.clone());
-        let out = Polynomial::encode2(witness.out.clone());
 
         let (
             permutation_accumulator,
@@ -1019,14 +1002,9 @@ impl Circuit {
 
         let omega = Polynomial::domain_element2(1, degree_bound);
 
-        let mut prover = pcs::Prover::<H>::new(
-            vec![left, right, out, permutation_accumulator, quotient],
-            degree_bound,
-            blowup_exp,
-        );
-
-        let commitment = prover.commit(BTreeSet::from([xi, xi * omega]));
-        let inner_proof = prover.prove(BTreeSet::from([xi, xi * omega]));
+        committer.add_batch(vec![permutation_accumulator, quotient]);
+        let (commitment, prover) = committer.commit(BTreeSet::from([xi, xi * omega]));
+        let inner_proof = prover.prove(&commitment);
 
         Ok(Proof {
             public_inputs,
