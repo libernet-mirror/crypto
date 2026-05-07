@@ -892,7 +892,8 @@ mod tests {
         let circuit = builder.build();
         assert_eq!(circuit.size(), expected_circuit_size);
         let proof = circuit.prove::<H>(witness, blowup_exp).unwrap();
-        let openings = circuit.verify(&proof).unwrap();
+        let compressed_circuit = circuit.to_compressed::<H>(blowup_exp);
+        let openings = compressed_circuit.verify(&proof).unwrap();
         assert_eq!(openings.len(), (inputs.len() + 1) * 3);
         for (i, wire) in input_wires.iter().enumerate() {
             assert_eq!(openings[wire], inputs[i]);
@@ -1000,7 +1001,8 @@ mod tests {
         let circuit = builder.build();
         assert_eq!(circuit.size(), expected_circuit_size);
         let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_EXP).unwrap();
-        let openings = circuit.verify(&proof).unwrap();
+        let compressed_circuit = circuit.to_compressed::<Sha2Hash>(BLOWUP_EXP);
+        let openings = compressed_circuit.verify(&proof).unwrap();
         assert_eq!(openings.len(), 3);
         assert_eq!(openings[&result_wire], result);
     }

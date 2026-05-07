@@ -874,6 +874,59 @@ impl Circuit {
         Witness::new(self.size)
     }
 
+    /// Constructs a `CompressedCircuit` from this circuit.
+    ///
+    /// NOTE: compressed circuits are specific to a given blowup factor.
+    pub fn compress<H: Hash>(&self, blowup_exp: usize) -> CompressedCircuit {
+        let circuit_commitment = {
+            let degree_bound = padded_size(self.size);
+            let committer = pcs::Committer::<H>::new(
+                degree_bound,
+                blowup_exp,
+                vec![
+                    self.ql.clone(),
+                    self.qr.clone(),
+                    self.qo.clone(),
+                    self.qm.clone(),
+                    self.qc.clone(),
+                    self.sl.clone(),
+                    self.sr.clone(),
+                    self.so.clone(),
+                ],
+            );
+            committer.root_hash(0)
+        };
+        CompressedCircuit {
+            original_size: self.size,
+            blowup_exp,
+            public_gates: self.public_gates.clone(),
+            circuit_commitment,
+        }
+    }
+
+    /// Converts this circuit into a compressed one.
+    ///
+    /// NOTE: compressed circuits are specific to a given blowup factor.
+    pub fn to_compressed<H: Hash>(self, blowup_exp: usize) -> CompressedCircuit {
+        let circuit_commitment = {
+            let degree_bound = padded_size(self.size);
+            let committer = pcs::Committer::<H>::new(
+                degree_bound,
+                blowup_exp,
+                vec![
+                    self.ql, self.qr, self.qo, self.qm, self.qc, self.sl, self.sr, self.so,
+                ],
+            );
+            committer.root_hash(0)
+        };
+        CompressedCircuit {
+            original_size: self.size,
+            blowup_exp,
+            public_gates: self.public_gates,
+            circuit_commitment,
+        }
+    }
+
     /// Builds the two polynomials used in the permutation argument. The components of the returned
     /// tuple are, respectively: the coordinate pair accumulator, the fixpoint constraint, and the
     /// recurrence constraint.
@@ -1041,34 +1094,6 @@ impl Circuit {
             commitment,
             inner_proof,
         })
-    }
-
-    pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
-        let circuit_commitment = {
-            let degree_bound = padded_size(self.size);
-            let committer = pcs::Committer::<H>::new(
-                degree_bound,
-                proof.blowup_exp(),
-                vec![
-                    self.ql.clone(),
-                    self.qr.clone(),
-                    self.qo.clone(),
-                    self.qm.clone(),
-                    self.qc.clone(),
-                    self.sl.clone(),
-                    self.sr.clone(),
-                    self.so.clone(),
-                ],
-            );
-            committer.root_hash(0)
-        };
-        CompressedCircuit {
-            original_size: self.size,
-            blowup_exp: proof.blowup_exp(),
-            public_gates: self.public_gates.clone(),
-            circuit_commitment,
-        }
-        .verify(proof)
     }
 }
 
@@ -1849,6 +1874,7 @@ mod tests {
 
     fn test_circuit1<H: Hash>(blowup_exp: usize) {
         let (circuit, gate) = build_test_circuit();
+        let compressed_circuit = circuit.compress::<H>(blowup_exp);
         let proof = circuit
             .prove::<H>(
                 witness(
@@ -1859,7 +1885,7 @@ mod tests {
                 blowup_exp,
             )
             .unwrap();
-        let public_inputs = circuit.verify(&proof).unwrap();
+        let public_inputs = compressed_circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
         assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 35.into());
     }
@@ -1927,8 +1953,9 @@ mod tests {
         );
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
+        let compressed_circuit = circuit.compress::<H>(blowup_exp);
         let proof = circuit.prove::<H>(witness, blowup_exp).unwrap();
-        let public_inputs = circuit.verify(&proof).unwrap();
+        let public_inputs = compressed_circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&gate4).unwrap(), 35.into());
     }
 
@@ -1946,6 +1973,7 @@ mod tests {
 
     fn test_circuit2<H: Hash>(blowup_exp: usize) {
         let (circuit, gate) = build_test_circuit();
+        let compressed_circuit = circuit.compress::<H>(blowup_exp);
         let proof = circuit
             .prove::<H>(
                 witness(
@@ -1956,7 +1984,7 @@ mod tests {
                 blowup_exp,
             )
             .unwrap();
-        let public_inputs = circuit.verify(&proof).unwrap();
+        let public_inputs = compressed_circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
         assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 73.into());
     }
@@ -2026,6 +2054,7 @@ mod tests {
             )
             .unwrap();
         let (verifier_circuit, gate) = build_test_circuit();
+        let verifier_circuit = verifier_circuit.to_compressed::<H>(blowup_exp);
         let public_inputs = verifier_circuit.verify(&proof).unwrap();
         assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
         assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 35.into());
@@ -2048,7 +2077,8 @@ mod tests {
             witness(vec![left.into()], vec![right.into()], vec![out.into()]),
             DEFAULT_BLOWUP_EXP,
         )?;
-        circuit.verify(&proof).unwrap();
+        let compressed_circuit = circuit.compress::<Sha2Hash>(DEFAULT_BLOWUP_EXP);
+        compressed_circuit.verify(&proof).unwrap();
         Ok(())
     }
 
@@ -2061,7 +2091,8 @@ mod tests {
             ),
             DEFAULT_BLOWUP_EXP,
         )?;
-        circuit.verify(&proof).unwrap();
+        let compressed_circuit = circuit.compress::<Sha2Hash>(DEFAULT_BLOWUP_EXP);
+        compressed_circuit.verify(&proof).unwrap();
         Ok(())
     }
 
@@ -2079,7 +2110,8 @@ mod tests {
             ),
             DEFAULT_BLOWUP_EXP,
         )?;
-        circuit.verify(&proof).unwrap();
+        let compressed_circuit = circuit.compress::<Sha2Hash>(DEFAULT_BLOWUP_EXP);
+        compressed_circuit.verify(&proof).unwrap();
         Ok(())
     }
 
@@ -2454,7 +2486,8 @@ mod tests {
         let mut witness = Witness::new(circuit.size());
         witness.assert_trit(WireOrUnconstrained::Unconstrained(value.into()));
         let proof = circuit.prove::<Sha2Hash>(witness, DEFAULT_BLOWUP_EXP)?;
-        circuit.verify(&proof)?;
+        let compressed_circuit = circuit.to_compressed::<Sha2Hash>(DEFAULT_BLOWUP_EXP);
+        compressed_circuit.verify(&proof)?;
         Ok(())
     }
 
@@ -2476,7 +2509,8 @@ mod tests {
         let input = witness.assert_constant(value.into());
         witness.assert_trit(input.into());
         let proof = circuit.prove::<Sha2Hash>(witness, DEFAULT_BLOWUP_EXP)?;
-        circuit.verify(&proof)?;
+        let compressed_circuit = circuit.to_compressed::<Sha2Hash>(DEFAULT_BLOWUP_EXP);
+        compressed_circuit.verify(&proof)?;
         Ok(())
     }
 
