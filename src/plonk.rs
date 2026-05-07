@@ -2041,6 +2041,78 @@ mod tests {
         test_gate_constraint_violation::<Poseidon2Hash>(3);
     }
 
+    fn test_compressed_circuit1<H: Hash>(blowup_exp: usize) {
+        let (circuit, gate) = build_test_circuit();
+        let proof = circuit
+            .prove::<H>(
+                witness(
+                    vec![3.into(), 9.into(), 3.into(), 30.into()],
+                    vec![3.into(), 3.into(), 27.into(), 5.into()],
+                    vec![9.into(), 27.into(), 30.into(), 35.into()],
+                ),
+                blowup_exp,
+            )
+            .unwrap();
+        let circuit = circuit.to_compressed::<H>(blowup_exp);
+        let public_inputs = circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 35.into());
+    }
+
+    #[test]
+    fn test_compressed_circuit1_blowup_2() {
+        test_compressed_circuit1::<Sha2Hash>(1);
+        test_compressed_circuit1::<Poseidon2Hash>(1);
+    }
+
+    #[test]
+    fn test_compressed_circuit1_blowup_4() {
+        test_compressed_circuit1::<Sha2Hash>(2);
+        test_compressed_circuit1::<Poseidon2Hash>(2);
+    }
+
+    #[test]
+    fn test_compressed_circuit1_blowup_8() {
+        test_compressed_circuit1::<Sha2Hash>(3);
+        test_compressed_circuit1::<Poseidon2Hash>(3);
+    }
+
+    fn test_compressed_circuit2<H: Hash>(blowup_exp: usize) {
+        let (circuit, gate) = build_test_circuit();
+        let proof = circuit
+            .prove::<H>(
+                witness(
+                    vec![4.into(), 16.into(), 4.into(), 68.into()],
+                    vec![4.into(), 4.into(), 64.into(), 5.into()],
+                    vec![16.into(), 64.into(), 68.into(), 73.into()],
+                ),
+                blowup_exp,
+            )
+            .unwrap();
+        let circuit = circuit.to_compressed::<H>(blowup_exp);
+        let public_inputs = circuit.verify(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::RightIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 73.into());
+    }
+
+    #[test]
+    fn test_compressed_circuit2_blowup_2() {
+        test_compressed_circuit2::<Sha2Hash>(1);
+        test_compressed_circuit2::<Poseidon2Hash>(1);
+    }
+
+    #[test]
+    fn test_compressed_circuit2_blowup_4() {
+        test_compressed_circuit2::<Sha2Hash>(2);
+        test_compressed_circuit2::<Poseidon2Hash>(2);
+    }
+
+    #[test]
+    fn test_compressed_circuit2_blowup_8() {
+        test_compressed_circuit2::<Sha2Hash>(3);
+        test_compressed_circuit2::<Poseidon2Hash>(3);
+    }
+
     fn test_compile_separately<H: Hash>(blowup_exp: usize) {
         let (prover_circuit, _) = build_test_circuit();
         let proof = prover_circuit
