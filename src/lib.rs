@@ -5,10 +5,10 @@ use crate::bluesky::Scalar;
 use wasm_bindgen::prelude::*;
 
 pub mod bluesky;
-pub mod fri2;
-pub mod fri3;
+pub mod fri;
 pub mod merkle;
 pub mod pcs;
+pub mod plonk;
 pub mod poly;
 pub mod poseidon;
 pub mod utils;

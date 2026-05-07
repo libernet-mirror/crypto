@@ -16,19 +16,19 @@ use subtle::{
 };
 
 #[inline(always)]
-fn add(a: u64, b: u64) -> (u64, u64) {
+const fn add(a: u64, b: u64) -> (u64, u64) {
     let sum = (a as u128) + (b as u128);
     (sum as u64, (sum >> 64) as u64)
 }
 
 #[inline(always)]
-fn sub(a: u64, b: u64) -> (u64, u64) {
+const fn sub(a: u64, b: u64) -> (u64, u64) {
     let ret = (a as u128).wrapping_sub(b as u128);
     (ret as u64, (ret >> 64) as u64)
 }
 
 #[inline(always)]
-fn mul(lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {
+const fn mul(lhs: u64, rhs: u64, carry: u64) -> (u64, u64) {
     let product = (lhs as u128) * (rhs as u128) + carry as u128;
     (product as u64, (product >> 64) as u64)
 }
@@ -128,7 +128,7 @@ impl Scalar {
     /// Subtracts p. Assumes no underflow, ie. `self` must be greater than or equal to p.
     ///
     /// Used in several algorithms to bring a value back into the [0, p) range.
-    fn subp(&self) -> Self {
+    const fn subp(&self) -> Self {
         let (s0, b0) = sub(self.0, Self::P[0]);
         let (s1, b1) = sbb(self.1, Self::P[1], b0);
         let (s2, b2) = sbb(self.2, Self::P[2], b1);
@@ -137,12 +137,30 @@ impl Scalar {
     }
 
     /// Compares raw scalars, ignoring Montgomery form.
-    fn cmp_raw(&self, other: &Self) -> Ordering {
-        (self.3, self.2, self.1, self.0).cmp(&(other.3, other.2, other.1, other.0))
+    const fn cmp_raw(&self, other: &Self) -> Ordering {
+        if self.3 < other.3 {
+            Ordering::Less
+        } else if self.3 > other.3 {
+            Ordering::Greater
+        } else if self.2 < other.2 {
+            Ordering::Less
+        } else if self.2 > other.2 {
+            Ordering::Greater
+        } else if self.1 < other.1 {
+            Ordering::Less
+        } else if self.1 > other.1 {
+            Ordering::Greater
+        } else if self.0 < other.0 {
+            Ordering::Less
+        } else if self.0 > other.0 {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
     }
 
     /// Performs Montgomery multiplication using CIOS over 64-bit limbs.
-    fn mont_mul(lhs: &Self, rhs: &Self) -> Self {
+    const fn mont_mul(lhs: &Self, rhs: &Self) -> Self {
         let mut t0: u64;
         let mut t1: u64;
         let mut t2: u64;
@@ -220,7 +238,7 @@ impl Scalar {
     /// This is exactly the same as `mont_mul(Scalar(1, 0, 0, 0))` but slightly faster because it
     /// exploits the fact that we're multiplying by (1, 0, 0, 0), so it skips all "row" phases and
     /// only performs the "redc" phases.
-    fn to_raw(&self) -> Self {
+    const fn to_raw(&self) -> Self {
         let mut t0 = self.0;
         let mut t1 = self.1;
         let mut t2 = self.2;
@@ -265,6 +283,12 @@ impl Scalar {
             Ordering::Greater => result.subp(),
             _ => result,
         }
+    }
+
+    /// Constructs scalars at compile time.
+    pub const fn from_const(value: u64) -> Scalar {
+        let raw = Self(value, 0, 0, 0);
+        Self::mont_mul(&raw, &Self::R)
     }
 
     /// Constructs a scalar from the given little-endian byte representation, returning `None` if
@@ -337,6 +361,62 @@ impl Scalar {
     pub fn to_le_u64(&self) -> [u64; 4] {
         let raw = self.to_raw();
         [raw.0, raw.1, raw.2, raw.3]
+    }
+
+    /// Constructs a scalar in constant time from the given little-endian byte representation,
+    /// returning `None` if the resulting value lies outside the field.
+    ///
+    /// REQUIRES: the length of `bytes` must be 32.
+    pub fn from_little_endian(bytes: &[u8]) -> CtOption<Self> {
+        assert!(bytes.len() == 32);
+        let raw = Self(
+            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+        );
+        let value = Self::mont_mul(&raw, &Self::R);
+        CtOption::new(value, !raw.ct_gt(&Self::MAX_RAW))
+    }
+
+    /// Converts this scalar to its canonical integer representation as a 32-byte little-endian
+    /// array.
+    pub fn to_little_endian(&self) -> [u8; 32] {
+        let raw = self.to_raw();
+        let mut bytes = [0u8; 32];
+        bytes[0..8].copy_from_slice(&raw.0.to_le_bytes());
+        bytes[8..16].copy_from_slice(&raw.1.to_le_bytes());
+        bytes[16..24].copy_from_slice(&raw.2.to_le_bytes());
+        bytes[24..32].copy_from_slice(&raw.3.to_le_bytes());
+        bytes
+    }
+
+    /// Constructs a scalar in constant time from the given big-endian byte representation,
+    /// returning `None` if the resulting value lies outside the field.
+    ///
+    /// REQUIRES: the length of `bytes` must be 32.
+    pub fn from_big_endian(bytes: &[u8]) -> CtOption<Self> {
+        assert!(bytes.len() == 32);
+        let raw = Self(
+            u64::from_be_bytes(bytes[24..32].try_into().unwrap()),
+            u64::from_be_bytes(bytes[16..24].try_into().unwrap()),
+            u64::from_be_bytes(bytes[8..16].try_into().unwrap()),
+            u64::from_be_bytes(bytes[0..8].try_into().unwrap()),
+        );
+        let value = Self::mont_mul(&raw, &Self::R);
+        CtOption::new(value, !raw.ct_gt(&Self::MAX_RAW))
+    }
+
+    /// Converts this scalar to its canonical integer representation as a 32-byte big-endian
+    /// array.
+    pub fn to_big_endian(&self) -> [u8; 32] {
+        let raw = self.to_raw();
+        let mut bytes = [0u8; 32];
+        bytes[0..8].copy_from_slice(&raw.3.to_be_bytes());
+        bytes[8..16].copy_from_slice(&raw.2.to_be_bytes());
+        bytes[16..24].copy_from_slice(&raw.1.to_be_bytes());
+        bytes[24..32].copy_from_slice(&raw.0.to_be_bytes());
+        bytes
     }
 
     /// Converts this scalar to a [`U256`] integer.
@@ -638,24 +718,11 @@ impl PrimeField for Scalar {
     type Repr = [u8; 32];
 
     fn from_repr(repr: Self::Repr) -> CtOption<Self> {
-        let raw = Self(
-            u64::from_le_bytes(repr[0..8].try_into().unwrap()),
-            u64::from_le_bytes(repr[8..16].try_into().unwrap()),
-            u64::from_le_bytes(repr[16..24].try_into().unwrap()),
-            u64::from_le_bytes(repr[24..32].try_into().unwrap()),
-        );
-        let value = Self::mont_mul(&raw, &Self::R);
-        CtOption::new(value, !Self::MAX_RAW.ct_lt(&raw))
+        Self::from_little_endian(&repr)
     }
 
     fn to_repr(&self) -> Self::Repr {
-        let raw = self.to_raw();
-        let mut bytes = [0u8; 32];
-        bytes[0..8].copy_from_slice(&raw.0.to_le_bytes());
-        bytes[8..16].copy_from_slice(&raw.1.to_le_bytes());
-        bytes[16..24].copy_from_slice(&raw.2.to_le_bytes());
-        bytes[24..32].copy_from_slice(&raw.3.to_le_bytes());
-        bytes
+        self.to_little_endian()
     }
 
     fn is_odd(&self) -> Choice {
@@ -1149,6 +1216,182 @@ mod tests {
         assert_eq!(
             Scalar::from(u64::MAX),
             parse_scalar("0x000000000000000000000000000000000000000000000000ffffffffffffffff")
+        );
+    }
+
+    #[test]
+    fn test_from_little_endian() {
+        assert_eq!(
+            format_scalar(
+                Scalar::from_little_endian(&[
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ])
+                .unwrap()
+            ),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_little_endian(&[
+                    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ])
+                .unwrap()
+            ),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_little_endian(&[
+                    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+                    23, 24, 25, 26, 27, 28, 29, 30, 31, 32
+                ])
+                .unwrap()
+            ),
+            "0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_little_endian(&[
+                    0, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255,
+                    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
+                ])
+                .unwrap()
+            ),
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
+        );
+        assert!(
+            Scalar::from_little_endian(&[
+                1, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
+            ])
+            .into_option()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn test_to_little_endian() {
+        assert_eq!(
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000000")
+                .to_little_endian(),
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000001")
+                .to_little_endian(),
+            [
+                1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201")
+                .to_little_endian(),
+            [
+                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+                24, 25, 26, 27, 28, 29, 30, 31, 32
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
+                .to_little_endian(),
+            [
+                0, 0, 0, 0, 0, 0, 0, 192, 71, 85, 155, 158, 242, 221, 115, 6, 254, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 127
+            ]
+        );
+    }
+
+    #[test]
+    fn test_from_big_endian() {
+        assert_eq!(
+            format_scalar(
+                Scalar::from_big_endian(&[
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0,
+                ])
+                .unwrap()
+            ),
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_big_endian(&[
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 1,
+                ])
+                .unwrap()
+            ),
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_big_endian(&[
+                    32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13,
+                    12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+                ])
+                .unwrap()
+            ),
+            "0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201"
+        );
+        assert_eq!(
+            format_scalar(
+                Scalar::from_big_endian(&[
+                    127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254,
+                    6, 115, 221, 242, 158, 155, 85, 71, 192, 0, 0, 0, 0, 0, 0, 0
+                ])
+                .unwrap()
+            ),
+            "0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000"
+        );
+        assert!(
+            Scalar::from_big_endian(&[
+                127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 6,
+                115, 221, 242, 158, 155, 85, 71, 192, 0, 0, 0, 0, 0, 0, 1
+            ])
+            .into_option()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn test_to_big_endian() {
+        assert_eq!(
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000000")
+                .to_big_endian(),
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x0000000000000000000000000000000000000000000000000000000000000001")
+                .to_big_endian(),
+            [
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 1,
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x201f1e1d1c1b1a191817161514131211100f0e0d0c0b0a090807060504030201")
+                .to_big_endian(),
+            [
+                32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12,
+                11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+            ]
+        );
+        assert_eq!(
+            parse_scalar("0x7ffffffffffffffffffffffffffffffe0673ddf29e9b5547c000000000000000")
+                .to_big_endian(),
+            [
+                127, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 6,
+                115, 221, 242, 158, 155, 85, 71, 192, 0, 0, 0, 0, 0, 0, 0
+            ]
         );
     }
 
