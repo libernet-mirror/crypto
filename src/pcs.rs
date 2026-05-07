@@ -23,10 +23,10 @@ static QUERY_DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"li
 static RLC_DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/pcs/rlc"));
 
 /// Returns the number of FRI queries required to achieve 128-bit security using a blowup factor of
-/// `2^blowup_exp` when opening `num_points` evaluation points.
-fn num_queries(blowup_exp: usize, num_points: usize) -> usize {
+/// `2^blowup_log2` when opening `num_points` evaluation points.
+fn num_queries(blowup_log2: usize, num_points: usize) -> usize {
     let extra = num_points.next_power_of_two().trailing_zeros() as usize;
-    (LAMBDA + extra).div_ceil(blowup_exp)
+    (LAMBDA + extra).div_ceil(blowup_log2)
 }
 
 /// Computes a random linear combination of a list of values.
@@ -63,11 +63,11 @@ impl Commitment {
     fn get_query_indices<H: Hash>(
         &self,
         degree_bound: usize,
-        blowup_exp: usize,
+        blowup_log2: usize,
         num_points: usize,
     ) -> Vec<usize> {
-        let n = U256::from((degree_bound << blowup_exp) as u64);
-        let k = num_queries(blowup_exp, num_points);
+        let n = U256::from((degree_bound << blowup_log2) as u64);
+        let k = num_queries(blowup_log2, num_points);
         let mut indices = Vec::with_capacity(k);
         for i in 0..k {
             let hash = H::hash_many(
@@ -101,7 +101,7 @@ pub struct Committer<H: Hash> {
     /// this value.
     degree_bound: usize,
     /// The base-2 logarithm of the blowup factor.
-    blowup_exp: usize,
+    blowup_log2: usize,
     /// All polynomials batched so far.
     polynomials: Vec<Polynomial>,
     /// The Merkle trees built so far.
@@ -116,10 +116,10 @@ impl<H: Hash> Committer<H> {
     ///
     /// We require specifying the first batch because our DEEP-FRI protocol requires at least one
     /// committed polynomial to work.
-    pub fn new(degree_bound: usize, blowup_exp: usize, polynomials: Vec<Polynomial>) -> Self {
+    pub fn new(degree_bound: usize, blowup_log2: usize, polynomials: Vec<Polynomial>) -> Self {
         let mut committer = Self {
             degree_bound,
-            blowup_exp,
+            blowup_log2,
             polynomials: vec![],
             trees: vec![],
         };
@@ -134,7 +134,7 @@ impl<H: Hash> Committer<H> {
 
     /// Returns the size of the extended evaluation domain.
     pub fn extended_domain_size(&self) -> usize {
-        self.degree_bound << self.blowup_exp
+        self.degree_bound << self.blowup_log2
     }
 
     /// Returns the number of Merkle trees constructed so far, corresponding to the number of
@@ -170,7 +170,7 @@ impl<H: Hash> Committer<H> {
             .unwrap()
             .next_power_of_two();
         assert!(degree_bound <= self.degree_bound);
-        let n = self.degree_bound << self.blowup_exp;
+        let n = self.degree_bound << self.blowup_log2;
         assert!(n.trailing_zeros() <= Scalar::S);
 
         let leaves = {
@@ -199,7 +199,7 @@ impl<H: Hash> Committer<H> {
     /// for every batched polynomial.
     pub fn commit(self, points: BTreeSet<Scalar>) -> (Commitment, Prover<H>) {
         {
-            let n = self.degree_bound << self.blowup_exp;
+            let n = self.degree_bound << self.blowup_log2;
             let g = Scalar::MULTIPLICATIVE_GENERATOR.pow_vartime([n as u64, 0, 0, 0]);
             for &z in &points {
                 // All opened points must lie outside the evaluation domain.
@@ -250,7 +250,7 @@ impl<H: Hash> Committer<H> {
             })
             .collect();
 
-        let inner_prover = fri::Prover::<H>::new(quotients, self.degree_bound, self.blowup_exp);
+        let inner_prover = fri::Prover::<H>::new(quotients, self.degree_bound, self.blowup_log2);
 
         let commitment = Commitment {
             tree_roots: self.trees.iter().map(|tree| tree.root_hash()).collect(),
@@ -258,7 +258,7 @@ impl<H: Hash> Committer<H> {
         };
         let prover = Prover {
             degree_bound: self.degree_bound,
-            blowup_exp: self.blowup_exp,
+            blowup_log2: self.blowup_log2,
             trees: self.trees,
             points,
             inner_prover,
@@ -274,7 +274,7 @@ pub struct Proof<H: Hash> {
     /// guaranteed to be strictly less than this value.
     degree_bound: usize,
     /// The base-2 logarithm of the blowup factor.
-    blowup_exp: usize,
+    blowup_log2: usize,
     /// Number of committed polynomials.
     num_polys: usize,
     /// The opened points. Keys are (off-domain) X-coordinates, values are the corresponding
@@ -296,13 +296,13 @@ impl<H: Hash> Proof<H> {
     }
 
     /// Returns the base-2 logarithm of the blowup factor used in the proof.
-    pub fn blowup_exp(&self) -> usize {
-        self.blowup_exp
+    pub fn blowup_log2(&self) -> usize {
+        self.blowup_log2
     }
 
     /// Returns the size of the extended evaluation domain.
     pub fn extended_domain_size(&self) -> usize {
-        self.degree_bound << self.blowup_exp
+        self.degree_bound << self.blowup_log2
     }
 
     /// Returns the number of committed polynomials.
@@ -320,7 +320,7 @@ impl<H: Hash> Proof<H> {
     pub fn verify(&self, commitment: &Commitment) -> Result<()> {
         let indices = commitment.get_query_indices::<H>(
             self.degree_bound,
-            self.blowup_exp,
+            self.blowup_log2,
             self.points.len(),
         );
         if self.openings.len() != indices.len() {
@@ -421,7 +421,7 @@ pub struct Prover<H: Hash> {
     /// The degree bound to prove.
     degree_bound: usize,
     /// The base-2 logarithm of the blowup factor.
-    blowup_exp: usize,
+    blowup_log2: usize,
     /// Raw Merkle trees for the committed polynomials, one for each batch.
     trees: Vec<Tree<H>>,
     /// The opened points.
@@ -442,7 +442,7 @@ impl<H: Hash> Prover<H> {
 
     /// Returns the size of the extended evaluation domain.
     pub fn extended_domain_size(&self) -> usize {
-        self.degree_bound << self.blowup_exp
+        self.degree_bound << self.blowup_log2
     }
 
     /// Returns the number of committed polynomials.
@@ -478,7 +478,7 @@ impl<H: Hash> Prover<H> {
     pub fn prove(&self, commitment: &Commitment) -> Proof<H> {
         let indices = commitment.get_query_indices::<H>(
             self.degree_bound,
-            self.blowup_exp,
+            self.blowup_log2,
             self.points.len(),
         );
         let openings = indices
@@ -491,7 +491,7 @@ impl<H: Hash> Prover<H> {
             .collect();
         Proof {
             degree_bound: self.degree_bound,
-            blowup_exp: self.blowup_exp,
+            blowup_log2: self.blowup_log2,
             num_polys: self.num_polys(),
             points: self.points.clone(),
             openings,
@@ -508,7 +508,7 @@ mod tests {
         polynomials: Vec<Polynomial>,
         points: &[u64],
         degree_bound: usize,
-        blowup_exp: usize,
+        blowup_log2: usize,
     ) {
         let num_polys = polynomials.len();
         let points = BTreeMap::from_iter(points.iter().cloned().map(|z| {
@@ -520,17 +520,17 @@ mod tests {
                     .collect::<Vec<Scalar>>(),
             )
         }));
-        let committer = Committer::<H>::new(degree_bound, blowup_exp, polynomials);
+        let committer = Committer::<H>::new(degree_bound, blowup_log2, polynomials);
         let (commitment, prover) = committer.commit(points.iter().map(|(&z, _)| z).collect());
         assert_eq!(prover.degree_bound(), degree_bound);
-        assert_eq!(prover.extended_domain_size(), degree_bound << blowup_exp);
+        assert_eq!(prover.extended_domain_size(), degree_bound << blowup_log2);
         assert_eq!(prover.num_polys(), num_polys);
         assert_eq!(prover.num_trees(), 1);
         assert_eq!(*prover.points(), points);
         let proof = prover.prove(&commitment);
         assert_eq!(proof.degree_bound(), degree_bound);
-        assert_eq!(proof.blowup_exp(), blowup_exp);
-        assert_eq!(proof.extended_domain_size(), degree_bound << blowup_exp);
+        assert_eq!(proof.blowup_log2(), blowup_log2);
+        assert_eq!(proof.extended_domain_size(), degree_bound << blowup_log2);
         assert_eq!(proof.num_polys(), num_polys);
         assert!(proof.verify(&commitment).is_ok());
         assert_eq!(*proof.points(), points);

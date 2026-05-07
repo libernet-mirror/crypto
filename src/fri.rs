@@ -559,7 +559,7 @@ pub struct Prover<H: Hash> {
     /// committed polynomials, plus one.
     degree_bound: usize,
     /// The base-2 logarithm of the blowup factor.
-    blowup_exp: usize,
+    blowup_log2: usize,
     /// The Merkle trees, one for the original polynomials plus one for every folding round.
     /// `trees[0]` is the tree built over the original polynomial evaluations, `trees[1]` is the
     /// tree resulting from the first folding round, etc.
@@ -567,7 +567,7 @@ pub struct Prover<H: Hash> {
 }
 
 impl<H: Hash> Prover<H> {
-    pub fn new(polynomials: Vec<Polynomial>, degree_bound: usize, blowup_exp: usize) -> Self {
+    pub fn new(polynomials: Vec<Polynomial>, degree_bound: usize, blowup_log2: usize) -> Self {
         assert!(degree_bound.is_power_of_two());
         assert!(
             polynomials
@@ -575,7 +575,7 @@ impl<H: Hash> Prover<H> {
                 .all(|polynomial| degree_bound >= polynomial.degree_bound())
         );
 
-        let n = degree_bound << blowup_exp;
+        let n = degree_bound << blowup_log2;
         assert!(n <= 1usize << Scalar::S);
 
         let main_tree = Tree::<H>::new(
@@ -588,7 +588,7 @@ impl<H: Hash> Prover<H> {
 
         Self {
             degree_bound,
-            blowup_exp,
+            blowup_log2,
             trees,
         }
     }
@@ -601,14 +601,14 @@ impl<H: Hash> Prover<H> {
         self.degree_bound
     }
 
-    /// Returns the size of the extended domain, equal to `degree_bound * 2^blowup_exp`.
+    /// Returns the size of the extended domain, equal to `degree_bound * 2^blowup_log2`.
     pub fn extended_domain_size(&self) -> usize {
-        self.degree_bound << self.blowup_exp
+        self.degree_bound << self.blowup_log2
     }
 
     /// Alias for `extended_domain_size`.
     pub fn size(&self) -> usize {
-        self.degree_bound << self.blowup_exp
+        self.degree_bound << self.blowup_log2
     }
 
     /// Returns the Merkle root hash of the committed polynomials.
@@ -633,7 +633,7 @@ impl<H: Hash> Prover<H> {
         let d = self.degree_bound;
         assert!(d.is_power_of_two());
 
-        let n = self.degree_bound << self.blowup_exp;
+        let n = self.degree_bound << self.blowup_log2;
         assert!(index < n);
 
         let mut m = n;
@@ -890,11 +890,11 @@ mod tests {
     fn test_prover_impl<H: Hash>(
         polynomials: Vec<Polynomial>,
         degree_bound: usize,
-        blowup_exp: usize,
+        blowup_log2: usize,
     ) {
-        let prover = Prover::<H>::new(polynomials, degree_bound, blowup_exp);
+        let prover = Prover::<H>::new(polynomials, degree_bound, blowup_log2);
         assert_eq!(prover.degree_bound(), degree_bound);
-        let n = degree_bound << blowup_exp;
+        let n = degree_bound << blowup_log2;
         assert_eq!(prover.extended_domain_size(), n);
         let commitment = prover.commit();
         for i in 0..n {

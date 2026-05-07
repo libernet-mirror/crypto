@@ -858,7 +858,7 @@ mod tests {
     }
 
     fn test_hash_chip_impl<H: fri::Hash, const T: usize, const I: usize>(
-        blowup_exp: usize,
+        blowup_log2: usize,
         inputs: [Scalar; I],
         expected_circuit_size: usize,
     ) where
@@ -891,8 +891,8 @@ mod tests {
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
         assert_eq!(circuit.size(), expected_circuit_size);
-        let proof = circuit.prove::<H>(witness, blowup_exp).unwrap();
-        let compressed_circuit = circuit.to_compressed::<H>(blowup_exp);
+        let proof = circuit.prove::<H>(witness, blowup_log2).unwrap();
+        let compressed_circuit = circuit.to_compressed::<H>(blowup_log2);
         let openings = compressed_circuit.verify(&proof).unwrap();
         assert_eq!(openings.len(), (inputs.len() + 1) * 3);
         for (i, wire) in input_wires.iter().enumerate() {
@@ -971,7 +971,7 @@ mod tests {
         );
     }
 
-    const BLOWUP_EXP: usize = 2;
+    const BLOWUP_LOG2: usize = 2;
 
     fn test_preimage_chip<const T: usize, const I: usize>(
         inputs: [Scalar; I],
@@ -1000,8 +1000,8 @@ mod tests {
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
         assert_eq!(circuit.size(), expected_circuit_size);
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_EXP).unwrap();
-        let compressed_circuit = circuit.to_compressed::<Sha2Hash>(BLOWUP_EXP);
+        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
+        let compressed_circuit = circuit.to_compressed::<Sha2Hash>(BLOWUP_LOG2);
         let openings = compressed_circuit.verify(&proof).unwrap();
         assert_eq!(openings.len(), 3);
         assert_eq!(openings[&result_wire], result);
