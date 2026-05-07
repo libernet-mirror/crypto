@@ -612,6 +612,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fri::{self, Poseidon2Hash};
     use crate::pcs::Sha2Hash;
     use crate::plonk::NUM_BLINDING_ROWS;
     use crate::utils::parse_scalar;
@@ -856,9 +857,8 @@ mod tests {
         );
     }
 
-    const BLOWUP_EXP: usize = 2;
-
-    fn test_hash_chip<const T: usize, const I: usize>(
+    fn test_hash_chip_impl<H: fri::Hash, const T: usize, const I: usize>(
+        blowup_exp: usize,
         inputs: [Scalar; I],
         expected_circuit_size: usize,
     ) where
@@ -891,12 +891,27 @@ mod tests {
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
         assert_eq!(circuit.size(), expected_circuit_size);
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_EXP).unwrap();
+        let proof = circuit.prove::<H>(witness, blowup_exp).unwrap();
         let openings = circuit.verify(&proof).unwrap();
+        assert_eq!(openings.len(), (inputs.len() + 1) * 3);
         for (i, wire) in input_wires.iter().enumerate() {
             assert_eq!(openings[wire], inputs[i]);
         }
         assert_eq!(openings[&result_wire], result);
+    }
+
+    fn test_hash_chip<const T: usize, const I: usize>(
+        inputs: [Scalar; I],
+        expected_circuit_size: usize,
+    ) where
+        BlueSkyConfig<T>: Config<Scalar, T>,
+    {
+        test_hash_chip_impl::<Sha2Hash, T, I>(1, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Poseidon2Hash, T, I>(1, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Sha2Hash, T, I>(2, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Poseidon2Hash, T, I>(2, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Sha2Hash, T, I>(3, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Poseidon2Hash, T, I>(3, inputs, expected_circuit_size);
     }
 
     #[test]
@@ -954,6 +969,8 @@ mod tests {
             1715,
         );
     }
+
+    const BLOWUP_EXP: usize = 2;
 
     fn test_preimage_chip<const T: usize, const I: usize>(
         inputs: [Scalar; I],
