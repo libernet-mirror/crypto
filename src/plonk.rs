@@ -1043,14 +1043,6 @@ impl Circuit {
         })
     }
 
-    fn lagrange0(x: Scalar, n: usize) -> Scalar {
-        (x.pow_vartime([n as u64, 0, 0, 0]) - Scalar::ONE)
-            * (Scalar::from(n as u64) * (x - Scalar::ONE))
-                .invert()
-                .into_option()
-                .unwrap()
-    }
-
     pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
         let circuit_commitment = {
             let degree_bound = padded_size(self.size);
@@ -1070,7 +1062,46 @@ impl Circuit {
             );
             committer.root_hash(0)
         };
+        CompressedCircuit {
+            original_size: self.size,
+            blowup_exp: proof.blowup_exp(),
+            public_gates: self.public_gates.clone(),
+            circuit_commitment,
+        }
+        .verify(proof)
+    }
+}
 
+#[derive(Debug, Clone)]
+pub struct CompressedCircuit {
+    original_size: usize,
+    blowup_exp: usize,
+    public_gates: BTreeSet<usize>,
+    circuit_commitment: Scalar,
+}
+
+impl CompressedCircuit {
+    pub fn original_size(&self) -> usize {
+        self.original_size
+    }
+
+    pub fn blowup_exp(&self) -> usize {
+        self.blowup_exp
+    }
+
+    pub fn commitment(&self) -> Scalar {
+        self.circuit_commitment
+    }
+
+    fn lagrange0(x: Scalar, n: usize) -> Scalar {
+        (x.pow_vartime([n as u64, 0, 0, 0]) - Scalar::ONE)
+            * (Scalar::from(n as u64) * (x - Scalar::ONE))
+                .invert()
+                .into_option()
+                .unwrap()
+    }
+
+    pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
         let commitment = &proof.commitment;
         let inner_proof = &proof.inner_proof;
 
@@ -1080,27 +1111,33 @@ impl Circuit {
                 commitment.tree_roots().len()
             ));
         }
-        if commitment.tree_roots()[0] != circuit_commitment {
+        if commitment.tree_roots()[0] != self.circuit_commitment {
             return Err(anyhow!(
                 "wrong circuit commitment (got {}, want {})",
                 commitment.tree_roots()[0],
-                circuit_commitment
+                self.circuit_commitment
             ));
         }
 
-        if inner_proof.num_polys() != 17 {
-            return Err(anyhow!(
-                "incorrect number of committed polynomials (got {}, want 17)",
-                inner_proof.num_polys()
-            ));
-        }
-
-        let n = padded_size(self.size);
+        let n = padded_size(self.original_size);
         if inner_proof.degree_bound() != n {
             return Err(anyhow!(
                 "wrong degree bound (got {}, want {})",
                 inner_proof.degree_bound(),
                 n
+            ));
+        }
+        if inner_proof.blowup_exp() != self.blowup_exp {
+            return Err(anyhow!(
+                "blowup factor mismatch (got {}, want {})",
+                inner_proof.blowup_exp(),
+                self.blowup_exp
+            ));
+        }
+        if inner_proof.num_polys() != 17 {
+            return Err(anyhow!(
+                "incorrect number of committed polynomials (got {}, want 17)",
+                inner_proof.num_polys()
             ));
         }
 
@@ -1145,32 +1182,32 @@ impl Circuit {
         let left = points[&xi][8];
         let right = points[&xi][9];
         let out = points[&xi][10];
+
+        let xi_n = xi.pow_vartime([n as u64, 0, 0, 0]);
+        let xi_2n = xi.pow_vartime([n as u64 * 2, 0, 0, 0]);
+
         let permutation_accumulator = {
             let accumulator_low = points[&xi][11];
             let accumulator_mid = points[&xi][12];
             let accumulator_high = points[&xi][13];
-            accumulator_low
-                + xi.pow_vartime([n as u64, 0, 0, 0]) * accumulator_mid
-                + xi.pow_vartime([n as u64 * 2, 0, 0, 0]) * accumulator_high
+            accumulator_low + xi_n * accumulator_mid + xi_2n * accumulator_high
         };
         let shifted_permutation_accumulator = {
             let x = xi * omega;
+            let x_n = x.pow_vartime([n as u64, 0, 0, 0]);
+            let x_2n = x.pow_vartime([n as u64 * 2, 0, 0, 0]);
             let accumulator_low = points[&x][11];
             let accumulator_mid = points[&x][12];
             let accumulator_high = points[&x][13];
-            accumulator_low
-                + x.pow_vartime([n as u64, 0, 0, 0]) * accumulator_mid
-                + x.pow_vartime([n as u64 * 2, 0, 0, 0]) * accumulator_high
+            accumulator_low + x_n * accumulator_mid + x_2n * accumulator_high
         };
         let quotient = {
             let quotient_low = points[&xi][14];
             let quotient_mid = points[&xi][15];
             let quotient_high = points[&xi][16];
-            quotient_low
-                + xi.pow_vartime([n as u64, 0, 0, 0]) * quotient_mid
-                + xi.pow_vartime([n as u64 * 2, 0, 0, 0]) * quotient_high
+            quotient_low + xi_n * quotient_mid + xi_2n * quotient_high
         };
-        let zero = xi.pow([n as u64, 0, 0, 0]) - Scalar::ONE;
+        let zero = xi_n - Scalar::ONE;
 
         let gate_constraint = ql * left + qr * right + qo * out + qm * left * right + qc;
 
@@ -1207,25 +1244,6 @@ impl Circuit {
                 })
                 .flatten(),
         ))
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct CompressedCircuit {
-    original_size: usize,
-    blowup_exp: usize,
-    public_gates: BTreeSet<usize>,
-    circuit_commitment: Scalar,
-}
-
-impl CompressedCircuit {
-    pub fn original_size(&self) -> usize {
-        self.original_size
-    }
-
-    pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
-        // TODO
-        todo!()
     }
 }
 
