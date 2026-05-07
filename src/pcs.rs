@@ -295,6 +295,11 @@ impl<H: Hash> Proof<H> {
         self.degree_bound
     }
 
+    /// Returns the base-2 logarithm of the blowup factor used in the proof.
+    pub fn blowup_exp(&self) -> usize {
+        self.blowup_exp
+    }
+
     /// Returns the size of the extended evaluation domain.
     pub fn extended_domain_size(&self) -> usize {
         self.degree_bound << self.blowup_exp
@@ -524,6 +529,7 @@ mod tests {
         assert_eq!(*prover.points(), points);
         let proof = prover.prove(&commitment);
         assert_eq!(proof.degree_bound(), degree_bound);
+        assert_eq!(proof.blowup_exp(), blowup_exp);
         assert_eq!(proof.extended_domain_size(), degree_bound << blowup_exp);
         assert_eq!(proof.num_polys(), num_polys);
         assert!(proof.verify(&commitment).is_ok());

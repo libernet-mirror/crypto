@@ -842,6 +842,12 @@ pub struct Proof<H: pcs::Hash> {
     inner_proof: pcs::Proof<H>,
 }
 
+impl<H: Hash> Proof<H> {
+    pub fn blowup_exp(&self) -> usize {
+        self.inner_proof.blowup_exp()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Circuit {
     size: usize,
@@ -970,8 +976,19 @@ impl Circuit {
         let mut committer = pcs::Committer::<H>::new(
             degree_bound,
             blowup_exp,
-            vec![left.clone(), right.clone(), out.clone()],
+            vec![
+                self.ql.clone(),
+                self.qr.clone(),
+                self.qo.clone(),
+                self.qm.clone(),
+                self.qc.clone(),
+                self.sl.clone(),
+                self.sr.clone(),
+                self.so.clone(),
+            ],
         );
+
+        committer.add_batch(vec![left.clone(), right.clone(), out.clone()]);
 
         let xi = H::hash_raw(*DST, committer.root_hash(0), Scalar::ZERO);
         let alpha = H::hash(xi, Scalar::from_const(1));
@@ -1035,12 +1052,45 @@ impl Circuit {
     }
 
     pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
+        let circuit_commitment = {
+            let degree_bound = padded_size(self.size);
+            let committer = pcs::Committer::<H>::new(
+                degree_bound,
+                proof.blowup_exp(),
+                vec![
+                    self.ql.clone(),
+                    self.qr.clone(),
+                    self.qo.clone(),
+                    self.qm.clone(),
+                    self.qc.clone(),
+                    self.sl.clone(),
+                    self.sr.clone(),
+                    self.so.clone(),
+                ],
+            );
+            committer.root_hash(0)
+        };
+
         let commitment = &proof.commitment;
         let inner_proof = &proof.inner_proof;
 
-        if inner_proof.num_polys() != 9 {
+        if commitment.tree_roots().len() != 3 {
             return Err(anyhow!(
-                "incorrect number of committed polynomials (got {}, want 9)",
+                "wrong number of Merkle roots (got {}, want 3)",
+                commitment.tree_roots().len()
+            ));
+        }
+        if commitment.tree_roots()[0] != circuit_commitment {
+            return Err(anyhow!(
+                "wrong circuit commitment (got {}, want {})",
+                commitment.tree_roots()[0],
+                circuit_commitment
+            ));
+        }
+
+        if inner_proof.num_polys() != 17 {
+            return Err(anyhow!(
+                "incorrect number of committed polynomials (got {}, want 17)",
                 inner_proof.num_polys()
             ));
         }
@@ -1083,49 +1133,52 @@ impl Circuit {
 
         inner_proof.verify(&commitment)?;
 
-        let left = points[&xi][0];
-        let right = points[&xi][1];
-        let out = points[&xi][2];
+        let ql = points[&xi][0];
+        let qr = points[&xi][1];
+        let qo = points[&xi][2];
+        let qm = points[&xi][3];
+        let qc = points[&xi][4];
+        let sl = points[&xi][5];
+        let sr = points[&xi][6];
+        let so = points[&xi][7];
+
+        let left = points[&xi][8];
+        let right = points[&xi][9];
+        let out = points[&xi][10];
         let permutation_accumulator = {
-            let accumulator_low = points[&xi][3];
-            let accumulator_mid = points[&xi][4];
-            let accumulator_high = points[&xi][5];
+            let accumulator_low = points[&xi][11];
+            let accumulator_mid = points[&xi][12];
+            let accumulator_high = points[&xi][13];
             accumulator_low
                 + xi.pow_vartime([n as u64, 0, 0, 0]) * accumulator_mid
                 + xi.pow_vartime([n as u64 * 2, 0, 0, 0]) * accumulator_high
         };
         let shifted_permutation_accumulator = {
             let x = xi * omega;
-            let accumulator_low = points[&x][3];
-            let accumulator_mid = points[&x][4];
-            let accumulator_high = points[&x][5];
+            let accumulator_low = points[&x][11];
+            let accumulator_mid = points[&x][12];
+            let accumulator_high = points[&x][13];
             accumulator_low
                 + x.pow_vartime([n as u64, 0, 0, 0]) * accumulator_mid
                 + x.pow_vartime([n as u64 * 2, 0, 0, 0]) * accumulator_high
         };
         let quotient = {
-            let quotient_low = points[&xi][6];
-            let quotient_mid = points[&xi][7];
-            let quotient_high = points[&xi][8];
+            let quotient_low = points[&xi][14];
+            let quotient_mid = points[&xi][15];
+            let quotient_high = points[&xi][16];
             quotient_low
                 + xi.pow_vartime([n as u64, 0, 0, 0]) * quotient_mid
                 + xi.pow_vartime([n as u64 * 2, 0, 0, 0]) * quotient_high
         };
         let zero = xi.pow([n as u64, 0, 0, 0]) - Scalar::ONE;
 
-        let gate_constraint = self.ql.evaluate(xi) * left
-            + self.qr.evaluate(xi) * right
-            + self.qo.evaluate(xi) * out
-            + self.qm.evaluate(xi) * left * right
-            + self.qc.evaluate(xi);
+        let gate_constraint = ql * left + qr * right + qo * out + qm * left * right + qc;
 
         let permutation_numerator = (left + beta * xi + gamma)
             * (right + beta * K1 * xi + gamma)
             * (out + beta * K2 * xi + gamma);
         let permutation_denominator = {
-            (left + beta * self.sl.evaluate(xi) + gamma)
-                * (right + beta * self.sr.evaluate(xi) + gamma)
-                * (out + beta * self.so.evaluate(xi) + gamma)
+            (left + beta * sl + gamma) * (right + beta * sr + gamma) * (out + beta * so + gamma)
         };
         let permutation_recurrence_constraint = shifted_permutation_accumulator
             * permutation_denominator
@@ -1146,14 +1199,33 @@ impl Circuit {
                 .map(|&gate| {
                     let z = omega.pow_vartime([gate as u64, 0, 0, 0]);
                     [
-                        (Wire::LeftIn(gate), points[&z][0]),
-                        (Wire::RightIn(gate), points[&z][1]),
-                        (Wire::Out(gate), points[&z][2]),
+                        (Wire::LeftIn(gate), points[&z][8]),
+                        (Wire::RightIn(gate), points[&z][9]),
+                        (Wire::Out(gate), points[&z][10]),
                     ]
                     .into_iter()
                 })
                 .flatten(),
         ))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CompressedCircuit {
+    original_size: usize,
+    blowup_exp: usize,
+    public_gates: BTreeSet<usize>,
+    circuit_commitment: Scalar,
+}
+
+impl CompressedCircuit {
+    pub fn original_size(&self) -> usize {
+        self.original_size
+    }
+
+    pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
+        // TODO
+        todo!()
     }
 }
 
