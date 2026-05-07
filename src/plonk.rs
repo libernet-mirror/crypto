@@ -223,6 +223,18 @@ impl Witness {
         gate
     }
 
+    pub fn nop(
+        &mut self,
+        lhs: WireOrUnconstrained,
+        rhs: WireOrUnconstrained,
+        out: WireOrUnconstrained,
+    ) {
+        let gate = self.pop_gate();
+        self.copy(lhs, Wire::LeftIn(gate));
+        self.copy(rhs, Wire::RightIn(gate));
+        self.copy(out, Wire::Out(gate));
+    }
+
     pub fn assert_constant(&mut self, value: Scalar) -> Wire {
         let wire = Wire::Out(self.pop_gate());
         self.set(wire, value);
@@ -473,14 +485,29 @@ impl CircuitBuilder {
         Wire::Out(gate)
     }
 
-    pub fn add_nop_gate(&mut self) {
-        self.add_raw_gate(
+    pub fn add_nop_gate(
+        &mut self,
+        lhs: Option<Wire>,
+        rhs: Option<Wire>,
+        out: Option<Wire>,
+    ) -> usize {
+        let gate = self.add_raw_gate(
             Scalar::ZERO,
             Scalar::ZERO,
             Scalar::ZERO,
             Scalar::ZERO,
             Scalar::ZERO,
         );
+        if let Some(lhs) = lhs {
+            self.connect(lhs, Wire::LeftIn(gate));
+        }
+        if let Some(rhs) = rhs {
+            self.connect(rhs, Wire::RightIn(gate));
+        }
+        if let Some(out) = out {
+            self.connect(out, Wire::Out(gate));
+        }
+        gate
     }
 
     pub fn add_const_gate(&mut self, value: Scalar) -> Wire {
@@ -696,9 +723,9 @@ impl CircuitBuilder {
     }
 
     fn add_blinding_gates(&mut self) {
-        self.add_nop_gate();
-        self.add_nop_gate();
-        self.add_nop_gate();
+        self.add_nop_gate(None, None, None);
+        self.add_nop_gate(None, None, None);
+        self.add_nop_gate(None, None, None);
     }
 
     pub fn declare_public_gates<I: IntoIterator<Item = usize>>(&mut self, gates: I) {
@@ -2187,6 +2214,48 @@ mod tests {
         Ok(())
     }
 
+    fn test_connected_nop_gate_impl(
+        circuit: &Circuit,
+        left: u64,
+        right: u64,
+        out: u64,
+    ) -> Result<()> {
+        let proof = circuit.prove::<Sha2Hash>(
+            witness(
+                vec![0.into(), 0.into(), 0.into(), left.into()],
+                vec![0.into(), 0.into(), 0.into(), right.into()],
+                vec![left.into(), right.into(), out.into(), out.into()],
+            ),
+            DEFAULT_BLOWUP_EXP,
+        )?;
+        let compressed_circuit = circuit.compress::<Sha2Hash>(DEFAULT_BLOWUP_EXP);
+        compressed_circuit.verify(&proof).unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn test_nop_gate() {
+        let mut builder = CircuitBuilder::default();
+        builder.add_nop_gate(None, None, None);
+        let circuit = builder.build();
+        assert!(test_gate(&circuit, 12, 34, 56).is_ok());
+        assert!(test_gate(&circuit, 34, 56, 78).is_ok());
+    }
+
+    #[test]
+    fn test_connected_nop_gate() {
+        let mut builder = CircuitBuilder::default();
+        let lhs = builder.add_const_gate(123.into());
+        let rhs = builder.add_const_gate(456.into());
+        let out = builder.add_const_gate(789.into());
+        builder.add_nop_gate(lhs.into(), rhs.into(), out.into());
+        let circuit = builder.build();
+        assert!(test_connected_nop_gate_impl(&circuit, 123, 456, 789).is_ok());
+        assert!(test_connected_nop_gate_impl(&circuit, 42, 456, 789).is_err());
+        assert!(test_connected_nop_gate_impl(&circuit, 123, 42, 789).is_err());
+        assert!(test_connected_nop_gate_impl(&circuit, 123, 456, 42).is_err());
+    }
+
     #[test]
     fn test_const_gate() {
         let mut builder = CircuitBuilder::default();
@@ -2732,5 +2801,133 @@ mod tests {
         assert!(test_connected_binary_gate(&circuit, 1, 1, 1).is_err());
     }
 
-    // TODO
+    /// A slight variation of Vitalik's circuit. This one proves knowledge of three numbers x, y,
+    /// and z such that x^3 + xy + 5 = z. Valid combinations are (3, 4, 44) and (4, 3, 81). This
+    /// test circuit is meaningful because its size is not a power of 2 (it's 6, or 9 including the
+    /// blinding rows), so it tests padding.
+    fn build_uneven_size_circuit() -> (Circuit, usize) {
+        let mut builder = CircuitBuilder::default();
+        let input = Wire::LeftIn(builder.gate_count());
+        let gate1 = builder.add_square_gate(input.into());
+        let gate2 = builder.add_mul_gate(gate1.into(), input.into());
+        let gate3 = builder.add_mul_gate(input.into(), None);
+        let gate4 = builder.add_sum_gate(gate3.into(), gate2.into());
+        let gate5 = builder.add_sum_gate(None, gate4.into());
+        let gate6 = builder.add_nop_gate(Wire::LeftIn(gate5.gate()).into(), None, gate5.into());
+        builder.declare_public_gates([gate6]);
+        (builder.build(), gate6)
+    }
+
+    fn test_uneven_size_circuit1<H: Hash>(blowup_exp: usize) {
+        let (circuit, gate) = build_uneven_size_circuit();
+        let proof = circuit
+            .prove::<H>(
+                witness(
+                    vec![3.into(), 9.into(), 3.into(), 12.into(), 5.into(), 5.into()],
+                    vec![3.into(), 3.into(), 4.into(), 27.into(), 39.into(), 0.into()],
+                    vec![
+                        9.into(),
+                        27.into(),
+                        12.into(),
+                        39.into(),
+                        44.into(),
+                        44.into(),
+                    ],
+                ),
+                blowup_exp,
+            )
+            .unwrap();
+        let compressed_circuit = circuit.to_compressed::<H>(blowup_exp);
+        let public_inputs = compressed_circuit.verify::<H>(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::LeftIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 44.into());
+    }
+
+    #[test]
+    fn test_uneven_size_circuit1_blowup_2() {
+        test_uneven_size_circuit1::<Sha2Hash>(1);
+        test_uneven_size_circuit1::<Poseidon2Hash>(1);
+    }
+
+    #[test]
+    fn test_uneven_size_circuit1_blowup_4() {
+        test_uneven_size_circuit1::<Sha2Hash>(2);
+        test_uneven_size_circuit1::<Poseidon2Hash>(2);
+    }
+
+    #[test]
+    fn test_uneven_size_circuit1_blowup_8() {
+        test_uneven_size_circuit1::<Sha2Hash>(3);
+        test_uneven_size_circuit1::<Poseidon2Hash>(3);
+    }
+
+    fn test_uneven_size_circuit2<H: Hash>(blowup_exp: usize) {
+        let (circuit, gate) = build_uneven_size_circuit();
+        let proof = circuit
+            .prove::<H>(
+                witness(
+                    vec![4.into(), 16.into(), 4.into(), 12.into(), 5.into(), 5.into()],
+                    vec![4.into(), 4.into(), 3.into(), 64.into(), 76.into(), 0.into()],
+                    vec![
+                        16.into(),
+                        64.into(),
+                        12.into(),
+                        76.into(),
+                        81.into(),
+                        81.into(),
+                    ],
+                ),
+                blowup_exp,
+            )
+            .unwrap();
+        let compressed_circuit = circuit.to_compressed::<H>(blowup_exp);
+        let public_inputs = compressed_circuit.verify::<H>(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::LeftIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 81.into());
+    }
+
+    #[test]
+    fn test_uneven_size_circuit2_blowup_2() {
+        test_uneven_size_circuit2::<Sha2Hash>(1);
+        test_uneven_size_circuit2::<Poseidon2Hash>(1);
+    }
+
+    #[test]
+    fn test_uneven_size_circuit2_blowup_4() {
+        test_uneven_size_circuit2::<Sha2Hash>(2);
+        test_uneven_size_circuit2::<Poseidon2Hash>(2);
+    }
+
+    #[test]
+    fn test_uneven_size_circuit2_blowup_8() {
+        test_uneven_size_circuit2::<Sha2Hash>(3);
+        test_uneven_size_circuit2::<Poseidon2Hash>(3);
+    }
+
+    #[test]
+    fn test_compile_uneven_size_circuit_separately() {
+        let (prover_circuit, _) = build_uneven_size_circuit();
+        let proof = prover_circuit
+            .prove::<Sha2Hash>(
+                witness(
+                    vec![3.into(), 9.into(), 3.into(), 12.into(), 5.into(), 5.into()],
+                    vec![3.into(), 3.into(), 4.into(), 27.into(), 39.into(), 0.into()],
+                    vec![
+                        9.into(),
+                        27.into(),
+                        12.into(),
+                        39.into(),
+                        44.into(),
+                        44.into(),
+                    ],
+                ),
+                DEFAULT_BLOWUP_EXP,
+            )
+            .unwrap();
+        let (verifier_circuit, gate) = build_uneven_size_circuit();
+        let verifier_circuit = verifier_circuit.to_compressed::<Sha2Hash>(DEFAULT_BLOWUP_EXP);
+        let public_inputs = verifier_circuit.verify::<Sha2Hash>(&proof).unwrap();
+        assert_eq!(*public_inputs.get(&Wire::LeftIn(gate)).unwrap(), 5.into());
+        assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 44.into());
+    }
 }
