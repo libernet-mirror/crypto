@@ -827,7 +827,7 @@ impl CircuitBuilder {
             return Err(anyhow!(
                 "incorrect witness size (got {}, want {})",
                 witness.size(),
-                size
+                size + NUM_BLINDING_ROWS
             ));
         }
         for i in 0..size {
