@@ -286,6 +286,16 @@ pub struct Tree<H: Hash> {
 }
 
 impl<H: Hash> Tree<H> {
+    /// Constructs a Merkle tree from a matrix of polynomial evaluations.
+    ///
+    /// More than one polynomial can be batched in the same tree because we our tree leaves are
+    /// vectors rather than single scalars. The only requirement is that all polynomials have the
+    /// same number of evaluations (not necessarily the same degree).
+    ///
+    /// The provided `leaves` array has one entry for each leaf, and each leaf is a vector of K
+    /// polynomial evaluations, with K = number of batched polynomials.
+    ///
+    /// Neither the outer array nor the inner arrays can be empty.
     pub fn from_leaves(leaves: Vec<Vec<Scalar>>) -> Self {
         let num_polys = leaves[0].len();
         assert!(num_polys > 0);
@@ -313,6 +323,9 @@ impl<H: Hash> Tree<H> {
     ///
     /// Therefore `values` has as many elements as the number of polynomials being committed and the
     /// length of the inner arrays must equal the size of the (extended) evaluation domain.
+    ///
+    /// Note that the only difference between `new` and `from_leaves` is that the dimensions of the
+    /// provided matrix are inverted.
     ///
     /// Neither the outer array nor the inner arrays can be empty.
     pub fn new(values: Vec<Vec<Scalar>>) -> Self {
