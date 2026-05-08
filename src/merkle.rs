@@ -542,10 +542,8 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<3, H> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        fri::Sha2Hash,
-        plonk::{Chip, CircuitBuilder},
-    };
+    use crate::fri::Sha2Hash;
+    use crate::plonk::{Chip, CircuitBuilder};
     use utils::parse_scalar;
 
     #[test]
@@ -912,7 +910,7 @@ mod tests {
     #[test]
     fn test_proof_3_2_12() {
         let root_hash =
-            parse_scalar("0x44b89da8691efb95085b386e8678a6acb5fd6efd43aec2c8241677bd18a4d19c");
+            parse_scalar("0x6a4291fe53447f3304d911144060575cae1d98739dc303f051c1cb694cfa4420");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -1080,9 +1078,11 @@ mod tests {
         builder.declare_public_gates([input_wire.gate(), output_gate]);
         let mut witness = plonk::Witness::new(builder.len() + plonk::NUM_BLINDING_ROWS);
         witness.assert_constant(value);
-        assert!(
-            chip.witness(&mut witness, [plonk::WireOrUnconstrained::Wire(input_wire)])
-                .is_ok()
+        assert!(chip.witness(&mut witness, [input_wire.into()]).is_ok());
+        witness.nop(
+            Scalar::from_const(0).into(),
+            Scalar::from_const(0).into(),
+            output_wire.into(),
         );
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
@@ -1230,9 +1230,11 @@ mod tests {
         builder.declare_public_gates([input_wire.gate(), output_gate]);
         let mut witness = plonk::Witness::new(builder.len() + plonk::NUM_BLINDING_ROWS);
         witness.assert_constant(value);
-        assert!(
-            chip.witness(&mut witness, [plonk::WireOrUnconstrained::Wire(input_wire)])
-                .is_ok()
+        assert!(chip.witness(&mut witness, [input_wire.into()]).is_ok());
+        witness.nop(
+            Scalar::from_const(0).into(),
+            Scalar::from_const(0).into(),
+            output_wire.into(),
         );
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
@@ -1323,7 +1325,7 @@ mod tests {
     #[test]
     fn test_proof_chip_3_2_00() {
         let root_hash =
-            parse_scalar("0x3f32693d601e71af9c0faab7186a2f009d40ebb082c6ea00c02b3b5cfc9b7422");
+            parse_scalar("0x7da79dc41778d3b34d73d33ebd6df9e5587d064e0a88e1992a09d2963b5e4315");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -1348,7 +1350,7 @@ mod tests {
     #[test]
     fn test_proof_chip_3_2_01() {
         let root_hash =
-            parse_scalar("0x32eceefb5344d7f35c5775de568c867c4c19df3902e14a8b496e660dfe66b4d2");
+            parse_scalar("0x373bb6602dcb22dbbd8ec3f0bb09a9aaee3c26f8b89fefa819eb97bd94670734");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -1373,7 +1375,7 @@ mod tests {
     #[test]
     fn test_proof_chip_3_2_02() {
         let root_hash =
-            parse_scalar("0x4ef1380da38b3e7b75cfc4843b76316389d8a209090e86a28b4ee71e9e73a67e");
+            parse_scalar("0x4fcd2729e4c9d021fd71c3b183fe65042f54d647662211a094faa56393ac9367");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -1398,7 +1400,7 @@ mod tests {
     #[test]
     fn test_proof_chip_3_2_10() {
         let root_hash =
-            parse_scalar("0x6e536fcc70cfc73b90ef3f86becaf457eb3f3b5905fb3b578dec7a040345812b");
+            parse_scalar("0x7de7bfc30a7b106e31c8de24e6190949b70ae600259e9c3b652166df7ce33db9");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -1423,7 +1425,7 @@ mod tests {
     #[test]
     fn test_proof_chip_3_2_11() {
         let root_hash =
-            parse_scalar("0x12f9be789894c9c142ee1035fcbc338072b9517c58c94d80ff195be5f80f692c");
+            parse_scalar("0x330970dcc42ab5187248400102d88411eef76320120c40a093c69a3af6de7869");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -1473,7 +1475,7 @@ mod tests {
     #[test]
     fn test_proof_chip_3_2_20() {
         let root_hash =
-            parse_scalar("0x1021905a28d9c9a581032e460cf5b27b8e5061252a101462c597176f735683e1");
+            parse_scalar("0x7536f1493dbcfee61ce46c52c456766d3e95caf1854dcfe9c0b280f98be07b62");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -1498,7 +1500,7 @@ mod tests {
     #[test]
     fn test_proof_chip_3_2_21() {
         let root_hash =
-            parse_scalar("0x09c807b2d23c4d1303ae65813d9788764b85976173e4a8c678af903ff5c4cca7");
+            parse_scalar("0x393c98a0a7171263e4bddcfd896bd2dd661dc994b449497a668c2a572c561e58");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
@@ -1523,7 +1525,7 @@ mod tests {
     #[test]
     fn test_proof_chip_3_2_22() {
         let root_hash =
-            parse_scalar("0x643869d465e5802d099d359a101996f93c7c24af2a2e3ff921c6ef443f44f5a4");
+            parse_scalar("0x35a0408c9db7dd043333d028b1912028a437f6bfd2fd0fb375bccbafe1003fec");
         let value =
             parse_scalar("0x6a415c14a0a3e7984de056690c4f9c50d8aebb94c864dd688f361affc0177282");
         let sister1 =
