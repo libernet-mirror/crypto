@@ -301,7 +301,6 @@ mod tests {
     use crate::fri::Sha2Hash;
     use crate::plonk::{Chip, WireOrUnconstrained};
     use std::cmp::Ordering;
-    use std::collections::BTreeMap;
     use utils::parse_scalar;
 
     const BLOWUP_LOG2: usize = 1;
@@ -574,22 +573,18 @@ mod tests {
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
         let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
+        let openings = circuit
+            .to_compressed::<Sha2Hash>(BLOWUP_LOG2)
+            .verify(&proof)
+            .unwrap();
+        assert_eq!(openings[&input], lhs.into());
         assert_eq!(
-            circuit
-                .to_compressed::<Sha2Hash>(BLOWUP_LOG2)
-                .verify(&proof)
-                .unwrap(),
-            BTreeMap::from([
-                (input, lhs.into()),
-                (
-                    cmp,
-                    match lhs.cmp(&rhs) {
-                        Ordering::Less => -Scalar::from(1),
-                        Ordering::Equal => 0.into(),
-                        Ordering::Greater => 1.into(),
-                    }
-                )
-            ])
+            openings[&cmp],
+            match lhs.cmp(&rhs) {
+                Ordering::Less => -Scalar::from_const(1),
+                Ordering::Equal => Scalar::from_const(0),
+                Ordering::Greater => Scalar::from_const(1),
+            }
         );
     }
 
