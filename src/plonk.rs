@@ -1096,14 +1096,11 @@ impl Circuit {
 
         let omega = Polynomial::domain_element2(1, degree_bound);
 
-        let (accumulator_low, accumulator_mid, accumulator_high) =
-            Self::split_polynomial(permutation_accumulator, degree_bound);
         let (quotient_low, quotient_mid, quotient_high) =
             Self::split_polynomial(quotient, degree_bound);
+
         committer.add_batch(vec![
-            accumulator_low,
-            accumulator_mid,
-            accumulator_high,
+            permutation_accumulator,
             quotient_low,
             quotient_mid,
             quotient_high,
@@ -1187,7 +1184,7 @@ impl CompressedCircuit {
                 1usize << self.blowup_log2
             ));
         }
-        if inner_proof.num_polys() != 17 {
+        if inner_proof.num_polys() != 15 {
             return Err(anyhow!(
                 "incorrect number of committed polynomials (got {}, want 17)",
                 inner_proof.num_polys()
@@ -1239,25 +1236,12 @@ impl CompressedCircuit {
         let xi_n = xi.pow_vartime([n as u64, 0, 0, 0]);
         let xi_2n = xi.pow_vartime([n as u64 * 2, 0, 0, 0]);
 
-        let permutation_accumulator = {
-            let accumulator_low = points[&xi][11];
-            let accumulator_mid = points[&xi][12];
-            let accumulator_high = points[&xi][13];
-            accumulator_low + xi_n * accumulator_mid + xi_2n * accumulator_high
-        };
-        let shifted_permutation_accumulator = {
-            let x = xi * omega;
-            let x_n = x.pow_vartime([n as u64, 0, 0, 0]);
-            let x_2n = x.pow_vartime([n as u64 * 2, 0, 0, 0]);
-            let accumulator_low = points[&x][11];
-            let accumulator_mid = points[&x][12];
-            let accumulator_high = points[&x][13];
-            accumulator_low + x_n * accumulator_mid + x_2n * accumulator_high
-        };
+        let permutation_accumulator = points[&xi][11];
+        let shifted_permutation_accumulator = points[&(xi * omega)][11];
         let quotient = {
-            let quotient_low = points[&xi][14];
-            let quotient_mid = points[&xi][15];
-            let quotient_high = points[&xi][16];
+            let quotient_low = points[&xi][12];
+            let quotient_mid = points[&xi][13];
+            let quotient_high = points[&xi][14];
             quotient_low + xi_n * quotient_mid + xi_2n * quotient_high
         };
         let zero = xi_n - Scalar::ONE;
