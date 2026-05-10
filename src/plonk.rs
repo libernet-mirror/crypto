@@ -228,11 +228,12 @@ impl Witness {
         lhs: WireOrUnconstrained,
         rhs: WireOrUnconstrained,
         out: WireOrUnconstrained,
-    ) {
+    ) -> usize {
         let gate = self.pop_gate();
         self.copy(lhs, Wire::LeftIn(gate));
         self.copy(rhs, Wire::RightIn(gate));
         self.copy(out, Wire::Out(gate));
+        gate
     }
 
     pub fn assert_constant(&mut self, value: Scalar) -> Wire {
