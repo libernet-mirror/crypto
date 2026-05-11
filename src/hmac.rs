@@ -7,7 +7,7 @@ use anyhow::Result;
 use ff::Field;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
 /// Domain separator tag used in our HMAC / zkMAC scheme.
 static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet/hmac"));
@@ -95,7 +95,7 @@ impl<const N: usize, const M: usize> plonk::Chip<N, 2> for SignatureChip<N, M> {
 
 #[derive(Debug)]
 struct VerifierCache<H: Hash> {
-    circuits: Mutex<BTreeMap<(usize, usize), Arc<LazyLock<plonk::CompressedCircuit>>>>,
+    circuits: Mutex<BTreeMap<(usize, usize), Arc<OnceLock<plonk::CompressedCircuit>>>>,
     _data: PhantomData<H>,
 }
 
@@ -141,14 +141,11 @@ impl<H: Hash> VerifierCache<H> {
         }
     }
 
-    fn get_or_make(&self, n: usize, blowup_log2: usize) -> Arc<LazyLock<plonk::CompressedCircuit>> {
+    fn get_or_make(&self, n: usize, blowup_log2: usize) -> Arc<OnceLock<plonk::CompressedCircuit>> {
         let key = (n, blowup_log2);
         let mut circuits = self.circuits.lock().unwrap();
         if !circuits.contains_key(&key) {
-            circuits.insert(
-                key,
-                Arc::new(LazyLock::new(|| Self::make_monomorphic(n, blowup_log2))),
-            );
+            circuits.insert(key, Arc::default());
         }
         circuits.get(&key).unwrap().clone()
     }
@@ -160,7 +157,13 @@ impl VerifierCache<Sha2Hash> {
             circuits: Mutex::default(),
             _data: Default::default(),
         });
-        &**CACHE.get_or_make(n, blowup_log2)
+        let once_lock = CACHE.get_or_make(n, blowup_log2);
+        let once_lock_ref: &'static OnceLock<plonk::CompressedCircuit> = unsafe {
+            // SAFETY: The Arc is permanently stored in CACHE (a static), so the OnceLock allocation
+            // lives for the duration of the program.
+            &*Arc::as_ptr(&once_lock)
+        };
+        once_lock_ref.get_or_init(|| Self::make_monomorphic(n, blowup_log2))
     }
 }
 
@@ -170,7 +173,13 @@ impl VerifierCache<Poseidon2Hash> {
             circuits: Mutex::default(),
             _data: Default::default(),
         });
-        &**CACHE.get_or_make(n, blowup_log2)
+        let once_lock = CACHE.get_or_make(n, blowup_log2);
+        let once_lock_ref: &'static OnceLock<plonk::CompressedCircuit> = unsafe {
+            // SAFETY: The Arc is permanently stored in CACHE (a static), so the OnceLock allocation
+            // lives for the duration of the program.
+            &*Arc::as_ptr(&once_lock)
+        };
+        once_lock_ref.get_or_init(|| Self::make_monomorphic(n, blowup_log2))
     }
 }
 
@@ -188,6 +197,7 @@ pub fn verify<H: Hash, const N: usize>(
     message: &[Scalar; N],
     signature: &plonk::Proof<H>,
 ) -> Result<()> {
+    let circuit = VerifierCache::<H>::get(N, signature.blowup_log2());
     // TODO
     todo!()
 }
