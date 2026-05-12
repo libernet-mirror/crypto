@@ -234,7 +234,7 @@ pub fn hash_t4(inputs: &[Scalar]) -> Scalar {
 /// PLONK chip for our Poseidon hash instance over the BlueSky field.
 ///
 /// `T` is the state vector size and `I` is the number of input scalars.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Chip<const T: usize, const I: usize> {}
 
 impl<const T: usize, const I: usize> Chip<T, I>

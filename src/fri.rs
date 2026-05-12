@@ -56,6 +56,7 @@ pub trait Hash {
 ///   * the low 256 bits of the hash are Sha2_256(0 || input1 || input2),
 ///   * the high 256 bits of the hash are Sha2_256(1 || input1 || input2),
 ///   * the 512 bits are converted to a scalar via modular reduction.
+#[derive(Debug, Default, Copy, Clone)]
 pub struct Sha2Hash {}
 
 impl Sha2Hash {
@@ -91,6 +92,7 @@ impl Hash for Sha2Hash {
 }
 
 /// Hashes two scalars using Poseidon2.
+#[derive(Debug, Default, Copy, Clone)]
 pub struct Poseidon2Hash {}
 
 impl Hash for Poseidon2Hash {

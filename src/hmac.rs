@@ -3,9 +3,10 @@ use crate::fri::{Hash, Poseidon2Hash, Sha2Hash};
 use crate::plonk::{self, Chip};
 use crate::poseidon;
 use crate::utils;
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use ff::Field;
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
@@ -24,7 +25,7 @@ pub fn public_key(private_key: Scalar) -> Scalar {
 /// NOTE: the generic parameter `N` is the length of the message and the generic parameter `M` MUST
 /// be equal to `N+3`. `M` is used as the size of the internal HMAC hash and is equal to the size of
 /// the signed message plus 3 scalars for: the DST, the private key, and the message length.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct SignatureChip<const N: usize, const M: usize> {
     private_key: Scalar,
     public_key_hasher: poseidon::Chip<3, 2>,
@@ -93,21 +94,25 @@ impl<const N: usize, const M: usize> plonk::Chip<N, 2> for SignatureChip<N, M> {
     }
 }
 
-/// Caches signer circuits.
-#[derive(Debug)]
-struct SignerCache<H: Hash> {
-    /// The first component of the key is the private key used to sign; the second one is the size
-    /// of the signed input, `N`.
-    circuits: Mutex<BTreeMap<(Scalar, usize), Arc<OnceLock<plonk::Circuit>>>>,
-    _data: PhantomData<H>,
+/// A PLONK circuit to sign messages with a private key using zkMAC.
+#[derive(Debug, Clone)]
+struct SignerCircuit<const N: usize, const M: usize> {
+    chip: SignatureChip<N, M>,
+    inner: plonk::Circuit,
+    public_key_wire: plonk::Wire,
+    message_wires: [plonk::Wire; N],
+    signature_wire: plonk::Wire,
 }
 
-impl<H: Hash> SignerCache<H> {
-    fn make<const N: usize, const M: usize>(private_key: Scalar) -> plonk::Circuit {
+impl<const N: usize, const M: usize> SignerCircuit<N, M> {
+    fn make(private_key: Option<Scalar>) -> Self {
         let mut builder = plonk::CircuitBuilder::default();
         let message: [Option<plonk::Wire>; N] =
             std::array::from_fn(|_| Some(plonk::Wire::Out(builder.add_nop_gate(None, None, None))));
-        let chip = SignatureChip::<N, M>::new(private_key);
+        let chip = match private_key {
+            Some(private_key) => SignatureChip::<N, M>::new(private_key),
+            None => SignatureChip::<N, M>::default(),
+        };
         let [public_key, signature] = chip.build(&mut builder, message).unwrap();
         builder.declare_public_gates(
             message
@@ -115,10 +120,140 @@ impl<H: Hash> SignerCache<H> {
                 .chain([public_key, signature])
                 .map(|wire| wire.unwrap().gate()),
         );
-        builder.build()
+        Self {
+            chip,
+            inner: builder.build(),
+            public_key_wire: public_key.unwrap(),
+            message_wires: message.map(|wire| wire.unwrap()),
+            signature_wire: signature.unwrap(),
+        }
     }
 
-    fn make_monomorphic(private_key: Scalar, n: usize) -> plonk::Circuit {
+    fn new(private_key: Scalar) -> Self {
+        Self::make(Some(private_key))
+    }
+
+    fn to_verifier<H: Hash>(self, blowup_log2: usize) -> VerifierCircuit<H, N> {
+        VerifierCircuit {
+            inner: self.inner.to_compressed::<H>(blowup_log2),
+            public_key_wire: self.public_key_wire,
+            message_wires: self.message_wires,
+            signature_wire: self.signature_wire,
+            _data: Default::default(),
+        }
+    }
+}
+
+impl<const N: usize, const M: usize> Default for SignerCircuit<N, M> {
+    fn default() -> Self {
+        Self::make(None)
+    }
+}
+
+/// Dyn trait for a generic signer circuit.
+///
+/// This trait abstracts the generic parameters `N` and `M` away so that signers for all sizes can
+/// be cached in the same data structure.
+pub trait AbstractSignerCircuit<H: Hash>: Debug + Send + Sync {
+    /// Signs the provided message and returns the signature scalar and the zkSTARK proof.
+    fn witness(&self, message: &[Scalar], blowup_log2: usize) -> (Scalar, plonk::Proof<H>);
+}
+
+impl<H: Hash, const N: usize, const M: usize> AbstractSignerCircuit<H> for SignerCircuit<N, M> {
+    fn witness(&self, message: &[Scalar], blowup_log2: usize) -> (Scalar, plonk::Proof<H>) {
+        let mut witness = self.inner.make_witness();
+        let message = std::array::from_fn(|i| {
+            plonk::Wire::Out(witness.nop(
+                Scalar::ZERO.into(),
+                Scalar::ZERO.into(),
+                message[i].into(),
+            ))
+            .into()
+        });
+        self.chip.witness(&mut witness, message).unwrap();
+        let signature = witness.get(self.signature_wire);
+        let proof = self.inner.prove::<H>(witness, blowup_log2).unwrap();
+        (signature, proof)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct VerifierCircuit<H: Hash, const N: usize> {
+    inner: plonk::CompressedCircuit,
+    public_key_wire: plonk::Wire,
+    message_wires: [plonk::Wire; N],
+    signature_wire: plonk::Wire,
+    _data: PhantomData<H>,
+}
+
+/// Dyn trait for a generic verifier circuit.
+///
+/// This trait abstracts the generic parameter `N` away so that verifiers for all sizes can be
+/// cached in the same data structure.
+pub trait AbstractVerifierCircuit<H: Hash>: Debug + Send + Sync {
+    fn verify(
+        &self,
+        public_key: Scalar,
+        message: &[Scalar],
+        signature: Scalar,
+        proof: &plonk::Proof<H>,
+    ) -> Result<()>;
+}
+
+impl<H: Hash + Debug + Send + Sync, const N: usize> AbstractVerifierCircuit<H>
+    for VerifierCircuit<H, N>
+{
+    fn verify(
+        &self,
+        public_key: Scalar,
+        message: &[Scalar],
+        signature: Scalar,
+        proof: &plonk::Proof<H>,
+    ) -> Result<()> {
+        let openings = self.inner.verify(proof)?;
+        if openings[&self.public_key_wire] != public_key {
+            return Err(anyhow!(
+                "public key mismatch (got {}, want {})",
+                openings[&self.public_key_wire],
+                public_key
+            ));
+        }
+        if self
+            .message_wires
+            .iter()
+            .enumerate()
+            .any(|(i, value)| openings[value] != message[i])
+        {
+            return Err(anyhow!("signed message mismatch"));
+        }
+        if openings[&self.signature_wire] != signature {
+            return Err(anyhow!(
+                "signature mismatch (got {}, want {})",
+                openings[&self.signature_wire],
+                signature
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Caches signer circuits.
+#[derive(Debug)]
+struct SignerCache<H: Hash> {
+    /// The first component of the key is the private key used to sign; the second one is the size
+    /// of the signed input, `N`.
+    circuits: Mutex<BTreeMap<(Scalar, usize), Arc<OnceLock<Arc<dyn AbstractSignerCircuit<H>>>>>>,
+    _data: PhantomData<H>,
+}
+
+impl<H: Hash> SignerCache<H> {
+    fn make<const N: usize, const M: usize>(
+        private_key: Scalar,
+    ) -> Arc<dyn AbstractSignerCircuit<H>> {
+        Arc::new(SignerCircuit::<N, M>::new(private_key))
+    }
+
+    fn make_monomorphic(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<H>> {
         match n {
             1 => Self::make::<1, 4>(private_key),
             2 => Self::make::<2, 5>(private_key),
@@ -144,7 +279,11 @@ impl<H: Hash> SignerCache<H> {
         }
     }
 
-    fn get_or_make(&self, private_key: Scalar, n: usize) -> Arc<OnceLock<plonk::Circuit>> {
+    fn get_or_make(
+        &self,
+        private_key: Scalar,
+        n: usize,
+    ) -> Arc<OnceLock<Arc<dyn AbstractSignerCircuit<H>>>> {
         let key = (private_key, n);
         let mut circuits = self.circuits.lock().unwrap();
         if !circuits.contains_key(&key) {
@@ -155,63 +294,48 @@ impl<H: Hash> SignerCache<H> {
 }
 
 impl SignerCache<Sha2Hash> {
-    fn get(private_key: Scalar, n: usize) -> &'static plonk::Circuit {
+    fn get(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Sha2Hash>> {
         static CACHE: LazyLock<SignerCache<Sha2Hash>> = LazyLock::new(|| SignerCache {
             circuits: Mutex::default(),
             _data: Default::default(),
         });
         let once_lock = CACHE.get_or_make(private_key, n);
-        let once_lock_ref: &'static OnceLock<plonk::Circuit> = unsafe {
-            // SAFETY: The Arc is permanently stored in CACHE (a static), so the OnceLock allocation
-            // lives for the duration of the program.
-            &*Arc::as_ptr(&once_lock)
-        };
-        once_lock_ref.get_or_init(|| Self::make_monomorphic(private_key, n))
+        once_lock
+            .get_or_init(|| Self::make_monomorphic(private_key, n))
+            .clone()
     }
 }
 
 impl SignerCache<Poseidon2Hash> {
-    fn get(private_key: Scalar, n: usize) -> &'static plonk::Circuit {
+    fn get(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Poseidon2Hash>> {
         static CACHE: LazyLock<SignerCache<Poseidon2Hash>> = LazyLock::new(|| SignerCache {
             circuits: Mutex::default(),
             _data: Default::default(),
         });
         let once_lock = CACHE.get_or_make(private_key, n);
-        let once_lock_ref: &'static OnceLock<plonk::Circuit> = unsafe {
-            // SAFETY: The Arc is permanently stored in CACHE (a static), so the OnceLock allocation
-            // lives for the duration of the program.
-            &*Arc::as_ptr(&once_lock)
-        };
-        once_lock_ref.get_or_init(|| Self::make_monomorphic(private_key, n))
+        once_lock
+            .get_or_init(|| Self::make_monomorphic(private_key, n))
+            .clone()
     }
 }
 
 /// Caches verifier circuits.
 #[derive(Debug)]
-struct VerifierCache<H: Hash> {
+struct VerifierCache<H: Hash + 'static> {
     /// The first component of the key is the size of the signed input, `N`; the second one is the
     /// log2 of the blowup factor for the circuit.
-    circuits: Mutex<BTreeMap<(usize, usize), Arc<OnceLock<plonk::CompressedCircuit>>>>,
+    circuits: Mutex<BTreeMap<(usize, usize), Arc<OnceLock<Arc<dyn AbstractVerifierCircuit<H>>>>>>,
     _data: PhantomData<H>,
 }
 
-impl<H: Hash> VerifierCache<H> {
-    fn make<const N: usize, const M: usize>(blowup_log2: usize) -> plonk::CompressedCircuit {
-        let mut builder = plonk::CircuitBuilder::default();
-        let message: [Option<plonk::Wire>; N] =
-            std::array::from_fn(|_| Some(plonk::Wire::Out(builder.add_nop_gate(None, None, None))));
-        let chip = SignatureChip::<N, M>::default();
-        let [public_key, signature] = chip.build(&mut builder, message).unwrap();
-        builder.declare_public_gates(
-            message
-                .into_iter()
-                .chain([public_key, signature])
-                .map(|wire| wire.unwrap().gate()),
-        );
-        builder.build().to_compressed::<H>(blowup_log2)
+impl<H: Hash + Debug + Send + Sync> VerifierCache<H> {
+    fn make<const N: usize, const M: usize>(
+        blowup_log2: usize,
+    ) -> Arc<dyn AbstractVerifierCircuit<H>> {
+        Arc::new(SignerCircuit::<N, M>::default().to_verifier(blowup_log2))
     }
 
-    fn make_monomorphic(n: usize, blowup_log2: usize) -> plonk::CompressedCircuit {
+    fn make_monomorphic(n: usize, blowup_log2: usize) -> Arc<dyn AbstractVerifierCircuit<H>> {
         match n {
             1 => Self::make::<1, 4>(blowup_log2),
             2 => Self::make::<2, 5>(blowup_log2),
@@ -237,7 +361,11 @@ impl<H: Hash> VerifierCache<H> {
         }
     }
 
-    fn get_or_make(&self, n: usize, blowup_log2: usize) -> Arc<OnceLock<plonk::CompressedCircuit>> {
+    fn get_or_make(
+        &self,
+        n: usize,
+        blowup_log2: usize,
+    ) -> Arc<OnceLock<Arc<dyn AbstractVerifierCircuit<H>>>> {
         let key = (n, blowup_log2);
         let mut circuits = self.circuits.lock().unwrap();
         if !circuits.contains_key(&key) {
@@ -248,34 +376,28 @@ impl<H: Hash> VerifierCache<H> {
 }
 
 impl VerifierCache<Sha2Hash> {
-    fn get(n: usize, blowup_log2: usize) -> &'static plonk::CompressedCircuit {
+    fn get(n: usize, blowup_log2: usize) -> Arc<dyn AbstractVerifierCircuit<Sha2Hash>> {
         static CACHE: LazyLock<VerifierCache<Sha2Hash>> = LazyLock::new(|| VerifierCache {
             circuits: Mutex::default(),
             _data: Default::default(),
         });
         let once_lock = CACHE.get_or_make(n, blowup_log2);
-        let once_lock_ref: &'static OnceLock<plonk::CompressedCircuit> = unsafe {
-            // SAFETY: The Arc is permanently stored in CACHE (a static), so the OnceLock allocation
-            // lives for the duration of the program.
-            &*Arc::as_ptr(&once_lock)
-        };
-        once_lock_ref.get_or_init(|| Self::make_monomorphic(n, blowup_log2))
+        once_lock
+            .get_or_init(|| Self::make_monomorphic(n, blowup_log2))
+            .clone()
     }
 }
 
 impl VerifierCache<Poseidon2Hash> {
-    fn get(n: usize, blowup_log2: usize) -> &'static plonk::CompressedCircuit {
+    fn get(n: usize, blowup_log2: usize) -> Arc<dyn AbstractVerifierCircuit<Poseidon2Hash>> {
         static CACHE: LazyLock<VerifierCache<Poseidon2Hash>> = LazyLock::new(|| VerifierCache {
             circuits: Mutex::default(),
             _data: Default::default(),
         });
         let once_lock = CACHE.get_or_make(n, blowup_log2);
-        let once_lock_ref: &'static OnceLock<plonk::CompressedCircuit> = unsafe {
-            // SAFETY: The Arc is permanently stored in CACHE (a static), so the OnceLock allocation
-            // lives for the duration of the program.
-            &*Arc::as_ptr(&once_lock)
-        };
-        once_lock_ref.get_or_init(|| Self::make_monomorphic(n, blowup_log2))
+        once_lock
+            .get_or_init(|| Self::make_monomorphic(n, blowup_log2))
+            .clone()
     }
 }
 
@@ -284,30 +406,35 @@ impl VerifierCache<Poseidon2Hash> {
 /// For internal use only. It's declared as public because it needs to surface in the signature of
 /// `sign`.
 pub trait CachedSigner: Hash {
-    fn get_signer_circuit(private_key: Scalar, n: usize) -> &'static plonk::Circuit;
+    fn get_signer_circuit(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Self>>;
 }
 
 impl CachedSigner for Sha2Hash {
-    fn get_signer_circuit(private_key: Scalar, n: usize) -> &'static plonk::Circuit {
+    fn get_signer_circuit(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Self>> {
         SignerCache::<Sha2Hash>::get(private_key, n)
     }
 }
 
 impl CachedSigner for Poseidon2Hash {
-    fn get_signer_circuit(private_key: Scalar, n: usize) -> &'static plonk::Circuit {
+    fn get_signer_circuit(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Self>> {
         SignerCache::<Poseidon2Hash>::get(private_key, n)
     }
 }
 
+/// Signs a message with the given private key using the zkMAC scheme, which consists of making a
+/// zkSTARK proof of an HMAC (hash-based message authentication code).
+///
+/// The private key remains a private input of the zkSTARK circuit. Other parties can verify the
+/// zkSTARK proof, and therefore the signature, without ever seeing the private key.
+///
+/// The returned pair contains the signature scalar and the zkSTARK proof.
 pub fn sign<H: Hash + CachedSigner, const N: usize, const M: usize>(
     private_key: Scalar,
     message: &[Scalar; N],
     blowup_log2: usize,
-) -> plonk::Proof<H> {
+) -> (Scalar, plonk::Proof<H>) {
     let circuit = H::get_signer_circuit(private_key, N);
-    let mut witness = circuit.make_witness();
-    // TODO
-    todo!()
+    circuit.witness(message, blowup_log2)
 }
 
 /// Utility trait to fetch a circuit from the cache for all known hash backends.
@@ -315,30 +442,41 @@ pub fn sign<H: Hash + CachedSigner, const N: usize, const M: usize>(
 /// For internal use only. It's declared as public because it needs to surface in the signature of
 /// `verify`.
 pub trait CachedVerifier: Hash {
-    fn get_verifier_circuit(n: usize, blowup_log2: usize) -> &'static plonk::CompressedCircuit;
+    fn get_verifier_circuit(n: usize, blowup_log2: usize)
+    -> Arc<dyn AbstractVerifierCircuit<Self>>;
 }
 
 impl CachedVerifier for Sha2Hash {
-    fn get_verifier_circuit(n: usize, blowup_log2: usize) -> &'static plonk::CompressedCircuit {
+    fn get_verifier_circuit(
+        n: usize,
+        blowup_log2: usize,
+    ) -> Arc<dyn AbstractVerifierCircuit<Self>> {
         VerifierCache::<Sha2Hash>::get(n, blowup_log2)
     }
 }
 
 impl CachedVerifier for Poseidon2Hash {
-    fn get_verifier_circuit(n: usize, blowup_log2: usize) -> &'static plonk::CompressedCircuit {
+    fn get_verifier_circuit(
+        n: usize,
+        blowup_log2: usize,
+    ) -> Arc<dyn AbstractVerifierCircuit<Self>> {
         VerifierCache::<Poseidon2Hash>::get(n, blowup_log2)
     }
 }
 
+/// Verifies a message signed with our zkMAC scheme.
+///
+/// The `public_key` is the same value returned by the `public_key()` function above for the private
+/// key used to sign the message, and is one of the public inputs of the circuit. This function
+/// verifies the zkSTARK proof and checks that the public key and message match the public inputs.
 pub fn verify<H: Hash + CachedVerifier, const N: usize>(
     public_key: Scalar,
     message: &[Scalar; N],
-    signature: &plonk::Proof<H>,
+    signature: Scalar,
+    proof: &plonk::Proof<H>,
 ) -> Result<()> {
-    let circuit = H::get_verifier_circuit(N, signature.blowup_log2());
-    let openings = circuit.verify(signature)?;
-    // TODO
-    todo!()
+    let circuit = H::get_verifier_circuit(N, proof.blowup_log2());
+    circuit.verify(public_key, message, signature, proof)
 }
 
 #[cfg(test)]
