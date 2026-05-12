@@ -428,7 +428,7 @@ impl CachedSigner for Poseidon2Hash {
 /// zkSTARK proof, and therefore the signature, without ever seeing the private key.
 ///
 /// The returned pair contains the signature scalar and the zkSTARK proof.
-pub fn sign<H: Hash + CachedSigner, const N: usize, const M: usize>(
+pub fn sign<H: Hash + CachedSigner, const N: usize>(
     private_key: Scalar,
     message: &[Scalar; N],
     blowup_log2: usize,
@@ -484,6 +484,8 @@ mod tests {
     use super::*;
     use crate::utils::parse_scalar;
 
+    const BLOWUP_LOG2: usize = 1;
+
     #[test]
     fn test_public_key() {
         assert_eq!(
@@ -500,5 +502,133 @@ mod tests {
         );
     }
 
-    // TODO
+    #[test]
+    fn test_signature_one_scalar_sha2() {
+        let private_key =
+            parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
+        let (signature, proof) = sign::<Sha2Hash, 1>(private_key, &[42.into()], BLOWUP_LOG2);
+        assert_eq!(
+            signature,
+            parse_scalar("0x12586bd0764c32cba105a66535f812a04af334b8c85a16cb6d58884541a89ab5")
+        );
+        assert!(
+            verify::<Sha2Hash, 1>(public_key(private_key), &[42.into()], signature, &proof).is_ok()
+        );
+    }
+
+    #[test]
+    fn test_signature_one_scalar_poseidon2() {
+        let private_key =
+            parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
+        let (signature, proof) = sign::<Poseidon2Hash, 1>(private_key, &[42.into()], BLOWUP_LOG2);
+        assert_eq!(
+            signature,
+            parse_scalar("0x12586bd0764c32cba105a66535f812a04af334b8c85a16cb6d58884541a89ab5")
+        );
+        assert!(
+            verify::<Poseidon2Hash, 1>(public_key(private_key), &[42.into()], signature, &proof)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_signature_one_scalar_different_key_sha2() {
+        let private_key =
+            parse_scalar("0x75b9be52955cd0933248b6324139bb988e9442fcf657c391b227de67f7d84561");
+        let (signature, proof) = sign::<Sha2Hash, 1>(private_key, &[42.into()], BLOWUP_LOG2);
+        assert_eq!(
+            signature,
+            parse_scalar("0x739316cdd2ab2e0b12371e50771cccbefdc2d96fb1f9e44ea688f7db8fef724b")
+        );
+        assert!(
+            verify::<Sha2Hash, 1>(public_key(private_key), &[42.into()], signature, &proof).is_ok()
+        );
+    }
+
+    #[test]
+    fn test_signature_one_scalar_different_key_poseidon2() {
+        let private_key =
+            parse_scalar("0x75b9be52955cd0933248b6324139bb988e9442fcf657c391b227de67f7d84561");
+        let (signature, proof) = sign::<Poseidon2Hash, 1>(private_key, &[42.into()], BLOWUP_LOG2);
+        assert_eq!(
+            signature,
+            parse_scalar("0x739316cdd2ab2e0b12371e50771cccbefdc2d96fb1f9e44ea688f7db8fef724b")
+        );
+        assert!(
+            verify::<Poseidon2Hash, 1>(public_key(private_key), &[42.into()], signature, &proof)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_signature_another_scalar_sha2() {
+        let private_key =
+            parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
+        let (signature, proof) = sign::<Sha2Hash, 1>(private_key, &[123.into()], BLOWUP_LOG2);
+        assert_eq!(
+            signature,
+            parse_scalar("0x2f5b3bbe562312563a88568067fa93c9946a00790b0e65ebd5e170904ba66205")
+        );
+        assert!(
+            verify::<Sha2Hash, 1>(public_key(private_key), &[123.into()], signature, &proof)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_signature_another_scalar_poseidon2() {
+        let private_key =
+            parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
+        let (signature, proof) = sign::<Poseidon2Hash, 1>(private_key, &[123.into()], BLOWUP_LOG2);
+        assert_eq!(
+            signature,
+            parse_scalar("0x2f5b3bbe562312563a88568067fa93c9946a00790b0e65ebd5e170904ba66205")
+        );
+        assert!(
+            verify::<Poseidon2Hash, 1>(public_key(private_key), &[123.into()], signature, &proof)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_signature_two_scalars_sha2() {
+        let private_key =
+            parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
+        let (signature, proof) =
+            sign::<Sha2Hash, 2>(private_key, &[123.into(), 456.into()], BLOWUP_LOG2);
+        assert_eq!(
+            signature,
+            parse_scalar("0x23ed26eabb33af669f2f64ad460783a0ea1c0259003294ff5839827c62617161")
+        );
+        assert!(
+            verify::<Sha2Hash, 2>(
+                public_key(private_key),
+                &[123.into(), 456.into()],
+                signature,
+                &proof
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_signature_two_scalars_poseidon2() {
+        let private_key =
+            parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
+        let (signature, proof) =
+            sign::<Poseidon2Hash, 2>(private_key, &[123.into(), 456.into()], BLOWUP_LOG2);
+        assert_eq!(
+            signature,
+            parse_scalar("0x23ed26eabb33af669f2f64ad460783a0ea1c0259003294ff5839827c62617161")
+        );
+        assert!(
+            verify::<Poseidon2Hash, 2>(
+                public_key(private_key),
+                &[123.into(), 456.into()],
+                signature,
+                &proof
+            )
+            .is_ok()
+        );
+    }
 }
