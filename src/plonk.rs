@@ -29,6 +29,12 @@ static DST: LazyLock<Scalar> = LazyLock::new(|| utils::hash_to_scalar(b"libernet
 const K1: Scalar = Scalar::from_const(71);
 const K2: Scalar = Scalar::from_const(104);
 
+const COMMIT_INDEX_CIRCUIT: usize = 0;
+const COMMIT_INDEX_WITNESS: usize = 1;
+const COMMIT_INDEX_PERMUTATION_ARGUMENT: usize = 2;
+const COMMIT_INDEX_QUOTIENT: usize = 3;
+const NUM_COMMIT_INDICES: usize = 4;
+
 fn padded_size(n: usize) -> usize {
     std::cmp::max(2, n.next_power_of_two())
 }
@@ -1069,18 +1075,33 @@ impl Circuit {
             ],
         );
 
-        committer.add_batch(vec![left.clone(), right.clone(), out.clone()]);
-
-        let xi = H::hash_raw(*DST, committer.root_hash(0), Scalar::ZERO);
-        let alpha = H::hash(xi, Scalar::from_const(1));
-        let beta = H::hash(xi, Scalar::from_const(2));
-        let gamma = H::hash(xi, Scalar::from_const(3));
+        let witness_commit_index =
+            committer.add_batch(vec![left.clone(), right.clone(), out.clone()]);
+        assert_eq!(witness_commit_index, COMMIT_INDEX_WITNESS);
+        let beta = H::hash_raw(
+            *DST,
+            committer.root_hash(witness_commit_index),
+            Scalar::from_const(1),
+        );
+        let gamma = H::hash_raw(
+            *DST,
+            committer.root_hash(witness_commit_index),
+            Scalar::from_const(2),
+        );
 
         let (
             permutation_accumulator,
             permutation_fixpoint_constraint,
             permutation_recurrence_constraint,
         ) = self.build_permutation_argument(&witness, &left, &right, &out, beta, gamma)?;
+
+        let permutation_commit_index = committer.add_batch(vec![permutation_accumulator]);
+        assert_eq!(permutation_commit_index, COMMIT_INDEX_PERMUTATION_ARGUMENT);
+        let alpha = H::hash_raw(
+            *DST,
+            committer.root_hash(permutation_commit_index),
+            Scalar::ZERO,
+        );
 
         let quotient = {
             let gate_constraint = self.ql.clone() * left.clone()
@@ -1099,12 +1120,14 @@ impl Circuit {
         let (quotient_low, quotient_mid, quotient_high) =
             Self::split_polynomial(quotient, degree_bound);
 
-        committer.add_batch(vec![
-            permutation_accumulator,
-            quotient_low,
-            quotient_mid,
-            quotient_high,
-        ]);
+        let quotient_commit_index =
+            committer.add_batch(vec![quotient_low, quotient_mid, quotient_high]);
+        assert_eq!(quotient_commit_index, COMMIT_INDEX_QUOTIENT);
+        let xi = H::hash_raw(
+            *DST,
+            committer.root_hash(quotient_commit_index),
+            Scalar::ZERO,
+        );
 
         let (commitment, prover) = committer.commit(BTreeSet::from_iter(
             [xi, xi * omega].into_iter().chain(
@@ -1155,10 +1178,11 @@ impl CompressedCircuit {
         let commitment = &proof.commitment;
         let inner_proof = &proof.inner_proof;
 
-        if commitment.tree_roots().len() != 3 {
+        if commitment.tree_roots().len() != NUM_COMMIT_INDICES {
             return Err(anyhow!(
-                "wrong number of Merkle roots (got {}, want 3)",
-                commitment.tree_roots().len()
+                "wrong number of Merkle roots (got {}, want {})",
+                commitment.tree_roots().len(),
+                NUM_COMMIT_INDICES
             ));
         }
         if commitment.tree_roots()[0] != self.circuit_commitment {
@@ -1193,10 +1217,26 @@ impl CompressedCircuit {
 
         let omega = Polynomial::domain_element2(1, n);
 
-        let xi = H::hash_raw(*DST, commitment.tree_roots()[0], Scalar::ZERO);
-        let alpha = H::hash(xi, Scalar::from_const(1));
-        let beta = H::hash(xi, Scalar::from_const(2));
-        let gamma = H::hash(xi, Scalar::from_const(3));
+        let beta = H::hash_raw(
+            *DST,
+            commitment.tree_roots()[COMMIT_INDEX_WITNESS],
+            Scalar::from_const(1),
+        );
+        let gamma = H::hash_raw(
+            *DST,
+            commitment.tree_roots()[COMMIT_INDEX_WITNESS],
+            Scalar::from_const(2),
+        );
+        let alpha = H::hash_raw(
+            *DST,
+            commitment.tree_roots()[COMMIT_INDEX_PERMUTATION_ARGUMENT],
+            Scalar::ZERO,
+        );
+        let xi = H::hash_raw(
+            *DST,
+            commitment.tree_roots()[COMMIT_INDEX_QUOTIENT],
+            Scalar::ZERO,
+        );
 
         let points = inner_proof.points();
         if !points.contains_key(&xi) {

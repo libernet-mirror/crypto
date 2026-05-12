@@ -155,11 +155,14 @@ impl<H: Hash> Committer<H> {
         self.trees[index].root_hash()
     }
 
-    /// Adds a batch of polynomials.
+    /// Adds a batch of polynomials, returnin the index of the newly created batch.
+    ///
+    /// The returned index can be used with the `tree` and `root_hash` methods to get the Merkle
+    /// tree and root hash for the batch, respectively.
     ///
     /// REQUIRES: the degree of all specified polynomials must be strictly less than
     /// `degree_bound()`.
-    pub fn add_batch(&mut self, polynomials: Vec<Polynomial>) {
+    pub fn add_batch(&mut self, polynomials: Vec<Polynomial>) -> usize {
         assert!(!polynomials.is_empty());
         let k = polynomials.len();
 
@@ -187,8 +190,12 @@ impl<H: Hash> Committer<H> {
             leaves
         };
 
+        let index = self.trees.len();
+
         self.polynomials.extend(polynomials);
         self.trees.push(Tree::<H>::from_leaves(leaves));
+
+        index
     }
 
     /// Consumes the `Committer`, calculates all DEEP quotients, and returns a polynomial
