@@ -91,7 +91,7 @@ struct NegNode(Arc<dyn Node>);
 
 impl Node for NegNode {
     fn to_repr(&self) -> String {
-        format!("- {}", self.0.to_repr())
+        format!("~ {}", self.0.to_repr())
     }
 
     fn get_max_columns(&self) -> usize {
@@ -242,6 +242,84 @@ impl Mul<Expression> for Scalar {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_to_repr_variable_index_zero() {
+        let expression = Expression::var(0);
+        assert_eq!(expression.to_repr(), "x0");
+    }
+
+    #[test]
+    fn test_to_repr_variable_nonzero_index() {
+        let expression = Expression::var(3);
+        assert_eq!(expression.to_repr(), "x3");
+    }
+
+    #[test]
+    fn test_to_repr_constant_zero() {
+        let expression = Expression::from(0u64);
+        assert_eq!(expression.to_repr(), "0");
+    }
+
+    #[test]
+    fn test_to_repr_constant_nonzero() {
+        let expression = Expression::from(42u64);
+        assert_eq!(expression.to_repr(), "42");
+    }
+
+    #[test]
+    fn test_to_repr_add() {
+        let expression = Expression::var(0) + Expression::var(1);
+        assert_eq!(expression.to_repr(), "+ x0 x1");
+    }
+
+    #[test]
+    fn test_to_repr_sub() {
+        let expression = Expression::var(0) - Expression::var(1);
+        assert_eq!(expression.to_repr(), "- x0 x1");
+    }
+
+    #[test]
+    fn test_to_repr_neg() {
+        let expression = -Expression::var(0);
+        assert_eq!(expression.to_repr(), "~ x0");
+    }
+
+    #[test]
+    fn test_to_repr_mul() {
+        let expression = Expression::var(0) * Expression::var(1);
+        assert_eq!(expression.to_repr(), "* x0 x1");
+    }
+
+    #[test]
+    fn test_to_repr_add_with_scalar() {
+        let expression = Expression::var(0) + Scalar::from(3u64);
+        assert_eq!(expression.to_repr(), "+ x0 3");
+    }
+
+    #[test]
+    fn test_to_repr_mul_with_scalar() {
+        let expression = Expression::var(0) * Scalar::from(3u64);
+        assert_eq!(expression.to_repr(), "* x0 3");
+    }
+
+    #[test]
+    fn test_to_repr_nested_add_then_mul() {
+        let expression = (Expression::var(0) + Expression::var(1)) * Expression::var(2);
+        assert_eq!(expression.to_repr(), "* + x0 x1 x2");
+    }
+
+    #[test]
+    fn test_to_repr_nested_mul_then_add() {
+        let expression = Expression::var(0) * Expression::var(1) + Expression::var(2);
+        assert_eq!(expression.to_repr(), "+ * x0 x1 x2");
+    }
+
+    #[test]
+    fn test_to_repr_nested_neg_then_add() {
+        let expression = -Expression::var(0) + Expression::var(1);
+        assert_eq!(expression.to_repr(), "+ ~ x0 x1");
+    }
 
     // TODO
 }
