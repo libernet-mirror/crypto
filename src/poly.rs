@@ -191,11 +191,10 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         values.resize(n, F::ZERO);
         let omega = Self::two_adic_root_of_unity(values.len());
         Self::ifft2(values.as_mut_slice(), omega);
-        let mut polynomial = Polynomial {
+        Polynomial {
             coefficients: values,
-        };
-        polynomial.trim();
-        polynomial
+        }
+        .trim()
     }
 
     /// Recovers the ordered list of values encoded by `encode2`.
@@ -248,7 +247,7 @@ impl<F: PrimeField + Ord> Polynomial<F> {
     ///
     ///   poly.trim();
     ///   assert_eq!(poly.len(), poly.degree_bound());
-    pub fn trim(&mut self) {
+    pub fn trim(mut self) -> Self {
         if let Some(i) = self
             .coefficients
             .iter()
@@ -256,6 +255,7 @@ impl<F: PrimeField + Ord> Polynomial<F> {
         {
             self.coefficients.truncate(i + 1);
         }
+        self
     }
 
     /// Extracts the array of coefficients from this polynomial.
@@ -269,8 +269,8 @@ impl<F: PrimeField + Ord> Polynomial<F> {
     /// Multiplies two polynomials. Panics if the FFT capacity is exceeded -- that is, if the degree
     /// of the product is greater than or equal to 2^(F::S).
     pub fn multiply(mut self, mut other: Self) -> Self {
-        self.trim();
-        other.trim();
+        self = self.trim();
+        other = other.trim();
 
         let mut lhs = self.coefficients;
         let mut rhs = other.coefficients;
@@ -302,9 +302,7 @@ impl<F: PrimeField + Ord> Polynomial<F> {
 
         Self::ifft2(lhs.as_mut_slice(), omega);
 
-        let mut result = Polynomial { coefficients: lhs };
-        result.trim();
-        result
+        Polynomial { coefficients: lhs }.trim()
     }
 
     /// Internal implementation of `multiply_many`.
@@ -1016,7 +1014,7 @@ mod tests {
             0.into(),
             0.into(),
         ]);
-        p.trim();
+        p = p.trim();
         assert_eq!(p.len(), 3);
         assert_eq!(p.degree_bound(), 3);
     }
@@ -1030,7 +1028,7 @@ mod tests {
             34.into(),
             56.into(),
         ]);
-        p.trim();
+        p = p.trim();
         assert_eq!(p.len(), 5);
         assert_eq!(p.degree_bound(), 5);
     }

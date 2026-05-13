@@ -12,6 +12,7 @@ pub mod pcs;
 pub mod plonk;
 pub mod poly;
 pub mod poseidon;
+pub mod turbo;
 pub mod utils;
 pub mod xits;
 
