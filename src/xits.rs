@@ -1,9 +1,9 @@
-use crate::plonk;
 use crate::utils;
 use anyhow::Result;
 use ff::{Field, PrimeField};
 use primitive_types::U256;
 use starkom_bluesky::Scalar;
+use starkom_plonk as plonk;
 
 /// Returns the smallest power of three that is >= n (returns 1 for n=0).
 pub fn next_power_of_three(n: usize) -> usize {
@@ -488,8 +488,8 @@ impl plonk::Chip<1, 161> for FullTritDecomposerChip {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plonk::{Chip, WireOrUnconstrained};
     use starkom_pcs::hash::Sha2Hash;
+    use starkom_plonk::{Chip, WireOrUnconstrained};
     use std::cmp::Ordering;
     use utils::parse_scalar;
 

@@ -1,7 +1,7 @@
-use crate::plonk::{Chip as PlonkChip, CircuitBuilder, Wire, WireOrUnconstrained, Witness};
 use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
 use starkom_bluesky::Scalar;
+use starkom_plonk::{Chip as PlonkChip, CircuitBuilder, Wire, WireOrUnconstrained, Witness};
 use std::sync::LazyLock;
 
 /// Poseidon2 instance configuration trait.
@@ -612,11 +612,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plonk::NUM_BLINDING_ROWS;
     use crate::utils::parse_scalar;
     use blstrs::Scalar as BlsScalar;
     use primitive_types::U256;
     use starkom_pcs::hash::{Hash, Poseidon2Hash, Sha2Hash};
+    use starkom_plonk::NUM_BLINDING_ROWS;
 
     struct BlsConfig<const T: usize> {}
 

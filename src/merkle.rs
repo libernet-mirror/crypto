@@ -1,4 +1,3 @@
-use crate::plonk;
 use crate::poseidon;
 use crate::utils;
 use crate::xits;
@@ -6,6 +5,7 @@ use anyhow::{Result, anyhow};
 use ff::Field;
 use ff::PrimeField;
 use starkom_bluesky::Scalar;
+use starkom_plonk as plonk;
 use std::fmt::Debug;
 
 /// Makes a type representable as a BLS12-381 scalar. Must be implemened by all Merkle tree values.
@@ -542,8 +542,8 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<3, H> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plonk::{Chip, CircuitBuilder};
     use starkom_pcs::hash::Sha2Hash;
+    use starkom_plonk::{Chip, CircuitBuilder};
     use utils::parse_scalar;
 
     #[test]

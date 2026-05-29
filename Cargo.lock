@@ -299,6 +299,7 @@ dependencies = [
  "sha3 0.11.0",
  "starkom-bluesky",
  "starkom-pcs",
+ "starkom-plonk",
  "starkom-poly",
  "subtle",
  "wasm-bindgen",
@@ -1307,6 +1308,22 @@ dependencies = [
  "starkom-bluesky",
  "starkom-poly",
  "starkom-poseidon2",
+]
+
+[[package]]
+name = "starkom-plonk"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b03c71ab3e02b8beaf4ff48af7f51f8e0a2cc7dcd9176f8f88a90a5885f03156"
+dependencies = [
+ "anyhow",
+ "ff",
+ "primitive-types",
+ "rand_core",
+ "sha3 0.12.0",
+ "starkom-bluesky",
+ "starkom-pcs",
+ "starkom-poly",
 ]
 
 [[package]]

@@ -6,7 +6,6 @@ use wasm_bindgen::prelude::*;
 
 pub mod hmac;
 pub mod merkle;
-pub mod plonk;
 pub mod poseidon;
 pub mod utils;
 pub mod xits;
