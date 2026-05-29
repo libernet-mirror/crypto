@@ -1,14 +1,14 @@
-use crate::pcs;
 use crate::utils;
 use anyhow::{Context, Result, anyhow};
 use ff::Field;
 use starkom_bluesky::Scalar;
+use starkom_pcs as pcs;
 use starkom_poly as poly;
 use std::collections::{BTreeMap, BTreeSet, btree_map};
 use std::sync::LazyLock;
 
 /// Re-export the available hash backends.
-pub use pcs::{Hash, Poseidon2Hash, Sha2Hash};
+pub use pcs::hash::{Hash, Poseidon2Hash, Sha2Hash};
 
 type Polynomial = poly::Polynomial<Scalar>;
 
@@ -871,12 +871,12 @@ impl CircuitBuilder {
 }
 
 #[derive(Debug, Clone)]
-pub struct Proof<H: pcs::Hash> {
+pub struct Proof<H: Hash<Scalar>> {
     commitment: pcs::Commitment,
     inner_proof: pcs::Proof<H>,
 }
 
-impl<H: Hash> Proof<H> {
+impl<H: Hash<Scalar>> Proof<H> {
     pub fn blowup_log2(&self) -> usize {
         self.inner_proof.blowup_log2()
     }
@@ -911,7 +911,7 @@ impl Circuit {
     /// Constructs a `CompressedCircuit` from this circuit.
     ///
     /// NOTE: compressed circuits are specific to a given blowup factor.
-    pub fn compress<H: Hash>(&self, blowup_log2: usize) -> CompressedCircuit {
+    pub fn compress<H: Hash<Scalar>>(&self, blowup_log2: usize) -> CompressedCircuit {
         let circuit_commitment = {
             let degree_bound = padded_size(self.size);
             let committer = pcs::Committer::<H>::new(
@@ -941,7 +941,7 @@ impl Circuit {
     /// Converts this circuit into a compressed one.
     ///
     /// NOTE: compressed circuits are specific to a given blowup factor.
-    pub fn to_compressed<H: Hash>(self, blowup_log2: usize) -> CompressedCircuit {
+    pub fn to_compressed<H: Hash<Scalar>>(self, blowup_log2: usize) -> CompressedCircuit {
         let circuit_commitment = {
             let degree_bound = padded_size(self.size);
             let committer = pcs::Committer::<H>::new(
@@ -1044,7 +1044,11 @@ impl Circuit {
         )
     }
 
-    pub fn prove<H: Hash>(&self, mut witness: Witness, blowup_log2: usize) -> Result<Proof<H>> {
+    pub fn prove<H: Hash<Scalar>>(
+        &self,
+        mut witness: Witness,
+        blowup_log2: usize,
+    ) -> Result<Proof<H>> {
         witness.blind();
         if witness.size() != self.size {
             return Err(anyhow!(
@@ -1174,7 +1178,7 @@ impl CompressedCircuit {
                 .unwrap()
     }
 
-    pub fn verify<H: Hash>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
+    pub fn verify<H: Hash<Scalar>>(&self, proof: &Proof<H>) -> Result<BTreeMap<Wire, Scalar>> {
         let commitment = &proof.commitment;
         let inner_proof = &proof.inner_proof;
 
@@ -1924,7 +1928,7 @@ mod tests {
         }
     }
 
-    fn test_circuit1<H: Hash>(blowup_log2: usize) {
+    fn test_circuit1<H: Hash<Scalar>>(blowup_log2: usize) {
         let (circuit, gate) = build_test_circuit();
         let compressed_circuit = circuit.compress::<H>(blowup_log2);
         let proof = circuit
@@ -1944,53 +1948,53 @@ mod tests {
 
     #[test]
     fn test_circuit1_blowup_2() {
-        test_circuit1::<Sha2Hash>(1);
-        test_circuit1::<Poseidon2Hash>(1);
+        test_circuit1::<Sha2Hash<Scalar>>(1);
+        test_circuit1::<Poseidon2Hash<Scalar>>(1);
     }
 
     #[test]
     fn test_circuit1_blowup_4() {
-        test_circuit1::<Sha2Hash>(2);
-        test_circuit1::<Poseidon2Hash>(2);
+        test_circuit1::<Sha2Hash<Scalar>>(2);
+        test_circuit1::<Poseidon2Hash<Scalar>>(2);
     }
 
     #[test]
     fn test_circuit1_blowup_8() {
-        test_circuit1::<Sha2Hash>(3);
-        test_circuit1::<Poseidon2Hash>(3);
+        test_circuit1::<Sha2Hash<Scalar>>(3);
+        test_circuit1::<Poseidon2Hash<Scalar>>(3);
     }
 
     #[test]
     fn test_circuit1_blowup_16() {
-        test_circuit1::<Sha2Hash>(4);
-        test_circuit1::<Poseidon2Hash>(4);
+        test_circuit1::<Sha2Hash<Scalar>>(4);
+        test_circuit1::<Poseidon2Hash<Scalar>>(4);
     }
 
     #[test]
     fn test_circuit1_blowup_32() {
-        test_circuit1::<Sha2Hash>(5);
-        test_circuit1::<Poseidon2Hash>(5);
+        test_circuit1::<Sha2Hash<Scalar>>(5);
+        test_circuit1::<Poseidon2Hash<Scalar>>(5);
     }
 
     #[test]
     fn test_circuit1_blowup_64() {
-        test_circuit1::<Sha2Hash>(6);
-        test_circuit1::<Poseidon2Hash>(6);
+        test_circuit1::<Sha2Hash<Scalar>>(6);
+        test_circuit1::<Poseidon2Hash<Scalar>>(6);
     }
 
     #[test]
     fn test_circuit1_blowup_128() {
-        test_circuit1::<Sha2Hash>(7);
-        test_circuit1::<Poseidon2Hash>(7);
+        test_circuit1::<Sha2Hash<Scalar>>(7);
+        test_circuit1::<Poseidon2Hash<Scalar>>(7);
     }
 
     #[test]
     fn test_circuit1_blowup_256() {
-        test_circuit1::<Sha2Hash>(8);
-        test_circuit1::<Poseidon2Hash>(8);
+        test_circuit1::<Sha2Hash<Scalar>>(8);
+        test_circuit1::<Poseidon2Hash<Scalar>>(8);
     }
 
-    fn test_circuit1_with_helpers<H: Hash>(blowup_log2: usize) {
+    fn test_circuit1_with_helpers<H: Hash<Scalar>>(blowup_log2: usize) {
         let mut builder = CircuitBuilder::default();
         let input = Wire::LeftIn(builder.gate_count());
         let gate1 = builder.add_square_gate(input.into());
@@ -2013,17 +2017,17 @@ mod tests {
 
     #[test]
     fn test_circuit1_with_helpers_blowup_2() {
-        test_circuit1_with_helpers::<Sha2Hash>(1);
-        test_circuit1_with_helpers::<Poseidon2Hash>(1);
+        test_circuit1_with_helpers::<Sha2Hash<Scalar>>(1);
+        test_circuit1_with_helpers::<Poseidon2Hash<Scalar>>(1);
     }
 
     #[test]
     fn test_circuit1_with_helpers_blowup_4() {
-        test_circuit1_with_helpers::<Sha2Hash>(2);
-        test_circuit1_with_helpers::<Poseidon2Hash>(2);
+        test_circuit1_with_helpers::<Sha2Hash<Scalar>>(2);
+        test_circuit1_with_helpers::<Poseidon2Hash<Scalar>>(2);
     }
 
-    fn test_circuit2<H: Hash>(blowup_log2: usize) {
+    fn test_circuit2<H: Hash<Scalar>>(blowup_log2: usize) {
         let (circuit, gate) = build_test_circuit();
         let compressed_circuit = circuit.compress::<H>(blowup_log2);
         let proof = circuit
@@ -2043,23 +2047,23 @@ mod tests {
 
     #[test]
     fn test_circuit2_blowup_2() {
-        test_circuit2::<Sha2Hash>(1);
-        test_circuit2::<Poseidon2Hash>(1);
+        test_circuit2::<Sha2Hash<Scalar>>(1);
+        test_circuit2::<Poseidon2Hash<Scalar>>(1);
     }
 
     #[test]
     fn test_circuit2_blowup_4() {
-        test_circuit2::<Sha2Hash>(2);
-        test_circuit2::<Poseidon2Hash>(2);
+        test_circuit2::<Sha2Hash<Scalar>>(2);
+        test_circuit2::<Poseidon2Hash<Scalar>>(2);
     }
 
     #[test]
     fn test_circuit2_blowup_8() {
-        test_circuit2::<Sha2Hash>(3);
-        test_circuit2::<Poseidon2Hash>(3);
+        test_circuit2::<Sha2Hash<Scalar>>(3);
+        test_circuit2::<Poseidon2Hash<Scalar>>(3);
     }
 
-    fn test_gate_constraint_violation<H: Hash>(blowup_log2: usize) {
+    fn test_gate_constraint_violation<H: Hash<Scalar>>(blowup_log2: usize) {
         let (circuit, _) = build_test_circuit();
         assert!(
             circuit
@@ -2077,23 +2081,23 @@ mod tests {
 
     #[test]
     fn test_gate_constraint_violation_blowup_2() {
-        test_gate_constraint_violation::<Sha2Hash>(1);
-        test_gate_constraint_violation::<Poseidon2Hash>(1);
+        test_gate_constraint_violation::<Sha2Hash<Scalar>>(1);
+        test_gate_constraint_violation::<Poseidon2Hash<Scalar>>(1);
     }
 
     #[test]
     fn test_gate_constraint_violation_blowup_4() {
-        test_gate_constraint_violation::<Sha2Hash>(2);
-        test_gate_constraint_violation::<Poseidon2Hash>(2);
+        test_gate_constraint_violation::<Sha2Hash<Scalar>>(2);
+        test_gate_constraint_violation::<Poseidon2Hash<Scalar>>(2);
     }
 
     #[test]
     fn test_gate_constraint_violation_blowup_8() {
-        test_gate_constraint_violation::<Sha2Hash>(3);
-        test_gate_constraint_violation::<Poseidon2Hash>(3);
+        test_gate_constraint_violation::<Sha2Hash<Scalar>>(3);
+        test_gate_constraint_violation::<Poseidon2Hash<Scalar>>(3);
     }
 
-    fn test_compressed_circuit1<H: Hash>(blowup_log2: usize) {
+    fn test_compressed_circuit1<H: Hash<Scalar>>(blowup_log2: usize) {
         let (circuit, gate) = build_test_circuit();
         let proof = circuit
             .prove::<H>(
@@ -2113,23 +2117,23 @@ mod tests {
 
     #[test]
     fn test_compressed_circuit1_blowup_2() {
-        test_compressed_circuit1::<Sha2Hash>(1);
-        test_compressed_circuit1::<Poseidon2Hash>(1);
+        test_compressed_circuit1::<Sha2Hash<Scalar>>(1);
+        test_compressed_circuit1::<Poseidon2Hash<Scalar>>(1);
     }
 
     #[test]
     fn test_compressed_circuit1_blowup_4() {
-        test_compressed_circuit1::<Sha2Hash>(2);
-        test_compressed_circuit1::<Poseidon2Hash>(2);
+        test_compressed_circuit1::<Sha2Hash<Scalar>>(2);
+        test_compressed_circuit1::<Poseidon2Hash<Scalar>>(2);
     }
 
     #[test]
     fn test_compressed_circuit1_blowup_8() {
-        test_compressed_circuit1::<Sha2Hash>(3);
-        test_compressed_circuit1::<Poseidon2Hash>(3);
+        test_compressed_circuit1::<Sha2Hash<Scalar>>(3);
+        test_compressed_circuit1::<Poseidon2Hash<Scalar>>(3);
     }
 
-    fn test_compressed_circuit2<H: Hash>(blowup_log2: usize) {
+    fn test_compressed_circuit2<H: Hash<Scalar>>(blowup_log2: usize) {
         let (circuit, gate) = build_test_circuit();
         let proof = circuit
             .prove::<H>(
@@ -2149,23 +2153,23 @@ mod tests {
 
     #[test]
     fn test_compressed_circuit2_blowup_2() {
-        test_compressed_circuit2::<Sha2Hash>(1);
-        test_compressed_circuit2::<Poseidon2Hash>(1);
+        test_compressed_circuit2::<Sha2Hash<Scalar>>(1);
+        test_compressed_circuit2::<Poseidon2Hash<Scalar>>(1);
     }
 
     #[test]
     fn test_compressed_circuit2_blowup_4() {
-        test_compressed_circuit2::<Sha2Hash>(2);
-        test_compressed_circuit2::<Poseidon2Hash>(2);
+        test_compressed_circuit2::<Sha2Hash<Scalar>>(2);
+        test_compressed_circuit2::<Poseidon2Hash<Scalar>>(2);
     }
 
     #[test]
     fn test_compressed_circuit2_blowup_8() {
-        test_compressed_circuit2::<Sha2Hash>(3);
-        test_compressed_circuit2::<Poseidon2Hash>(3);
+        test_compressed_circuit2::<Sha2Hash<Scalar>>(3);
+        test_compressed_circuit2::<Poseidon2Hash<Scalar>>(3);
     }
 
-    fn test_compile_separately<H: Hash>(blowup_log2: usize) {
+    fn test_compile_separately<H: Hash<Scalar>>(blowup_log2: usize) {
         let (prover_circuit, _) = build_test_circuit();
         let proof = prover_circuit
             .prove::<H>(
@@ -2186,28 +2190,28 @@ mod tests {
 
     #[test]
     fn test_compile_separately_blowup_2() {
-        test_compile_separately::<Sha2Hash>(1);
-        test_compile_separately::<Poseidon2Hash>(1);
-        test_compile_separately::<Sha2Hash>(2);
-        test_compile_separately::<Poseidon2Hash>(2);
-        test_compile_separately::<Sha2Hash>(3);
-        test_compile_separately::<Poseidon2Hash>(3);
+        test_compile_separately::<Sha2Hash<Scalar>>(1);
+        test_compile_separately::<Poseidon2Hash<Scalar>>(1);
+        test_compile_separately::<Sha2Hash<Scalar>>(2);
+        test_compile_separately::<Poseidon2Hash<Scalar>>(2);
+        test_compile_separately::<Sha2Hash<Scalar>>(3);
+        test_compile_separately::<Poseidon2Hash<Scalar>>(3);
     }
 
     const DEFAULT_BLOWUP_LOG2: usize = 3;
 
     fn test_gate(circuit: &Circuit, left: u64, right: u64, out: u64) -> Result<()> {
-        let proof = circuit.prove::<Sha2Hash>(
+        let proof = circuit.prove::<Sha2Hash<Scalar>>(
             witness(vec![left.into()], vec![right.into()], vec![out.into()]),
             DEFAULT_BLOWUP_LOG2,
         )?;
-        let compressed_circuit = circuit.compress::<Sha2Hash>(DEFAULT_BLOWUP_LOG2);
+        let compressed_circuit = circuit.compress::<Sha2Hash<Scalar>>(DEFAULT_BLOWUP_LOG2);
         compressed_circuit.verify(&proof).unwrap();
         Ok(())
     }
 
     fn test_connected_unary_gate(circuit: &Circuit, input: u64, output: u64) -> Result<()> {
-        let proof = circuit.prove::<Sha2Hash>(
+        let proof = circuit.prove::<Sha2Hash<Scalar>>(
             witness(
                 vec![0.into(), input.into()],
                 vec![0.into(), input.into()],
@@ -2215,7 +2219,7 @@ mod tests {
             ),
             DEFAULT_BLOWUP_LOG2,
         )?;
-        let compressed_circuit = circuit.compress::<Sha2Hash>(DEFAULT_BLOWUP_LOG2);
+        let compressed_circuit = circuit.compress::<Sha2Hash<Scalar>>(DEFAULT_BLOWUP_LOG2);
         compressed_circuit.verify(&proof).unwrap();
         Ok(())
     }
@@ -2226,7 +2230,7 @@ mod tests {
         right: u64,
         out: u64,
     ) -> Result<()> {
-        let proof = circuit.prove::<Sha2Hash>(
+        let proof = circuit.prove::<Sha2Hash<Scalar>>(
             witness(
                 vec![0.into(), 0.into(), left.into()],
                 vec![0.into(), 0.into(), right.into()],
@@ -2234,7 +2238,7 @@ mod tests {
             ),
             DEFAULT_BLOWUP_LOG2,
         )?;
-        let compressed_circuit = circuit.compress::<Sha2Hash>(DEFAULT_BLOWUP_LOG2);
+        let compressed_circuit = circuit.compress::<Sha2Hash<Scalar>>(DEFAULT_BLOWUP_LOG2);
         compressed_circuit.verify(&proof).unwrap();
         Ok(())
     }
@@ -2245,7 +2249,7 @@ mod tests {
         right: u64,
         out: u64,
     ) -> Result<()> {
-        let proof = circuit.prove::<Sha2Hash>(
+        let proof = circuit.prove::<Sha2Hash<Scalar>>(
             witness(
                 vec![0.into(), 0.into(), 0.into(), left.into()],
                 vec![0.into(), 0.into(), 0.into(), right.into()],
@@ -2253,7 +2257,7 @@ mod tests {
             ),
             DEFAULT_BLOWUP_LOG2,
         )?;
-        let compressed_circuit = circuit.compress::<Sha2Hash>(DEFAULT_BLOWUP_LOG2);
+        let compressed_circuit = circuit.compress::<Sha2Hash<Scalar>>(DEFAULT_BLOWUP_LOG2);
         compressed_circuit.verify(&proof).unwrap();
         Ok(())
     }
@@ -2651,8 +2655,8 @@ mod tests {
         let circuit = builder.build();
         let mut witness = Witness::new(circuit.size());
         witness.assert_trit(WireOrUnconstrained::Unconstrained(value.into()));
-        let proof = circuit.prove::<Sha2Hash>(witness, DEFAULT_BLOWUP_LOG2)?;
-        let compressed_circuit = circuit.to_compressed::<Sha2Hash>(DEFAULT_BLOWUP_LOG2);
+        let proof = circuit.prove::<Sha2Hash<Scalar>>(witness, DEFAULT_BLOWUP_LOG2)?;
+        let compressed_circuit = circuit.to_compressed::<Sha2Hash<Scalar>>(DEFAULT_BLOWUP_LOG2);
         compressed_circuit.verify(&proof)?;
         Ok(())
     }
@@ -2674,8 +2678,8 @@ mod tests {
         let mut witness = Witness::new(circuit.size());
         let input = witness.assert_constant(value.into());
         witness.assert_trit(input.into());
-        let proof = circuit.prove::<Sha2Hash>(witness, DEFAULT_BLOWUP_LOG2)?;
-        let compressed_circuit = circuit.to_compressed::<Sha2Hash>(DEFAULT_BLOWUP_LOG2);
+        let proof = circuit.prove::<Sha2Hash<Scalar>>(witness, DEFAULT_BLOWUP_LOG2)?;
+        let compressed_circuit = circuit.to_compressed::<Sha2Hash<Scalar>>(DEFAULT_BLOWUP_LOG2);
         compressed_circuit.verify(&proof)?;
         Ok(())
     }
@@ -2843,7 +2847,7 @@ mod tests {
         (builder.build(), gate6)
     }
 
-    fn test_uneven_size_circuit1<H: Hash>(blowup_log2: usize) {
+    fn test_uneven_size_circuit1<H: Hash<Scalar>>(blowup_log2: usize) {
         let (circuit, gate) = build_uneven_size_circuit();
         let proof = circuit
             .prove::<H>(
@@ -2870,23 +2874,23 @@ mod tests {
 
     #[test]
     fn test_uneven_size_circuit1_blowup_2() {
-        test_uneven_size_circuit1::<Sha2Hash>(1);
-        test_uneven_size_circuit1::<Poseidon2Hash>(1);
+        test_uneven_size_circuit1::<Sha2Hash<Scalar>>(1);
+        test_uneven_size_circuit1::<Poseidon2Hash<Scalar>>(1);
     }
 
     #[test]
     fn test_uneven_size_circuit1_blowup_4() {
-        test_uneven_size_circuit1::<Sha2Hash>(2);
-        test_uneven_size_circuit1::<Poseidon2Hash>(2);
+        test_uneven_size_circuit1::<Sha2Hash<Scalar>>(2);
+        test_uneven_size_circuit1::<Poseidon2Hash<Scalar>>(2);
     }
 
     #[test]
     fn test_uneven_size_circuit1_blowup_8() {
-        test_uneven_size_circuit1::<Sha2Hash>(3);
-        test_uneven_size_circuit1::<Poseidon2Hash>(3);
+        test_uneven_size_circuit1::<Sha2Hash<Scalar>>(3);
+        test_uneven_size_circuit1::<Poseidon2Hash<Scalar>>(3);
     }
 
-    fn test_uneven_size_circuit2<H: Hash>(blowup_log2: usize) {
+    fn test_uneven_size_circuit2<H: Hash<Scalar>>(blowup_log2: usize) {
         let (circuit, gate) = build_uneven_size_circuit();
         let proof = circuit
             .prove::<H>(
@@ -2913,27 +2917,27 @@ mod tests {
 
     #[test]
     fn test_uneven_size_circuit2_blowup_2() {
-        test_uneven_size_circuit2::<Sha2Hash>(1);
-        test_uneven_size_circuit2::<Poseidon2Hash>(1);
+        test_uneven_size_circuit2::<Sha2Hash<Scalar>>(1);
+        test_uneven_size_circuit2::<Poseidon2Hash<Scalar>>(1);
     }
 
     #[test]
     fn test_uneven_size_circuit2_blowup_4() {
-        test_uneven_size_circuit2::<Sha2Hash>(2);
-        test_uneven_size_circuit2::<Poseidon2Hash>(2);
+        test_uneven_size_circuit2::<Sha2Hash<Scalar>>(2);
+        test_uneven_size_circuit2::<Poseidon2Hash<Scalar>>(2);
     }
 
     #[test]
     fn test_uneven_size_circuit2_blowup_8() {
-        test_uneven_size_circuit2::<Sha2Hash>(3);
-        test_uneven_size_circuit2::<Poseidon2Hash>(3);
+        test_uneven_size_circuit2::<Sha2Hash<Scalar>>(3);
+        test_uneven_size_circuit2::<Poseidon2Hash<Scalar>>(3);
     }
 
     #[test]
     fn test_compile_uneven_size_circuit_separately() {
         let (prover_circuit, _) = build_uneven_size_circuit();
         let proof = prover_circuit
-            .prove::<Sha2Hash>(
+            .prove::<Sha2Hash<Scalar>>(
                 witness(
                     vec![3.into(), 9.into(), 3.into(), 12.into(), 5.into(), 5.into()],
                     vec![3.into(), 3.into(), 4.into(), 27.into(), 39.into(), 0.into()],
@@ -2950,8 +2954,9 @@ mod tests {
             )
             .unwrap();
         let (verifier_circuit, gate) = build_uneven_size_circuit();
-        let verifier_circuit = verifier_circuit.to_compressed::<Sha2Hash>(DEFAULT_BLOWUP_LOG2);
-        let public_inputs = verifier_circuit.verify::<Sha2Hash>(&proof).unwrap();
+        let verifier_circuit =
+            verifier_circuit.to_compressed::<Sha2Hash<Scalar>>(DEFAULT_BLOWUP_LOG2);
+        let public_inputs = verifier_circuit.verify::<Sha2Hash<Scalar>>(&proof).unwrap();
         assert_eq!(*public_inputs.get(&Wire::LeftIn(gate)).unwrap(), 5.into());
         assert_eq!(*public_inputs.get(&Wire::Out(gate)).unwrap(), 44.into());
     }

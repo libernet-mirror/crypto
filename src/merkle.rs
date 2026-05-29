@@ -542,8 +542,8 @@ impl<const H: usize> plonk::Chip<1, 1> for LookupChip<3, H> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fri::Sha2Hash;
     use crate::plonk::{Chip, CircuitBuilder};
+    use starkom_pcs::hash::Sha2Hash;
     use utils::parse_scalar;
 
     #[test]
@@ -1086,9 +1086,11 @@ mod tests {
         );
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
+        let proof = circuit
+            .prove::<Sha2Hash<Scalar>>(witness, BLOWUP_LOG2)
+            .unwrap();
         let openings = circuit
-            .to_compressed::<Sha2Hash>(BLOWUP_LOG2)
+            .to_compressed::<Sha2Hash<Scalar>>(BLOWUP_LOG2)
             .verify(&proof)
             .unwrap();
         assert_eq!(openings[&input_wire], value);
@@ -1238,9 +1240,11 @@ mod tests {
         );
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
+        let proof = circuit
+            .prove::<Sha2Hash<Scalar>>(witness, BLOWUP_LOG2)
+            .unwrap();
         let openings = circuit
-            .to_compressed::<Sha2Hash>(BLOWUP_LOG2)
+            .to_compressed::<Sha2Hash<Scalar>>(BLOWUP_LOG2)
             .verify(&proof)
             .unwrap();
         assert_eq!(openings[&input_wire], value);

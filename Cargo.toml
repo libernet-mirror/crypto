@@ -25,6 +25,7 @@ rand_core = { version = "0.6", features = ["getrandom"] }
 sha2 = "0.11.0"
 sha3 = "0.11.0"
 starkom-bluesky = "2.1.0"
+starkom-pcs = "1.0.1"
 starkom-poly = "1.1.0"
 subtle = "2.6.1"
 wasm-bindgen = "0.2.117"
