@@ -1,10 +1,10 @@
 use crate::fri::{self, LeafProof, Tree};
-use crate::poly;
 use crate::utils;
 use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
 use primitive_types::U256;
 use starkom_bluesky::Scalar;
+use starkom_poly as poly;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 

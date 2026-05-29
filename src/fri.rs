@@ -1,10 +1,10 @@
-use crate::poly;
 use crate::poseidon;
 use crate::utils;
 use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
 use sha2::{self, Digest};
 use starkom_bluesky::Scalar;
+use starkom_poly as poly;
 use std::marker::PhantomData;
 use std::sync::LazyLock;
 

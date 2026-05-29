@@ -298,6 +298,7 @@ dependencies = [
  "sha2 0.11.0",
  "sha3",
  "starkom-bluesky",
+ "starkom-poly",
  "subtle",
  "wasm-bindgen",
  "x509-parser",
@@ -1272,6 +1273,17 @@ dependencies = [
  "primitive-types",
  "rand_core",
  "subtle",
+]
+
+[[package]]
+name = "starkom-poly"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "345a279c25518272784dbffc3552df6b4f8cc6297107f37cb60e4605cf5bf409"
+dependencies = [
+ "anyhow",
+ "ff",
+ "starkom-bluesky",
 ]
 
 [[package]]
