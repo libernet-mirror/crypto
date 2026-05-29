@@ -1,7 +1,7 @@
-use crate::plonk::{Chip as PlonkChip, CircuitBuilder, Wire, WireOrUnconstrained, Witness};
 use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
 use starkom_bluesky::Scalar;
+use starkom_plonk::{Chip as PlonkChip, CircuitBuilder, Wire, WireOrUnconstrained, Witness};
 use std::sync::LazyLock;
 
 /// Poseidon2 instance configuration trait.
@@ -612,12 +612,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fri::{self, Poseidon2Hash};
-    use crate::pcs::Sha2Hash;
-    use crate::plonk::NUM_BLINDING_ROWS;
     use crate::utils::parse_scalar;
     use blstrs::Scalar as BlsScalar;
     use primitive_types::U256;
+    use starkom_pcs::hash::{Hash, Poseidon2Hash, Sha2Hash};
+    use starkom_plonk::NUM_BLINDING_ROWS;
 
     struct BlsConfig<const T: usize> {}
 
@@ -857,7 +856,7 @@ mod tests {
         );
     }
 
-    fn test_hash_chip_impl<H: fri::Hash, const T: usize, const I: usize>(
+    fn test_hash_chip_impl<H: Hash<Scalar>, const T: usize, const I: usize>(
         blowup_log2: usize,
         inputs: [Scalar; I],
         expected_circuit_size: usize,
@@ -907,12 +906,12 @@ mod tests {
     ) where
         BlueSkyConfig<T>: Config<Scalar, T>,
     {
-        test_hash_chip_impl::<Sha2Hash, T, I>(1, inputs, expected_circuit_size);
-        test_hash_chip_impl::<Poseidon2Hash, T, I>(1, inputs, expected_circuit_size);
-        test_hash_chip_impl::<Sha2Hash, T, I>(2, inputs, expected_circuit_size);
-        test_hash_chip_impl::<Poseidon2Hash, T, I>(2, inputs, expected_circuit_size);
-        test_hash_chip_impl::<Sha2Hash, T, I>(3, inputs, expected_circuit_size);
-        test_hash_chip_impl::<Poseidon2Hash, T, I>(3, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Sha2Hash<Scalar>, T, I>(1, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Poseidon2Hash<Scalar>, T, I>(1, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Sha2Hash<Scalar>, T, I>(2, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Poseidon2Hash<Scalar>, T, I>(2, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Sha2Hash<Scalar>, T, I>(3, inputs, expected_circuit_size);
+        test_hash_chip_impl::<Poseidon2Hash<Scalar>, T, I>(3, inputs, expected_circuit_size);
     }
 
     #[test]
@@ -1000,8 +999,10 @@ mod tests {
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
         assert_eq!(circuit.size(), expected_circuit_size);
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
-        let compressed_circuit = circuit.to_compressed::<Sha2Hash>(BLOWUP_LOG2);
+        let proof = circuit
+            .prove::<Sha2Hash<Scalar>>(witness, BLOWUP_LOG2)
+            .unwrap();
+        let compressed_circuit = circuit.to_compressed::<Sha2Hash<Scalar>>(BLOWUP_LOG2);
         let openings = compressed_circuit.verify(&proof).unwrap();
         assert_eq!(openings.len(), 3);
         assert_eq!(openings[&result_wire], result);

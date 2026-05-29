@@ -1,10 +1,10 @@
-use crate::fri::{Hash, Poseidon2Hash, Sha2Hash};
-use crate::plonk::{self, Chip};
 use crate::poseidon;
 use crate::utils;
 use anyhow::{Result, anyhow};
 use ff::Field;
 use starkom_bluesky::Scalar;
+use starkom_pcs::hash::{Hash, Poseidon2Hash, Sha2Hash};
+use starkom_plonk::{self as plonk, Chip};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -133,7 +133,7 @@ impl<const N: usize, const M: usize> SignerCircuit<N, M> {
         Self::make(Some(private_key))
     }
 
-    fn to_verifier<H: Hash>(self, blowup_log2: usize) -> VerifierCircuit<H, N> {
+    fn to_verifier<H: Hash<Scalar>>(self, blowup_log2: usize) -> VerifierCircuit<H, N> {
         VerifierCircuit {
             inner: self.inner.to_compressed::<H>(blowup_log2),
             public_key_wire: self.public_key_wire,
@@ -154,12 +154,14 @@ impl<const N: usize, const M: usize> Default for SignerCircuit<N, M> {
 ///
 /// This trait abstracts the generic parameters `N` and `M` away so that signers for all sizes can
 /// be cached in the same data structure.
-pub trait AbstractSignerCircuit<H: Hash>: Debug + Send + Sync {
+pub trait AbstractSignerCircuit<H: Hash<Scalar>>: Debug + Send + Sync {
     /// Signs the provided message and returns the signature scalar and the zkSTARK proof.
     fn witness(&self, message: &[Scalar], blowup_log2: usize) -> (Scalar, plonk::Proof<H>);
 }
 
-impl<H: Hash, const N: usize, const M: usize> AbstractSignerCircuit<H> for SignerCircuit<N, M> {
+impl<H: Hash<Scalar>, const N: usize, const M: usize> AbstractSignerCircuit<H>
+    for SignerCircuit<N, M>
+{
     fn witness(&self, message: &[Scalar], blowup_log2: usize) -> (Scalar, plonk::Proof<H>) {
         let mut witness = self.inner.make_witness();
         let message = std::array::from_fn(|i| {
@@ -178,7 +180,7 @@ impl<H: Hash, const N: usize, const M: usize> AbstractSignerCircuit<H> for Signe
 }
 
 #[derive(Debug, Clone)]
-struct VerifierCircuit<H: Hash, const N: usize> {
+struct VerifierCircuit<H: Hash<Scalar>, const N: usize> {
     inner: plonk::CompressedCircuit,
     public_key_wire: plonk::Wire,
     message_wires: [plonk::Wire; N],
@@ -190,7 +192,7 @@ struct VerifierCircuit<H: Hash, const N: usize> {
 ///
 /// This trait abstracts the generic parameter `N` away so that verifiers for all sizes can be
 /// cached in the same data structure.
-pub trait AbstractVerifierCircuit<H: Hash>: Debug + Send + Sync {
+pub trait AbstractVerifierCircuit<H: Hash<Scalar>>: Debug + Send + Sync {
     fn verify(
         &self,
         public_key: Scalar,
@@ -200,7 +202,7 @@ pub trait AbstractVerifierCircuit<H: Hash>: Debug + Send + Sync {
     ) -> Result<()>;
 }
 
-impl<H: Hash + Debug + Send + Sync, const N: usize> AbstractVerifierCircuit<H>
+impl<H: Hash<Scalar> + Debug + Send + Sync, const N: usize> AbstractVerifierCircuit<H>
     for VerifierCircuit<H, N>
 {
     fn verify(
@@ -239,14 +241,14 @@ impl<H: Hash + Debug + Send + Sync, const N: usize> AbstractVerifierCircuit<H>
 
 /// Caches signer circuits.
 #[derive(Debug)]
-struct SignerCache<H: Hash> {
+struct SignerCache<H: Hash<Scalar>> {
     /// The first component of the key is the private key used to sign; the second one is the size
     /// of the signed input, `N`.
     circuits: Mutex<BTreeMap<(Scalar, usize), Arc<OnceLock<Arc<dyn AbstractSignerCircuit<H>>>>>>,
     _data: PhantomData<H>,
 }
 
-impl<H: Hash> SignerCache<H> {
+impl<H: Hash<Scalar>> SignerCache<H> {
     fn make<const N: usize, const M: usize>(
         private_key: Scalar,
     ) -> Arc<dyn AbstractSignerCircuit<H>> {
@@ -293,9 +295,9 @@ impl<H: Hash> SignerCache<H> {
     }
 }
 
-impl SignerCache<Sha2Hash> {
-    fn get(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Sha2Hash>> {
-        static CACHE: LazyLock<SignerCache<Sha2Hash>> = LazyLock::new(|| SignerCache {
+impl SignerCache<Sha2Hash<Scalar>> {
+    fn get(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Sha2Hash<Scalar>>> {
+        static CACHE: LazyLock<SignerCache<Sha2Hash<Scalar>>> = LazyLock::new(|| SignerCache {
             circuits: Mutex::default(),
             _data: Default::default(),
         });
@@ -306,12 +308,13 @@ impl SignerCache<Sha2Hash> {
     }
 }
 
-impl SignerCache<Poseidon2Hash> {
-    fn get(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Poseidon2Hash>> {
-        static CACHE: LazyLock<SignerCache<Poseidon2Hash>> = LazyLock::new(|| SignerCache {
-            circuits: Mutex::default(),
-            _data: Default::default(),
-        });
+impl SignerCache<Poseidon2Hash<Scalar>> {
+    fn get(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Poseidon2Hash<Scalar>>> {
+        static CACHE: LazyLock<SignerCache<Poseidon2Hash<Scalar>>> =
+            LazyLock::new(|| SignerCache {
+                circuits: Mutex::default(),
+                _data: Default::default(),
+            });
         let once_lock = CACHE.get_or_make(private_key, n);
         once_lock
             .get_or_init(|| Self::make_monomorphic(private_key, n))
@@ -321,14 +324,14 @@ impl SignerCache<Poseidon2Hash> {
 
 /// Caches verifier circuits.
 #[derive(Debug)]
-struct VerifierCache<H: Hash + 'static> {
+struct VerifierCache<H: Hash<Scalar> + 'static> {
     /// The first component of the key is the size of the signed input, `N`; the second one is the
     /// log2 of the blowup factor for the circuit.
     circuits: Mutex<BTreeMap<(usize, usize), Arc<OnceLock<Arc<dyn AbstractVerifierCircuit<H>>>>>>,
     _data: PhantomData<H>,
 }
 
-impl<H: Hash + Debug + Send + Sync> VerifierCache<H> {
+impl<H: Hash<Scalar> + Debug + Send + Sync> VerifierCache<H> {
     fn make<const N: usize, const M: usize>(
         blowup_log2: usize,
     ) -> Arc<dyn AbstractVerifierCircuit<H>> {
@@ -375,9 +378,9 @@ impl<H: Hash + Debug + Send + Sync> VerifierCache<H> {
     }
 }
 
-impl VerifierCache<Sha2Hash> {
-    fn get(n: usize, blowup_log2: usize) -> Arc<dyn AbstractVerifierCircuit<Sha2Hash>> {
-        static CACHE: LazyLock<VerifierCache<Sha2Hash>> = LazyLock::new(|| VerifierCache {
+impl VerifierCache<Sha2Hash<Scalar>> {
+    fn get(n: usize, blowup_log2: usize) -> Arc<dyn AbstractVerifierCircuit<Sha2Hash<Scalar>>> {
+        static CACHE: LazyLock<VerifierCache<Sha2Hash<Scalar>>> = LazyLock::new(|| VerifierCache {
             circuits: Mutex::default(),
             _data: Default::default(),
         });
@@ -388,12 +391,16 @@ impl VerifierCache<Sha2Hash> {
     }
 }
 
-impl VerifierCache<Poseidon2Hash> {
-    fn get(n: usize, blowup_log2: usize) -> Arc<dyn AbstractVerifierCircuit<Poseidon2Hash>> {
-        static CACHE: LazyLock<VerifierCache<Poseidon2Hash>> = LazyLock::new(|| VerifierCache {
-            circuits: Mutex::default(),
-            _data: Default::default(),
-        });
+impl VerifierCache<Poseidon2Hash<Scalar>> {
+    fn get(
+        n: usize,
+        blowup_log2: usize,
+    ) -> Arc<dyn AbstractVerifierCircuit<Poseidon2Hash<Scalar>>> {
+        static CACHE: LazyLock<VerifierCache<Poseidon2Hash<Scalar>>> =
+            LazyLock::new(|| VerifierCache {
+                circuits: Mutex::default(),
+                _data: Default::default(),
+            });
         let once_lock = CACHE.get_or_make(n, blowup_log2);
         once_lock
             .get_or_init(|| Self::make_monomorphic(n, blowup_log2))
@@ -405,19 +412,19 @@ impl VerifierCache<Poseidon2Hash> {
 ///
 /// For internal use only. It's declared as public because it needs to surface in the signature of
 /// `sign`.
-pub trait CachedSigner: Hash {
+pub trait CachedSigner: Hash<Scalar> {
     fn get_signer_circuit(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Self>>;
 }
 
-impl CachedSigner for Sha2Hash {
+impl CachedSigner for Sha2Hash<Scalar> {
     fn get_signer_circuit(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Self>> {
-        SignerCache::<Sha2Hash>::get(private_key, n)
+        SignerCache::<Sha2Hash<Scalar>>::get(private_key, n)
     }
 }
 
-impl CachedSigner for Poseidon2Hash {
+impl CachedSigner for Poseidon2Hash<Scalar> {
     fn get_signer_circuit(private_key: Scalar, n: usize) -> Arc<dyn AbstractSignerCircuit<Self>> {
-        SignerCache::<Poseidon2Hash>::get(private_key, n)
+        SignerCache::<Poseidon2Hash<Scalar>>::get(private_key, n)
     }
 }
 
@@ -428,7 +435,7 @@ impl CachedSigner for Poseidon2Hash {
 /// zkSTARK proof, and therefore the signature, without ever seeing the private key.
 ///
 /// The returned pair contains the signature scalar and the zkSTARK proof.
-pub fn sign<H: Hash + CachedSigner, const N: usize>(
+pub fn sign<H: Hash<Scalar> + CachedSigner, const N: usize>(
     private_key: Scalar,
     message: &[Scalar; N],
     blowup_log2: usize,
@@ -441,26 +448,26 @@ pub fn sign<H: Hash + CachedSigner, const N: usize>(
 ///
 /// For internal use only. It's declared as public because it needs to surface in the signature of
 /// `verify`.
-pub trait CachedVerifier: Hash {
+pub trait CachedVerifier: Hash<Scalar> {
     fn get_verifier_circuit(n: usize, blowup_log2: usize)
     -> Arc<dyn AbstractVerifierCircuit<Self>>;
 }
 
-impl CachedVerifier for Sha2Hash {
+impl CachedVerifier for Sha2Hash<Scalar> {
     fn get_verifier_circuit(
         n: usize,
         blowup_log2: usize,
     ) -> Arc<dyn AbstractVerifierCircuit<Self>> {
-        VerifierCache::<Sha2Hash>::get(n, blowup_log2)
+        VerifierCache::<Sha2Hash<Scalar>>::get(n, blowup_log2)
     }
 }
 
-impl CachedVerifier for Poseidon2Hash {
+impl CachedVerifier for Poseidon2Hash<Scalar> {
     fn get_verifier_circuit(
         n: usize,
         blowup_log2: usize,
     ) -> Arc<dyn AbstractVerifierCircuit<Self>> {
-        VerifierCache::<Poseidon2Hash>::get(n, blowup_log2)
+        VerifierCache::<Poseidon2Hash<Scalar>>::get(n, blowup_log2)
     }
 }
 
@@ -469,7 +476,7 @@ impl CachedVerifier for Poseidon2Hash {
 /// The `public_key` is the same value returned by the `public_key()` function above for the private
 /// key used to sign the message, and is one of the public inputs of the circuit. This function
 /// verifies the zkSTARK proof and checks that the public key and message match the public inputs.
-pub fn verify<H: Hash + CachedVerifier, const N: usize>(
+pub fn verify<H: Hash<Scalar> + CachedVerifier, const N: usize>(
     public_key: Scalar,
     message: &[Scalar; N],
     signature: Scalar,
@@ -506,13 +513,15 @@ mod tests {
     fn test_signature_one_scalar_sha2() {
         let private_key =
             parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
-        let (signature, proof) = sign::<Sha2Hash, 1>(private_key, &[42.into()], BLOWUP_LOG2);
+        let (signature, proof) =
+            sign::<Sha2Hash<Scalar>, 1>(private_key, &[42.into()], BLOWUP_LOG2);
         assert_eq!(
             signature,
             parse_scalar("0x12586bd0764c32cba105a66535f812a04af334b8c85a16cb6d58884541a89ab5")
         );
         assert!(
-            verify::<Sha2Hash, 1>(public_key(private_key), &[42.into()], signature, &proof).is_ok()
+            verify::<Sha2Hash<Scalar>, 1>(public_key(private_key), &[42.into()], signature, &proof)
+                .is_ok()
         );
     }
 
@@ -520,14 +529,20 @@ mod tests {
     fn test_signature_one_scalar_poseidon2() {
         let private_key =
             parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
-        let (signature, proof) = sign::<Poseidon2Hash, 1>(private_key, &[42.into()], BLOWUP_LOG2);
+        let (signature, proof) =
+            sign::<Poseidon2Hash<Scalar>, 1>(private_key, &[42.into()], BLOWUP_LOG2);
         assert_eq!(
             signature,
             parse_scalar("0x12586bd0764c32cba105a66535f812a04af334b8c85a16cb6d58884541a89ab5")
         );
         assert!(
-            verify::<Poseidon2Hash, 1>(public_key(private_key), &[42.into()], signature, &proof)
-                .is_ok()
+            verify::<Poseidon2Hash<Scalar>, 1>(
+                public_key(private_key),
+                &[42.into()],
+                signature,
+                &proof
+            )
+            .is_ok()
         );
     }
 
@@ -535,13 +550,15 @@ mod tests {
     fn test_signature_one_scalar_different_key_sha2() {
         let private_key =
             parse_scalar("0x75b9be52955cd0933248b6324139bb988e9442fcf657c391b227de67f7d84561");
-        let (signature, proof) = sign::<Sha2Hash, 1>(private_key, &[42.into()], BLOWUP_LOG2);
+        let (signature, proof) =
+            sign::<Sha2Hash<Scalar>, 1>(private_key, &[42.into()], BLOWUP_LOG2);
         assert_eq!(
             signature,
             parse_scalar("0x739316cdd2ab2e0b12371e50771cccbefdc2d96fb1f9e44ea688f7db8fef724b")
         );
         assert!(
-            verify::<Sha2Hash, 1>(public_key(private_key), &[42.into()], signature, &proof).is_ok()
+            verify::<Sha2Hash<Scalar>, 1>(public_key(private_key), &[42.into()], signature, &proof)
+                .is_ok()
         );
     }
 
@@ -549,14 +566,20 @@ mod tests {
     fn test_signature_one_scalar_different_key_poseidon2() {
         let private_key =
             parse_scalar("0x75b9be52955cd0933248b6324139bb988e9442fcf657c391b227de67f7d84561");
-        let (signature, proof) = sign::<Poseidon2Hash, 1>(private_key, &[42.into()], BLOWUP_LOG2);
+        let (signature, proof) =
+            sign::<Poseidon2Hash<Scalar>, 1>(private_key, &[42.into()], BLOWUP_LOG2);
         assert_eq!(
             signature,
             parse_scalar("0x739316cdd2ab2e0b12371e50771cccbefdc2d96fb1f9e44ea688f7db8fef724b")
         );
         assert!(
-            verify::<Poseidon2Hash, 1>(public_key(private_key), &[42.into()], signature, &proof)
-                .is_ok()
+            verify::<Poseidon2Hash<Scalar>, 1>(
+                public_key(private_key),
+                &[42.into()],
+                signature,
+                &proof
+            )
+            .is_ok()
         );
     }
 
@@ -564,14 +587,20 @@ mod tests {
     fn test_signature_another_scalar_sha2() {
         let private_key =
             parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
-        let (signature, proof) = sign::<Sha2Hash, 1>(private_key, &[123.into()], BLOWUP_LOG2);
+        let (signature, proof) =
+            sign::<Sha2Hash<Scalar>, 1>(private_key, &[123.into()], BLOWUP_LOG2);
         assert_eq!(
             signature,
             parse_scalar("0x2f5b3bbe562312563a88568067fa93c9946a00790b0e65ebd5e170904ba66205")
         );
         assert!(
-            verify::<Sha2Hash, 1>(public_key(private_key), &[123.into()], signature, &proof)
-                .is_ok()
+            verify::<Sha2Hash<Scalar>, 1>(
+                public_key(private_key),
+                &[123.into()],
+                signature,
+                &proof
+            )
+            .is_ok()
         );
     }
 
@@ -579,14 +608,20 @@ mod tests {
     fn test_signature_another_scalar_poseidon2() {
         let private_key =
             parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
-        let (signature, proof) = sign::<Poseidon2Hash, 1>(private_key, &[123.into()], BLOWUP_LOG2);
+        let (signature, proof) =
+            sign::<Poseidon2Hash<Scalar>, 1>(private_key, &[123.into()], BLOWUP_LOG2);
         assert_eq!(
             signature,
             parse_scalar("0x2f5b3bbe562312563a88568067fa93c9946a00790b0e65ebd5e170904ba66205")
         );
         assert!(
-            verify::<Poseidon2Hash, 1>(public_key(private_key), &[123.into()], signature, &proof)
-                .is_ok()
+            verify::<Poseidon2Hash<Scalar>, 1>(
+                public_key(private_key),
+                &[123.into()],
+                signature,
+                &proof
+            )
+            .is_ok()
         );
     }
 
@@ -595,13 +630,13 @@ mod tests {
         let private_key =
             parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
         let (signature, proof) =
-            sign::<Sha2Hash, 2>(private_key, &[123.into(), 456.into()], BLOWUP_LOG2);
+            sign::<Sha2Hash<Scalar>, 2>(private_key, &[123.into(), 456.into()], BLOWUP_LOG2);
         assert_eq!(
             signature,
             parse_scalar("0x23ed26eabb33af669f2f64ad460783a0ea1c0259003294ff5839827c62617161")
         );
         assert!(
-            verify::<Sha2Hash, 2>(
+            verify::<Sha2Hash<Scalar>, 2>(
                 public_key(private_key),
                 &[123.into(), 456.into()],
                 signature,
@@ -616,13 +651,13 @@ mod tests {
         let private_key =
             parse_scalar("0x57833b8d7c2e4b4fa73b9b701496c153628a211d802f02e3f948437627123680");
         let (signature, proof) =
-            sign::<Poseidon2Hash, 2>(private_key, &[123.into(), 456.into()], BLOWUP_LOG2);
+            sign::<Poseidon2Hash<Scalar>, 2>(private_key, &[123.into(), 456.into()], BLOWUP_LOG2);
         assert_eq!(
             signature,
             parse_scalar("0x23ed26eabb33af669f2f64ad460783a0ea1c0259003294ff5839827c62617161")
         );
         assert!(
-            verify::<Poseidon2Hash, 2>(
+            verify::<Poseidon2Hash<Scalar>, 2>(
                 public_key(private_key),
                 &[123.into(), 456.into()],
                 signature,

@@ -1,9 +1,9 @@
-use crate::plonk;
 use crate::utils;
 use anyhow::Result;
 use ff::{Field, PrimeField};
 use primitive_types::U256;
 use starkom_bluesky::Scalar;
+use starkom_plonk as plonk;
 
 /// Returns the smallest power of three that is >= n (returns 1 for n=0).
 pub fn next_power_of_three(n: usize) -> usize {
@@ -488,8 +488,8 @@ impl plonk::Chip<1, 161> for FullTritDecomposerChip {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fri::Sha2Hash;
-    use crate::plonk::{Chip, WireOrUnconstrained};
+    use starkom_pcs::hash::Sha2Hash;
+    use starkom_plonk::{Chip, WireOrUnconstrained};
     use std::cmp::Ordering;
     use utils::parse_scalar;
 
@@ -711,10 +711,12 @@ mod tests {
         assert_eq!(bits, decompose_bits::<N>(value.into())[0..N]);
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
+        let proof = circuit
+            .prove::<Sha2Hash<Scalar>>(witness, BLOWUP_LOG2)
+            .unwrap();
         assert!(
             circuit
-                .to_compressed::<Sha2Hash>(BLOWUP_LOG2)
+                .to_compressed::<Sha2Hash<Scalar>>(BLOWUP_LOG2)
                 .verify(&proof)
                 .is_ok()
         );
@@ -762,9 +764,11 @@ mod tests {
         assert!(comparator_chip.witness(&mut witness, bits).is_ok());
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
+        let proof = circuit
+            .prove::<Sha2Hash<Scalar>>(witness, BLOWUP_LOG2)
+            .unwrap();
         let openings = circuit
-            .to_compressed::<Sha2Hash>(BLOWUP_LOG2)
+            .to_compressed::<Sha2Hash<Scalar>>(BLOWUP_LOG2)
             .verify(&proof)
             .unwrap();
         assert_eq!(openings[&input], lhs.into());
@@ -823,10 +827,12 @@ mod tests {
         assert_eq!(bits, decompose_bits::<256>(value.into()));
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
+        let proof = circuit
+            .prove::<Sha2Hash<Scalar>>(witness, BLOWUP_LOG2)
+            .unwrap();
         assert!(
             circuit
-                .to_compressed::<Sha2Hash>(BLOWUP_LOG2)
+                .to_compressed::<Sha2Hash<Scalar>>(BLOWUP_LOG2)
                 .verify(&proof)
                 .is_ok()
         );
@@ -1032,10 +1038,12 @@ mod tests {
         assert_eq!(trits, decompose_trits::<N>(value.into())[0..N]);
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
+        let proof = circuit
+            .prove::<Sha2Hash<Scalar>>(witness, BLOWUP_LOG2)
+            .unwrap();
         assert!(
             circuit
-                .to_compressed::<Sha2Hash>(BLOWUP_LOG2)
+                .to_compressed::<Sha2Hash<Scalar>>(BLOWUP_LOG2)
                 .verify(&proof)
                 .is_ok()
         );
@@ -1108,9 +1116,11 @@ mod tests {
         assert!(comparator_chip.witness(&mut witness, trits).is_ok());
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
+        let proof = circuit
+            .prove::<Sha2Hash<Scalar>>(witness, BLOWUP_LOG2)
+            .unwrap();
         let openings = circuit
-            .to_compressed::<Sha2Hash>(BLOWUP_LOG2)
+            .to_compressed::<Sha2Hash<Scalar>>(BLOWUP_LOG2)
             .verify(&proof)
             .unwrap();
         assert_eq!(openings[&input], lhs.into());
@@ -1163,10 +1173,12 @@ mod tests {
         assert_eq!(trits, decompose_trits::<161>(value.into()));
         assert!(builder.check_witness(&witness).is_ok());
         let circuit = builder.build();
-        let proof = circuit.prove::<Sha2Hash>(witness, BLOWUP_LOG2).unwrap();
+        let proof = circuit
+            .prove::<Sha2Hash<Scalar>>(witness, BLOWUP_LOG2)
+            .unwrap();
         assert!(
             circuit
-                .to_compressed::<Sha2Hash>(BLOWUP_LOG2)
+                .to_compressed::<Sha2Hash<Scalar>>(BLOWUP_LOG2)
                 .verify(&proof)
                 .is_ok()
         );
