@@ -1,8 +1,8 @@
-use crate::bluesky::Scalar;
 use anyhow::{Context, Result};
 use ff::{Field, PrimeField};
 use primitive_types::{H512, U256, U512};
 use sha3::Digest;
+use starkom_bluesky::Scalar;
 use std::sync::LazyLock;
 
 /// Generates 64 random bytes using a CSPRNG.

@@ -1,10 +1,9 @@
 // Copyright 2025 The Libernet Team
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::bluesky::Scalar;
+use starkom_bluesky::Scalar;
 use wasm_bindgen::prelude::*;
 
-pub mod bluesky;
 pub mod fri;
 pub mod hmac;
 pub mod merkle;

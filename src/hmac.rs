@@ -1,10 +1,10 @@
-use crate::bluesky::Scalar;
 use crate::fri::{Hash, Poseidon2Hash, Sha2Hash};
 use crate::plonk::{self, Chip};
 use crate::poseidon;
 use crate::utils;
 use anyhow::{Result, anyhow};
 use ff::Field;
+use starkom_bluesky::Scalar;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::marker::PhantomData;

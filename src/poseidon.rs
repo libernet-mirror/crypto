@@ -1,7 +1,7 @@
-use crate::bluesky::Scalar;
 use crate::plonk::{Chip as PlonkChip, CircuitBuilder, Wire, WireOrUnconstrained, Witness};
 use anyhow::{Result, anyhow};
 use ff::{Field, PrimeField};
+use starkom_bluesky::Scalar;
 use std::sync::LazyLock;
 
 /// Poseidon2 instance configuration trait.
