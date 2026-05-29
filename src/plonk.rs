@@ -1,9 +1,9 @@
-use crate::bluesky::Scalar;
 use crate::pcs;
 use crate::poly;
 use crate::utils;
 use anyhow::{Context, Result, anyhow};
 use ff::Field;
+use starkom_bluesky::Scalar;
 use std::collections::{BTreeMap, BTreeSet, btree_map};
 use std::sync::LazyLock;
 

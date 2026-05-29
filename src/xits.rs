@@ -1,9 +1,9 @@
-use crate::bluesky::Scalar;
 use crate::plonk;
 use crate::utils;
 use anyhow::Result;
 use ff::{Field, PrimeField};
 use primitive_types::U256;
+use starkom_bluesky::Scalar;
 
 /// Returns the smallest power of three that is >= n (returns 1 for n=0).
 pub fn next_power_of_three(n: usize) -> usize {

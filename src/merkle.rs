@@ -1,4 +1,3 @@
-use crate::bluesky::Scalar;
 use crate::plonk;
 use crate::poseidon;
 use crate::utils;
@@ -6,6 +5,7 @@ use crate::xits;
 use anyhow::{Result, anyhow};
 use ff::Field;
 use ff::PrimeField;
+use starkom_bluesky::Scalar;
 use std::fmt::Debug;
 
 /// Makes a type representable as a BLS12-381 scalar. Must be implemened by all Merkle tree values.

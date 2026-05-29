@@ -1,7 +1,7 @@
-use crate::bluesky::{self, ThreeAdicField};
 use crate::xits;
 use anyhow::{Context, Result, anyhow};
 use ff::PrimeField;
+use starkom_bluesky::{self as bluesky, ThreeAdicField};
 use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 use std::sync::LazyLock;
 
@@ -948,9 +948,9 @@ impl<F: PrimeField + Ord> MulAssign<Polynomial<F>> for Polynomial<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bluesky::Scalar;
     use crate::utils;
     use ff::Field;
+    use starkom_bluesky::Scalar;
 
     fn from_roots(roots: &[Scalar]) -> Polynomial<Scalar> {
         Polynomial::from_roots(roots, utils::get_random_scalar()).unwrap()
