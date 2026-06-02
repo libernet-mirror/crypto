@@ -1,10 +1,10 @@
 use crate::poseidon;
 use crate::utils;
-use crate::xits;
 use anyhow::{Result, anyhow};
 use ff::Field;
 use ff::PrimeField;
 use starkom_bluesky::Scalar;
+use starkom_gadgets::xits;
 use starkom_plonk as plonk;
 use std::fmt::Debug;
 

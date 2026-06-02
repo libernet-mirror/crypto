@@ -8,7 +8,6 @@ pub mod hmac;
 pub mod merkle;
 pub mod poseidon;
 pub mod utils;
-pub mod xits;
 
 fn map_err<E: Into<anyhow::Error>>(error: E) -> JsValue {
     JsValue::from_str(error.into().to_string().as_str())
