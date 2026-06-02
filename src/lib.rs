@@ -4,7 +4,6 @@
 use starkom_bluesky::Scalar;
 use wasm_bindgen::prelude::*;
 
-pub mod hmac;
 pub mod merkle;
 pub mod poseidon;
 pub mod utils;

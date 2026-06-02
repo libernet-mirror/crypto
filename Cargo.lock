@@ -1205,14 +1205,16 @@ dependencies = [
 
 [[package]]
 name = "starkom-gadgets"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba1d0ad49027335a610d7a060dd895dbcc5f25336e5bf5f588b05109b3fcce9a"
+checksum = "a52dd91d02425f2e91cb3e3038d693cec30986f3c7a3ef7023483776b48f5ab3"
 dependencies = [
  "anyhow",
  "ff",
  "primitive-types",
+ "sha3 0.12.0",
  "starkom-bluesky",
+ "starkom-pcs",
  "starkom-plonk",
  "starkom-poseidon2",
 ]
